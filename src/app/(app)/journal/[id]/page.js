@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
 import TradeJournalForm from "@/components/TradeJournalForm";
+import DeleteTradeButton from "@/components/DeleteTradeButton";
 
 export default async function TradeDetailPage({ params }) {
   const { id } = await params;
@@ -51,6 +52,10 @@ export default async function TradeDetailPage({ params }) {
         </div>
 
         <TradeJournalForm trade={trade} />
+
+        <div className="mt-8 pt-6 border-t border-gray-800">
+          <DeleteTradeButton tradeId={trade.id} pair={trade.pair} />
+        </div>
       </div>
     </main>
   );
