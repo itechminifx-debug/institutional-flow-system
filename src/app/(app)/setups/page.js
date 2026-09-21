@@ -2,8 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
+import SetupsFilters from "@/components/SetupsFilters";
 
-export default async function SetupsPage() {
+export default async function SetupsPage({ searchParams }) {
   const supabase = await createClient();
 
   const {
@@ -12,12 +13,41 @@ export default async function SetupsPage() {
 
   if (!user) redirect("/login");
 
-  const { data: setups } = await supabase
-    .from("setups")
-    .select("*")
-    .order("created_at", { ascending: false });
+  // Read filters from URL
+  const params = await searchParams;
+  const pairFilter = params?.pair;
+  const biasFilter = params?.bias;
+  const sortFilter = params?.sort || "newest";
+  const searchQuery = params?.q;
 
-  const safeSetups = setups || [];
+  // Build query
+  let query = supabase.from("setups").select("*");
+
+  if (pairFilter && pairFilter !== "all") {
+    query = query.eq("pair", pairFilter);
+  }
+  if (biasFilter && biasFilter !== "all") {
+    query = query.eq("d1_bias", biasFilter);
+  }
+
+  query = query.order("created_at", {
+    ascending: sortFilter === "oldest",
+  });
+
+  const { data: setups } = await query;
+  let safeSetups = setups || [];
+
+  // Client-side search filter (searches notes, zone, block_breaker)
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    safeSetups = safeSetups.filter(
+      (s) =>
+        (s.notes || "").toLowerCase().includes(q) ||
+        (s.rejection_block_zone || "").toLowerCase().includes(q) ||
+        String(s.block_breaker_level || "").includes(q) ||
+        String(s.aligned_liquidity || "").includes(q)
+    );
+  }
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -26,7 +56,7 @@ export default async function SetupsPage() {
           <div>
             <h1 className="text-2xl font-bold">Setups</h1>
             <p className="text-gray-400 text-sm">
-              Pre-market planner (Steps 1 to 4)
+              {safeSetups.length} setup{safeSetups.length === 1 ? "" : "s"}
             </p>
           </div>
           <Link
@@ -37,15 +67,30 @@ export default async function SetupsPage() {
           </Link>
         </div>
 
+        <SetupsFilters />
+
         {safeSetups.length === 0 ? (
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
-            <p className="text-gray-400 mb-4">No setups saved yet.</p>
-            <Link
-              href="/setups/new"
-              className="inline-block px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm font-medium"
-            >
-              Create your first setup
-            </Link>
+            <p className="text-gray-400 mb-4">
+              {(pairFilter || biasFilter || searchQuery)
+                ? "No setups match your filters."
+                : "No setups saved yet."}
+            </p>
+            {(pairFilter || biasFilter || searchQuery) ? (
+              <Link
+                href="/setups"
+                className="inline-block px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+              >
+                Clear filters
+              </Link>
+            ) : (
+              <Link
+                href="/setups/new"
+                className="inline-block px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm font-medium"
+              >
+                Create your first setup
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
