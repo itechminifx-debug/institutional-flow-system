@@ -87,40 +87,9 @@ export default function EditSetupForm({ setup }) {
   }
 
   async function handleConvertToTrade() {
-    setError("");
-    setSuccess("");
-    setLoading(true);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setError("Not authenticated.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: trade, error: insertError } = await supabase
-      .from("trades")
-      .insert({
-        user_id: user.id,
-        setup_id: setup.id,
-        pair: setup.pair,
-        direction: setup.d1_bias === "bullish" ? "buy" : "sell",
-        status: "open",
-      })
-      .select()
-      .single();
-
-    setLoading(false);
-
-    if (insertError) {
-      setError(insertError.message);
-      return;
-    }
-
-    router.push(`/trade?trade=${trade.id}`);
+  // Option B: No DB write — just navigate to the checklist
+  // The trade is created only at the final ENTER step.
+  router.push(`/trade?setup=${setup.id}`);
   }
 
   return (
