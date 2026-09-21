@@ -1,6 +1,11 @@
-// Calculate lot size based on account, risk %, and stop-loss distance
-// Simplified model: assumes 1 lot = $1 per point movement
-// For forex/gold/Vol 80, this varies by instrument — this is a starter model
+// ============================================================
+// RISK ENGINE — Institutional Flow System
+// ============================================================
+// Convention:
+//   BUY  (bullish): SL BELOW entry, TP ABOVE entry
+//   SELL (bearish): SL ABOVE entry, TP BELOW entry
+// ============================================================
+
 export function calculateLotSize({
   accountSize,
   riskPercent,
@@ -24,7 +29,7 @@ export function calculateLotSize({
   };
 }
 
-// Calculate RR ratio
+// RR ratio: always positive (uses absolute distances)
 export function calculateRR(entryPrice, stopLoss, takeProfit) {
   const risk = Math.abs(entryPrice - stopLoss);
   const reward = Math.abs(takeProfit - entryPrice);
@@ -33,28 +38,68 @@ export function calculateRR(entryPrice, stopLoss, takeProfit) {
   return Math.round((reward / risk) * 100) / 100;
 }
 
-// Suggest SL based on rejection zone
-// For a "buy", SL goes below the zone low
-// For a "sell", SL goes above the zone high
-export function suggestStopLoss(direction, zone, entryPrice) {
+// Suggest SL based on zone and direction
+//   BUY  → SL below zone low
+//   SELL → SL above zone high
+export function suggestStopLoss(direction, zone) {
   if (!zone) return null;
 
-  const buffer = (zone.high - zone.low) * 0.2; // 20% buffer beyond zone
+  const buffer = Math.max((zone.high - zone.low) * 0.2, 0.01);
 
   if (direction === "buy") {
     return Math.round((zone.low - buffer) * 100) / 100;
   }
+  // sell
   return Math.round((zone.high + buffer) * 100) / 100;
 }
 
-// Suggest TP based on 2R
+// Suggest TP based on 2R (default)
+//   BUY  → entry + risk × rr
+//   SELL → entry - risk × rr
 export function suggestTakeProfit(direction, entryPrice, stopLoss, rr = 2) {
   if (!entryPrice || !stopLoss) return null;
 
   const risk = Math.abs(entryPrice - stopLoss);
+  if (risk <= 0) return null;
 
   if (direction === "buy") {
     return Math.round((entryPrice + risk * rr) * 100) / 100;
   }
+  // sell
   return Math.round((entryPrice - risk * rr) * 100) / 100;
+}
+
+// Validation: check if entry/SL/TP are on the correct side for the direction
+export function validateTrade({
+  direction,
+  entryPrice,
+  stopLoss,
+  takeProfit,
+}) {
+  const errors = [];
+
+  if (!entryPrice || !stopLoss || !takeProfit) {
+    errors.push("All fields (entry, SL, TP) are required.");
+    return errors;
+  }
+
+  if (direction === "buy") {
+    if (stopLoss >= entryPrice) {
+      errors.push("BUY: Stop Loss must be BELOW entry price.");
+    }
+    if (takeProfit <= entryPrice) {
+      errors.push("BUY: Take Profit must be ABOVE entry price.");
+    }
+  } else if (direction === "sell") {
+    if (stopLoss <= entryPrice) {
+      errors.push("SELL: Stop Loss must be ABOVE entry price.");
+    }
+    if (takeProfit >= entryPrice) {
+      errors.push("SELL: Take Profit must be BELOW entry price.");
+    }
+  } else {
+    errors.push("Direction must be 'buy' or 'sell'.");
+  }
+
+  return errors;
 }
