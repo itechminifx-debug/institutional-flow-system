@@ -12,10 +12,12 @@ export default async function SetupsPage() {
 
   if (!user) redirect("/login");
 
-  const { data: setups, error } = await supabase
+  const { data: setups } = await supabase
     .from("setups")
     .select("*")
     .order("created_at", { ascending: false });
+
+  const safeSetups = setups || [];
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -35,13 +37,7 @@ export default async function SetupsPage() {
           </Link>
         </div>
 
-        {error && (
-          <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm mb-4">
-            {error.message}
-          </div>
-        )}
-
-        {!setups || setups.length === 0 ? (
+        {safeSetups.length === 0 ? (
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-gray-400 mb-4">No setups saved yet.</p>
             <Link
@@ -53,10 +49,11 @@ export default async function SetupsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {setups.map((s) => (
-              <div
+            {safeSetups.map((s) => (
+              <Link
                 key={s.id}
-                className="p-4 rounded-lg bg-gray-900 border border-gray-800"
+                href={`/setups/${s.id}`}
+                className="block p-4 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-600 transition"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -76,6 +73,7 @@ export default async function SetupsPage() {
                       {formatDate(s.created_at)}
                     </p>
                   </div>
+                  <span className="text-gray-600 text-xs">Edit →</span>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -85,21 +83,15 @@ export default async function SetupsPage() {
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Block Breaker</p>
-                    <p className="text-gray-200">
-                      {s.block_breaker_level ?? "—"}
-                    </p>
+                    <p className="text-gray-200">{s.block_breaker_level ?? "—"}</p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Liquidity</p>
-                    <p className="text-gray-200">
-                      {s.aligned_liquidity ?? "—"}
-                    </p>
+                    <p className="text-gray-200">{s.aligned_liquidity ?? "—"}</p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Rejection Zone</p>
-                    <p className="text-gray-200">
-                      {s.rejection_block_zone || "—"}
-                    </p>
+                    <p className="text-gray-200">{s.rejection_block_zone || "—"}</p>
                   </div>
                 </div>
 
@@ -108,7 +100,7 @@ export default async function SetupsPage() {
                     {s.notes}
                   </p>
                 )}
-              </div>
+              </Link>
             ))}
           </div>
         )}
