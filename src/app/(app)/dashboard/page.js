@@ -4,6 +4,7 @@ import PriceTicker from "@/components/PriceTicker";
 import Mt5Ticker from "@/components/Mt5Ticker";
 import LiveSetupCard from "@/components/LiveSetupCard";
 import TrendWidget from "@/components/TrendWidget";
+import MindsetWidget from "@/components/MindsetWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -41,6 +42,11 @@ export default async function DashboardPage() {
     label="XAUUSD (Gold)"
     source="deriv"
   />
+</div>
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+  <TrendWidget />
+  <MindsetWidget />
 </div>
 
 <div className="mb-8">

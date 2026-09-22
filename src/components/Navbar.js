@@ -8,6 +8,7 @@ const links = [
   { href: "/setups", label: "Setups" },
   { href: "/trade", label: "Trade" },
   { href: "/trend", label: "Trend" },
+  { href: "/mindset", label: "Mindset" },
   { href: "/journal", label: "Journal" },
   { href: "/stats", label: "Stats" },
   { href: "/settings", label: "Settings" },
