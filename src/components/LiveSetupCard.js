@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
 
 export default function LiveSetupCard({ setup }) {
@@ -12,47 +13,92 @@ export default function LiveSetupCard({ setup }) {
     async function fetchPrice() {
       try {
         const bridgeUrl = process.env.NEXT_PUBLIC_MT5_BRIDGE_URL;
-        const url = bridgeUrl ? `${bridgeUrl}/api/price/mt5` : "/api/price/mt5";
+        const url = bridgeUrl
+          ? `${bridgeUrl}/api/price/mt5`
+          : "/api/price/mt5";
         const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return;
         const data = await res.json();
-        if (data.bid) {
+
+        if (data && typeof data.bid === "number") {
           setLivePrice(data.bid);
           setMt5Symbol(data.symbol);
+
+          // Compute status for alerts
+          const zone = parseZone(setup?.rejection_block_zone);
+          const status = getZoneStatus(data.bid, zone);
+          const direction =
+            setup?.d1_bias === "bullish" ? "buy" : "sell";
+
+          // Zone Hit alert (once per session)
+          if (
+            status.status === "in-zone" &&
+            !sessionStorage.getItem(`alerted-zone-${setup.id}`)
+          ) {
+            sessionStorage.setItem(
+              `alerted-zone-${setup.id}`,
+              "true"
+            );
+            fetch("/api/alerts/telegram", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                pair: setup.pair,
+                zone: setup.rejection_block_zone,
+                price: data.bid,
+                direction,
+                timeframe: "D1",
+                setupId: setup.id,
+                status: "in-zone",
+              }),
+            }).catch(() => {});
+          }
+
+          // Approaching alert (once per session)
+          if (
+            status.status === "approaching" &&
+            !sessionStorage.getItem(`alerted-approach-${setup.id}`)
+          ) {
+            sessionStorage.setItem(
+              `alerted-approach-${setup.id}`,
+              "true"
+            );
+            fetch("/api/alerts/telegram", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                pair: setup.pair,
+                zone: setup.rejection_block_zone,
+                price: data.bid,
+                direction,
+                timeframe: "D1",
+                setupId: setup.id,
+                status: "approaching",
+              }),
+            }).catch(() => {});
+          }
         }
       } catch {}
     }
 
     fetchPrice();
     const interval = setInterval(fetchPrice, 1000);
-   // Trigger alert once per session per setup
-if (status.status === "in-zone" && !sessionStorage.getItem(`alerted-${setup.id}`)) {
-  sessionStorage.setItem(`alerted-${setup.id}`, "true");
-  fetch("/api/alerts/telegram", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      pair: setup.pair,
-      zone: setup.rejection_block_zone,
-      price: livePrice,
-      direction: setup.d1_bias === "bullish" ? "buy" : "sell",
-    }),
-  });
-}   
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setup?.id]);
 
-  const zone = parseZone(setup.rejection_block_zone);
+  const zone = parseZone(setup?.rejection_block_zone);
   const status = getZoneStatus(livePrice, zone);
   const colors = statusColors(status.status);
 
-  // Only watch setups whose pair starts with "Volatility 80" or "VOL_80"
+  const pair = setup?.pair || "";
   const isVol80 =
-    setup.pair.toLowerCase().includes("volatility 80") ||
-    setup.pair.toLowerCase().includes("vol_80");
+    pair.toLowerCase().includes("volatility 80") ||
+    pair.toLowerCase().includes("vol_80");
 
-  if (!isVol80) {
-    return null; // Skip other pairs for now
-  }
+  if (!isVol80) return null;
+
+  const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
 
   return (
     <div
@@ -60,7 +106,7 @@ if (status.status === "in-zone" && !sessionStorage.getItem(`alerted-${setup.id}`
     >
       <div className="flex items-start justify-between mb-2">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-semibold">{setup.pair}</h3>
             <span
               className={`text-xs px-2 py-0.5 rounded-full ${
@@ -85,19 +131,20 @@ if (status.status === "in-zone" && !sessionStorage.getItem(`alerted-${setup.id}`
         </div>
       </div>
 
-      {/* Live Price + Zone Info */}
       <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-800 text-sm">
         <div>
           <p className="text-gray-500 text-xs">Live Price</p>
           <p className="font-bold tabular-nums text-white">
-            {livePrice !== null ? livePrice.toFixed(2) : "—"}
+            {typeof livePrice === "number"
+              ? livePrice.toFixed(2)
+              : "—"}
           </p>
         </div>
 
         <div>
           <p className="text-gray-500 text-xs">Distance</p>
           <p className={`font-bold tabular-nums ${colors.text}`}>
-            {status.distance !== null
+            {typeof status.distance === "number"
               ? status.status === "in-zone"
                 ? "IN ZONE"
                 : status.distance.toFixed(2)
@@ -106,14 +153,43 @@ if (status.status === "in-zone" && !sessionStorage.getItem(`alerted-${setup.id}`
         </div>
       </div>
 
-      {/* Zone Hit Alert */}
+      {/* Zone Hit Banner */}
       {status.status === "in-zone" && (
         <div className="mt-3 p-2 rounded-md bg-green-900/60 border border-green-500 text-center">
           <p className="text-green-200 text-sm font-bold">
-            🎯 ZONE HIT — Prepare entry
+            🎯 ZONE HIT - Prepare entry
           </p>
         </div>
       )}
+
+      {/* Approaching Banner */}
+      {status.status === "approaching" && (
+        <div className="mt-3 p-2 rounded-md bg-yellow-900/40 border border-yellow-700 text-center">
+          <p className="text-yellow-200 text-sm font-bold">
+            ⚠️ Approaching Zone - Watch closely
+          </p>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <Link
+          href={`/setups/${setup.id}`}
+          className="py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs text-center text-gray-300"
+        >
+          View Setup
+        </Link>
+        <Link
+          href={`/trade?setup=${setup.id}`}
+          className={`py-2 rounded-lg text-xs text-center font-medium ${
+            status.status === "in-zone"
+              ? "bg-green-700 hover:bg-green-600 text-white"
+              : "bg-blue-700 hover:bg-blue-600 text-white"
+          }`}
+        >
+          {status.status === "in-zone" ? "Start Trade 🎯" : "Checklist →"}
+        </Link>
+      </div>
     </div>
   );
 }
