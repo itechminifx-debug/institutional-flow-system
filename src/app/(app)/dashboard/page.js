@@ -6,6 +6,8 @@ import LiveSetupCard from "@/components/LiveSetupCard";
 import TrendWidget from "@/components/TrendWidget";
 import MindsetWidget from "@/components/MindsetWidget";
 import GoldenBanner from "@/components/GoldenBanner";
+import PinnedNotesWidget from "@/components/PinnedNotesWidget";
+
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -31,6 +33,7 @@ export default async function DashboardPage() {
         </p>
          
         <GoldenBanner />
+        <PinnedNotesWidget />
 
         {/* Live Prices */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
