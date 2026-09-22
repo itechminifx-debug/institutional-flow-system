@@ -5,6 +5,7 @@ import Mt5Ticker from "@/components/Mt5Ticker";
 import LiveSetupCard from "@/components/LiveSetupCard";
 import TrendWidget from "@/components/TrendWidget";
 import MindsetWidget from "@/components/MindsetWidget";
+import GoldenBanner from "@/components/GoldenBanner";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -28,6 +29,8 @@ export default async function DashboardPage() {
         <p className="text-gray-400 mb-6 text-sm">
           Welcome, <span className="text-blue-400">{user.email}</span>
         </p>
+         
+        <GoldenBanner />
 
         {/* Live Prices */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
