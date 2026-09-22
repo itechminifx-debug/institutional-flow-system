@@ -11,7 +11,9 @@ export default function LiveSetupCard({ setup }) {
   useEffect(() => {
     async function fetchPrice() {
       try {
-        const res = await fetch("/api/price/mt5", { cache: "no-store" });
+        const bridgeUrl = process.env.NEXT_PUBLIC_MT5_BRIDGE_URL;
+        const url = bridgeUrl ? `${bridgeUrl}/api/price/mt5` : "/api/price/mt5";
+        const res = await fetch(url, { cache: "no-store" });
         const data = await res.json();
         if (data.bid) {
           setLivePrice(data.bid);
