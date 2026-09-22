@@ -201,6 +201,14 @@ function TradeCard({ trade, highlight }) {
           )}
         </div>
       )}
+      {trade.screenshot_urls && trade.screenshot_urls.length > 0 && (
+  <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-800">
+    <span className="text-xs text-gray-500">
+      📸 {trade.screenshot_urls.length} screenshot
+      {trade.screenshot_urls.length > 1 ? "s" : ""}
+    </span>
+  </div>
+)}
     </Link>
   );
 }

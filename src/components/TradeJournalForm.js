@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
+import ScreenshotUpload from "@/components/ScreenshotUpload";
 
 const EMOTIONS = [
   "Calm",
@@ -224,7 +225,13 @@ export default function TradeJournalForm({ trade }) {
           />
         </div>
       </div>
-
+{/* Screenshots */}
+<div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+  <ScreenshotUpload
+    tradeId={trade.id}
+    existingUrls={trade.screenshot_urls || []}
+  />
+</div>
       {/* Close trade section */}
       {isOpen && (
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
