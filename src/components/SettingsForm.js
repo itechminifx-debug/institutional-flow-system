@@ -12,6 +12,8 @@ export default function SettingsForm({ profile, userId }) {
     max_daily_loss_percent: profile?.max_daily_loss_percent ?? 3,
     max_trades_per_day: profile?.max_trades_per_day ?? 3,
     default_lot_size: profile?.default_lot_size ?? 0.01,
+    telegram_bot_token: profile?.telegram_bot_token ?? "",
+  telegram_chat_id: profile?.telegram_chat_id ?? "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -34,6 +36,8 @@ export default function SettingsForm({ profile, userId }) {
       max_daily_loss_percent: parseFloat(form.max_daily_loss_percent) || 3,
       max_trades_per_day: parseInt(form.max_trades_per_day) || 3,
       default_lot_size: parseFloat(form.default_lot_size) || 0.01,
+      telegram_bot_token: form.telegram_bot_token || null,
+  telegram_chat_id: form.telegram_chat_id || null,
       updated_at: new Date().toISOString(),
     };
 
