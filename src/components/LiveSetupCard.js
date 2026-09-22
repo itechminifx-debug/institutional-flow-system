@@ -24,6 +24,20 @@ export default function LiveSetupCard({ setup }) {
 
     fetchPrice();
     const interval = setInterval(fetchPrice, 1000);
+   // Trigger alert once per session per setup
+if (status.status === "in-zone" && !sessionStorage.getItem(`alerted-${setup.id}`)) {
+  sessionStorage.setItem(`alerted-${setup.id}`, "true");
+  fetch("/api/alerts/telegram", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      pair: setup.pair,
+      zone: setup.rejection_block_zone,
+      price: livePrice,
+      direction: setup.d1_bias === "bullish" ? "buy" : "sell",
+    }),
+  });
+}   
     return () => clearInterval(interval);
   }, []);
 

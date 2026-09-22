@@ -148,6 +148,44 @@ export default function SettingsForm({ profile, userId }) {
         </div>
       </div>
 
+{/* Telegram Alerts */}
+<div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
+  <h2 className="text-lg font-semibold text-blue-400">
+    Telegram Alerts
+  </h2>
+  <p className="text-xs text-gray-500">
+    Receive a message when price hits your rejection zones.
+  </p>
+
+  <div>
+    <label className="block text-sm mb-2 text-gray-300">
+      Bot Token
+    </label>
+    <input
+      type="password"
+      value={form.telegram_bot_token || ""}
+      onChange={(e) => update("telegram_bot_token", e.target.value)}
+      placeholder="123456789:ABCdef..."
+      className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm mb-2 text-gray-300">
+      Chat ID
+    </label>
+    <input
+      type="text"
+      value={form.telegram_chat_id || ""}
+      onChange={(e) => update("telegram_chat_id", e.target.value)}
+      placeholder="123456789"
+      className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+    />
+  </div>
+</div>
+
+
+
       {/* Preview */}
       <div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 space-y-2">
         <h3 className="text-sm font-semibold text-blue-300">
