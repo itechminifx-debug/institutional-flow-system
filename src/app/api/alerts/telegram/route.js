@@ -3,10 +3,15 @@ import { createClient } from "@/lib/supabaseServer";
 
 export async function POST(request) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  const { pair, zone, price, direction } = await request.json();
+  const body = await request.json();
+  const { pair, zone, price, direction } = body;
 
   // Get user's Telegram settings
   const { data: profile } = await supabase
@@ -16,10 +21,13 @@ export async function POST(request) {
     .single();
 
   if (!profile?.telegram_bot_token || !profile?.telegram_chat_id) {
-    return NextResponse.json({ error: "Telegram not configured" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Telegram not configured" },
+      { status: 400 }
+    );
   }
 
-  const message = `🎯 **ZONE HIT**\n\n${direction.toUpperCase()} ${pair}\nPrice: ${price}\nZone: ${zone}\n\nWalk the checklist!`;
+  const message = `🎯 *ZONE HIT*\n\n${direction.toUpperCase()} ${pair}\nPrice: ${price}\nZone: ${zone}\n\nWalk the checklist!`;
 
   const url = `https://api.telegram.org/bot${profile.telegram_bot_token}/sendMessage`;
 
@@ -35,8 +43,17 @@ export async function POST(request) {
     });
 
     const data = await res.json();
-    return NextResponse.json({ ok: data.ok });
+
+    // Return full Telegram response for debugging
+    return NextResponse.json({
+      ok: data.ok,
+      telegram: data,
+      sent_to: profile.telegram_chat_id,
+    });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: error.message },
+      { status: 500 }
+    );
   }
 }
