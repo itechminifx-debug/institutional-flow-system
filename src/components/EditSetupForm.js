@@ -7,6 +7,7 @@ import { PAIRS } from "@/lib/setupHelpers";
 import { parseZone } from "@/lib/zoneHelpers";
 import { computeCEPrice } from "@/lib/riskEngine";
 import QualityScoreCard from "@/components/QualityScoreCard";
+import ContextLayersCard from "@/components/ContextLayersCard";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
 export default function EditSetupForm({ setup }) {
@@ -29,6 +30,20 @@ export default function EditSetupForm({ setup }) {
     displacement: setup.rb_displacement_score || 0,
     alignment: setup.rb_alignment_score || 0,
     freshness: setup.rb_freshness_score || 0,
+  });
+
+  const [context, setContext] = useState({
+    institutional_cycle: setup.institutional_cycle || null,
+    fvg_present: setup.fvg_present || false,
+    fvg_direction: setup.fvg_direction || null,
+    fvg_low: setup.fvg_low ?? "",
+    fvg_high: setup.fvg_high ?? "",
+    ob_present: setup.ob_present || false,
+    ob_type: setup.ob_type || null,
+    ob_low: setup.ob_low ?? "",
+    ob_high: setup.ob_high ?? "",
+    twice_blocked: setup.twice_blocked || false,
+    twice_blocked_notes: setup.twice_blocked_notes || "",
   });
 
   const [useCeEntry, setUseCeEntry] = useState(setup.use_ce_entry || false);
@@ -76,6 +91,18 @@ export default function EditSetupForm({ setup }) {
         rb_freshness_score: qualityScores.freshness,
         ce_price: cePrice,
         use_ce_entry: useCeEntry,
+        // Context Layers
+        institutional_cycle: context.institutional_cycle,
+        fvg_present: context.fvg_present,
+        fvg_direction: context.fvg_direction,
+        fvg_low: context.fvg_low ? parseFloat(context.fvg_low) : null,
+        fvg_high: context.fvg_high ? parseFloat(context.fvg_high) : null,
+        ob_present: context.ob_present,
+        ob_type: context.ob_type,
+        ob_low: context.ob_low ? parseFloat(context.ob_low) : null,
+        ob_high: context.ob_high ? parseFloat(context.ob_high) : null,
+        twice_blocked: context.twice_blocked,
+        twice_blocked_notes: context.twice_blocked_notes,
       })
       .eq("id", setup.id);
 
@@ -120,6 +147,7 @@ export default function EditSetupForm({ setup }) {
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
+      {/* Step 1 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 1 — D1 Direction
@@ -171,6 +199,7 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
+      {/* Step 2 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 2 — Block Breaker
@@ -189,6 +218,7 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
+      {/* Step 3 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 3 — Aligned Liquidity
@@ -207,6 +237,7 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
+      {/* Step 4 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 4 — Rejection Block
@@ -251,10 +282,6 @@ export default function EditSetupForm({ setup }) {
             <p className="text-lg font-bold tabular-nums text-yellow-400">
               {cePrice.toFixed(2)}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Strong trends often tap CE and reverse without touching the wick
-              extreme.
-            </p>
           </div>
         )}
 
@@ -276,6 +303,9 @@ export default function EditSetupForm({ setup }) {
           </span>
         </label>
       </div>
+
+      {/* Context Layers */}
+      <ContextLayersCard values={context} onChange={setContext} />
 
       {/* Quality Score */}
       <QualityScoreCard

@@ -8,6 +8,7 @@ import { PAIRS } from "@/lib/setupHelpers";
 import { parseZone } from "@/lib/zoneHelpers";
 import { computeCEPrice } from "@/lib/riskEngine";
 import QualityScoreCard from "@/components/QualityScoreCard";
+import ContextLayersCard from "@/components/ContextLayersCard";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
 export default function NewSetupPage() {
@@ -30,6 +31,20 @@ export default function NewSetupPage() {
     displacement: 0,
     alignment: 0,
     freshness: 0,
+  });
+
+  const [context, setContext] = useState({
+    institutional_cycle: null,
+    fvg_present: false,
+    fvg_direction: null,
+    fvg_low: "",
+    fvg_high: "",
+    ob_present: false,
+    ob_type: null,
+    ob_low: "",
+    ob_high: "",
+    twice_blocked: false,
+    twice_blocked_notes: "",
   });
 
   const [useCeEntry, setUseCeEntry] = useState(false);
@@ -83,6 +98,18 @@ export default function NewSetupPage() {
       rb_freshness_score: qualityScores.freshness,
       ce_price: cePrice,
       use_ce_entry: useCeEntry,
+      // Context Layers
+      institutional_cycle: context.institutional_cycle,
+      fvg_present: context.fvg_present,
+      fvg_direction: context.fvg_direction,
+      fvg_low: context.fvg_low ? parseFloat(context.fvg_low) : null,
+      fvg_high: context.fvg_high ? parseFloat(context.fvg_high) : null,
+      ob_present: context.ob_present,
+      ob_type: context.ob_type,
+      ob_low: context.ob_low ? parseFloat(context.ob_low) : null,
+      ob_high: context.ob_high ? parseFloat(context.ob_high) : null,
+      twice_blocked: context.twice_blocked,
+      twice_blocked_notes: context.twice_blocked_notes,
     });
 
     setLoading(false);
@@ -108,7 +135,7 @@ export default function NewSetupPage() {
           </Link>
           <h1 className="text-2xl font-bold mt-2">New Setup</h1>
           <p className="text-gray-400 text-sm">
-            Institutional Flow System — Steps 1 to 4
+            Institutional Flow System — Steps 1 to 4 + Context Layers
           </p>
         </div>
 
@@ -255,10 +282,6 @@ export default function NewSetupPage() {
                 <p className="text-lg font-bold tabular-nums text-yellow-400">
                   {cePrice.toFixed(2)}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Strong trends often tap CE and reverse without touching the
-                  wick extreme.
-                </p>
               </div>
             )}
 
@@ -280,6 +303,9 @@ export default function NewSetupPage() {
               </span>
             </label>
           </div>
+
+          {/* Context Layers */}
+          <ContextLayersCard values={context} onChange={setContext} />
 
           {/* Quality Score */}
           <QualityScoreCard

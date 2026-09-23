@@ -46,6 +46,36 @@ export default async function SetupDetailPage({ params }) {
             Created {formatDate(setup.created_at)}
           </p>
         </div>
+        import { cycleInfo, fvgInfo, obInfo } from "@/lib/contextLayers";
+
+// ... later in JSX:
+<div className="flex items-center gap-2 mt-2 flex-wrap">
+  {setup.institutional_cycle && (
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full ${
+        cycleInfo(setup.institutional_cycle)?.color || ""
+      }`}
+    >
+      {cycleInfo(setup.institutional_cycle)?.emoji}{" "}
+      {cycleInfo(setup.institutional_cycle)?.label}
+    </span>
+  )}
+  {setup.fvg_present && (
+    <span className={`text-xs ${fvgInfo(true, setup.fvg_direction).color}`}>
+      {fvgInfo(true, setup.fvg_direction).label}
+    </span>
+  )}
+  {setup.ob_present && (
+    <span className={`text-xs ${obInfo(true, setup.ob_type).color}`}>
+      {obInfo(true, setup.ob_type).label}
+    </span>
+  )}
+  {setup.twice_blocked && (
+    <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300">
+      ⚡ Twice-Blocked
+    </span>
+  )}
+</div>
 
         <EditSetupForm setup={setup} />
       </div>

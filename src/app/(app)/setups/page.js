@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
+import { cycleInfo } from "@/lib/contextLayers";
 import SetupsFilters from "@/components/SetupsFilters";
 
 export default async function SetupsPage({ searchParams }) {
@@ -93,6 +94,8 @@ export default async function SetupsPage({ searchParams }) {
           <div className="space-y-3">
             {safeSetups.map((s) => {
               const rbScore = s.rb_quality_score || 0;
+              const cycle = cycleInfo(s.institutional_cycle);
+
               return (
                 <Link
                   key={s.id}
@@ -100,9 +103,10 @@ export default async function SetupsPage({ searchParams }) {
                   className="block p-4 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-600 transition"
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <div>
+                    <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="font-semibold text-lg">{s.pair}</h2>
+
                         <span
                           className={`text-xs px-2 py-0.5 rounded-full ${
                             s.d1_bias === "bullish"
@@ -112,6 +116,7 @@ export default async function SetupsPage({ searchParams }) {
                         >
                           {s.d1_bias}
                         </span>
+
                         {rbScore > 0 && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${
@@ -125,7 +130,56 @@ export default async function SetupsPage({ searchParams }) {
                             RB {rbScore}/10
                           </span>
                         )}
+
+                        {cycle && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${cycle.color}`}
+                          >
+                            {cycle.emoji} {cycle.label}
+                          </span>
+                        )}
+
+                        {s.fvg_present && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              s.fvg_direction === "bullish"
+                                ? "bg-green-900/40 text-green-300"
+                                : s.fvg_direction === "bearish"
+                                ? "bg-red-900/40 text-red-300"
+                                : "bg-gray-800 text-gray-300"
+                            }`}
+                          >
+                            FVG
+                          </span>
+                        )}
+
+                        {s.ob_present && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              s.ob_type === "bullish"
+                                ? "bg-green-900/40 text-green-300"
+                                : s.ob_type === "bearish"
+                                ? "bg-red-900/40 text-red-300"
+                                : "bg-gray-800 text-gray-300"
+                            }`}
+                          >
+                            OB
+                          </span>
+                        )}
+
+                        {s.twice_blocked && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300">
+                            ⚡ 2× Blocked
+                          </span>
+                        )}
+
+                        {s.use_ce_entry && s.ce_price && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300">
+                            CE
+                          </span>
+                        )}
                       </div>
+
                       <p className="text-gray-500 text-xs mt-1">
                         {formatDate(s.created_at)}
                       </p>
