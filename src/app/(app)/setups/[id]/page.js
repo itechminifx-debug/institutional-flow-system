@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
 import { cycleInfo, fvgInfo, obInfo } from "@/lib/contextLayers";
 import EditSetupForm from "@/components/EditSetupForm";
+import ScenarioBadge from "@/components/ScenarioBadge";
 
 export default async function SetupDetailPage({ params }) {
   const { id } = await params;
@@ -76,6 +77,7 @@ export default async function SetupDetailPage({ params }) {
                 CE {setup.ce_price.toFixed(2)}
               </span>
             )}
+            <ScenarioBadge setup={setup} size="lg" />
           </div>
         </div>
 

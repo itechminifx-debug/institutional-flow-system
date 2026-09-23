@@ -8,6 +8,7 @@ import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
 import { isWithinNewsWindow } from "@/lib/newsHelpers";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
+import ScenarioBanner from "@/components/ScenarioBanner";
 
 function TradeContent() {
   const searchParams = useSearchParams();
@@ -130,6 +131,8 @@ function TradeContent() {
         direction,
         status: "open",
         rb_quality_score: setup.rb_quality_score || 0,
+        // Scenario is computed on the fly — no column needed
+// But we can store the label for stats later:
         ce_price: setup.ce_price || null,
         used_ce_entry: setup.use_ce_entry || false,
         ...entryData,
@@ -234,6 +237,8 @@ const qualityFails = rbScore > 0 && rbScore < gateThreshold;
             </p>
           </div>
         )}
+        {/* RB Scenario */}
+        <ScenarioBanner setup={setup} />
 
         {/* RB Quality Warning */}
         {qualityFails && (

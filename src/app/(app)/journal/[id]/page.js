@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
 import TradeJournalForm from "@/components/TradeJournalForm";
 import DeleteTradeButton from "@/components/DeleteTradeButton";
+import ScenarioBanner from "@/components/ScenarioBanner";
 
 export default async function TradeDetailPage({ params }) {
   const { id } = await params;
@@ -35,6 +36,17 @@ export default async function TradeDetailPage({ params }) {
     );
   }
 
+  // Load the original setup for scenario classification
+  let setupForScenario = null;
+  if (trade.setup_id) {
+    const { data: setupData } = await supabase
+      .from("setups")
+      .select("*")
+      .eq("id", trade.setup_id)
+      .single();
+    setupForScenario = setupData;
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-2xl mx-auto">
@@ -50,6 +62,13 @@ export default async function TradeDetailPage({ params }) {
             Opened {formatDate(trade.opened_at)}
           </p>
         </div>
+
+        {/* RB Scenario Banner (from original setup) */}
+        {setupForScenario && (
+          <div className="mb-6">
+            <ScenarioBanner setup={setupForScenario} />
+          </div>
+        )}
 
         <TradeJournalForm trade={trade} />
 

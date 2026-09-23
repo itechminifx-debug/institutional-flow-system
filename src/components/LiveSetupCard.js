@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
+import ScenarioBadge from "@/components/ScenarioBadge";
 
 export default function LiveSetupCard({ setup }) {
   const [livePrice, setLivePrice] = useState(null);
@@ -123,6 +124,7 @@ export default function LiveSetupCard({ setup }) {
     RB {rbScore}/12
   </span>
 )}
+<ScenarioBadge setup={setup} />
           </div>
           <p className="text-gray-500 text-xs mt-1">
             Zone: {setup.rejection_block_zone || "—"}

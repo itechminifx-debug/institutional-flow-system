@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
 import { cycleInfo } from "@/lib/contextLayers";
 import SetupsFilters from "@/components/SetupsFilters";
+import ScenarioBadge from "@/components/ScenarioBadge";
 
 export default async function SetupsPage({ searchParams }) {
   const supabase = await createClient();
@@ -130,6 +131,7 @@ export default async function SetupsPage({ searchParams }) {
     RB {rbScore}/12
   </span>
 )}
+<ScenarioBadge setup={s} />
                         {cycle && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${cycle.color}`}
