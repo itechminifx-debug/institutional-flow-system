@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
- { href: "/confluence", label: "Confluence" },
+  { href: "/confluence", label: "Confluence" },
   { href: "/setups", label: "Setups" },
   { href: "/trade", label: "Trade" },
   { href: "/news", label: "News" },
@@ -14,6 +14,7 @@ const links = [
   { href: "/notes", label: "Notes" },
   { href: "/journal", label: "Journal" },
   { href: "/stats", label: "Stats" },
+  { href: "/review", label: "Review" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -30,7 +31,9 @@ export default function Navbar() {
 
           <div className="flex gap-1 overflow-x-auto">
             {links.map((link) => {
-              const active = pathname === link.href || pathname.startsWith(link.href + "/");
+              const active =
+                pathname === link.href ||
+                pathname.startsWith(link.href + "/");
               return (
                 <Link
                   key={link.href}

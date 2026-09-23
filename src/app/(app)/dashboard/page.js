@@ -5,10 +5,11 @@ import Mt5Ticker from "@/components/Mt5Ticker";
 import LiveSetupCard from "@/components/LiveSetupCard";
 import TrendWidget from "@/components/TrendWidget";
 import MindsetWidget from "@/components/MindsetWidget";
-import GoldenBanner from "@/components/GoldenBanner";
-import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 import ConfluenceWidget from "@/components/ConfluenceWidget";
 import NewsWidget from "@/components/NewsWidget";
+import ReviewWidget from "@/components/ReviewWidget";
+import GoldenBanner from "@/components/GoldenBanner";
+import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -18,12 +19,14 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
- 
+
   const { data: setups } = await supabase
-  .from("setups")
-  .select("*")
-  .order("created_at", { ascending: false })
-  .limit(5);
+    .from("setups")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const safeSetups = setups || [];
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -32,45 +35,50 @@ export default async function DashboardPage() {
         <p className="text-gray-400 mb-6 text-sm">
           Welcome, <span className="text-blue-400">{user.email}</span>
         </p>
-         
+
+        {/* Golden Rule Banner */}
         <GoldenBanner />
+
+        {/* Pinned Notes */}
         <PinnedNotesWidget />
 
         {/* Live Prices */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-  <Mt5Ticker />
-  <PriceTicker
-    symbol="R_75"
-    label="Vol 75 (Deriv)"
-    source="deriv"
-  />
-  <PriceTicker
-    symbol="frxXAUUSD"
-    label="XAUUSD (Gold)"
-    source="deriv"
-  />
-</div>
+          <Mt5Ticker />
+          <PriceTicker
+            symbol="R_75"
+            label="Vol 75 (Deriv)"
+            source="deriv"
+          />
+          <PriceTicker
+            symbol="frxXAUUSD"
+            label="XAUUSD (Gold)"
+            source="deriv"
+          />
+        </div>
 
-<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-  <TrendWidget />
-  <MindsetWidget />
-  <ConfluenceWidget />
-  <NewsWidget />
-</div>
+        {/* System Widgets */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+          <TrendWidget />
+          <MindsetWidget />
+          <ConfluenceWidget />
+          <NewsWidget />
+          <ReviewWidget />
+        </div>
 
-{/* Live Zone Watchdog */}
-{setups && setups.length > 0 && (
-  <div className="mb-8">
-    <h2 className="text-lg font-semibold mb-3 text-gray-300">
-      Live Zone Watchdog
-    </h2>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {setups.map((s) => (
-        <LiveSetupCard key={s.id} setup={s} />
-      ))}
-    </div>
-  </div>
-)}
+        {/* Live Zone Watchdog */}
+        {safeSetups.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold mb-3 text-gray-300">
+              Live Zone Watchdog
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {safeSetups.map((s) => (
+                <LiveSetupCard key={s.id} setup={s} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
