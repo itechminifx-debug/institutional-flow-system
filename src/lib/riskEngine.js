@@ -29,7 +29,6 @@ export function calculateLotSize({
   };
 }
 
-// RR ratio: always positive (uses absolute distances)
 export function calculateRR(entryPrice, stopLoss, takeProfit) {
   const risk = Math.abs(entryPrice - stopLoss);
   const reward = Math.abs(takeProfit - entryPrice);
@@ -38,9 +37,6 @@ export function calculateRR(entryPrice, stopLoss, takeProfit) {
   return Math.round((reward / risk) * 100) / 100;
 }
 
-// Suggest SL based on zone and direction
-//   BUY  → SL below zone low
-//   SELL → SL above zone high
 export function suggestStopLoss(direction, zone) {
   if (!zone) return null;
 
@@ -49,13 +45,9 @@ export function suggestStopLoss(direction, zone) {
   if (direction === "buy") {
     return Math.round((zone.low - buffer) * 100) / 100;
   }
-  // sell
   return Math.round((zone.high + buffer) * 100) / 100;
 }
 
-// Suggest TP based on 2R (default)
-//   BUY  → entry + risk × rr
-//   SELL → entry - risk × rr
 export function suggestTakeProfit(direction, entryPrice, stopLoss, rr = 2) {
   if (!entryPrice || !stopLoss) return null;
 
@@ -65,11 +57,9 @@ export function suggestTakeProfit(direction, entryPrice, stopLoss, rr = 2) {
   if (direction === "buy") {
     return Math.round((entryPrice + risk * rr) * 100) / 100;
   }
-  // sell
   return Math.round((entryPrice - risk * rr) * 100) / 100;
 }
 
-// Validation: check if entry/SL/TP are on the correct side for the direction
 export function validateTrade({
   direction,
   entryPrice,
@@ -100,11 +90,12 @@ export function validateTrade({
   } else {
     errors.push("Direction must be 'buy' or 'sell'.");
   }
-// Compute the Consequent Encroachment (CE) price
-// = 50% midpoint of the rejection block zone
+
+  return errors;
+}
+
+// Consequent Encroachment (CE) price = 50% midpoint of the rejection block zone
 export function computeCEPrice(zone) {
   if (!zone || zone.low == null || zone.high == null) return null;
   return Math.round(((zone.low + zone.high) / 2) * 100) / 100;
-}
-  return errors;
 }
