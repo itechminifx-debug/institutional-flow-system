@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
+import { isWithinNewsWindow } from "@/lib/newsHelpers";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 
@@ -17,6 +18,7 @@ function TradeContent() {
   const [profile, setProfile] = useState(null);
   const [livePrice, setLivePrice] = useState(null);
   const [checklistComplete, setChecklistComplete] = useState(false);
+  const [newsWarning, setNewsWarning] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -76,9 +78,37 @@ function TradeContent() {
     return () => clearInterval(interval);
   }, []);
 
+  // Check for active news window
+  useEffect(() => {
+    async function checkNews() {
+      const { data } = await supabase
+        .from("news_events")
+        .select("*")
+        .gte("scheduled_at", new Date(Date.now() - 3600 * 1000).toISOString())
+        .eq("impact", "high")
+        .order("scheduled_at", { ascending: true });
+
+      const active = (data || []).find((e) => isWithinNewsWindow(e));
+      setNewsWarning(active || null);
+    }
+    checkNews();
+    const interval = setInterval(checkNews, 60000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleEnter(entryData) {
     setSubmitting(true);
     setError("");
+
+    // Hard block if within news window
+    if (newsWarning) {
+      setError(
+        "Trading blocked: high-impact news window active. Wait 60 minutes after release."
+      );
+      setSubmitting(false);
+      return;
+    }
 
     const {
       data: { user },
@@ -131,7 +161,9 @@ function TradeContent() {
       <main className="min-h-screen p-4 md:p-6 bg-black text-white">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-2xl font-bold mb-2">Live Trade</h1>
-          <p className="text-gray-400 mb-6">Checklist + entry (Steps 5-11)</p>
+          <p className="text-gray-400 mb-6">
+            Checklist + entry (Steps 5-11)
+          </p>
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-gray-400 mb-4">
               No setup selected. Pick a setup to start the checklist.
@@ -187,6 +219,21 @@ function TradeContent() {
           </p>
         </div>
 
+        {/* News Warning — highest priority */}
+        {newsWarning && (
+          <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
+            <p className="text-red-200 font-semibold">
+              🚫 NEWS WINDOW ACTIVE
+            </p>
+            <p className="text-red-300 text-xs">
+              <strong>{newsWarning.event_name}</strong> ({newsWarning.currency})
+              — do not open new positions. Wait 60 minutes after the release
+              for the first move to settle. The initial spike is almost always
+              a trap.
+            </p>
+          </div>
+        )}
+
         {/* RB Quality Warning */}
         {qualityFails && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
@@ -201,7 +248,7 @@ function TradeContent() {
           </div>
         )}
 
-        {rbScore >= 8 && (
+        {rbScore >= 8 && !newsWarning && (
           <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
             <p className="text-green-300 text-sm font-semibold">
               ✅ Rejection Block Quality: {rbScore}/10 — passes the IFS filter
@@ -296,6 +343,7 @@ function TradeContent() {
             livePrice={livePrice}
             onEnter={handleEnter}
             submitting={submitting}
+            newsBlocked={!!newsWarning}
           />
         )}
 

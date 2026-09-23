@@ -8,6 +8,7 @@ const links = [
  { href: "/confluence", label: "Confluence" },
   { href: "/setups", label: "Setups" },
   { href: "/trade", label: "Trade" },
+  { href: "/news", label: "News" },
   { href: "/trend", label: "Trend" },
   { href: "/mindset", label: "Mindset" },
   { href: "/notes", label: "Notes" },

@@ -8,6 +8,7 @@ import MindsetWidget from "@/components/MindsetWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 import ConfluenceWidget from "@/components/ConfluenceWidget";
+import NewsWidget from "@/components/NewsWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -50,10 +51,11 @@ export default async function DashboardPage() {
   />
 </div>
 
-<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
   <TrendWidget />
   <MindsetWidget />
   <ConfluenceWidget />
+  <NewsWidget />
 </div>
 
 {/* Live Zone Watchdog */}

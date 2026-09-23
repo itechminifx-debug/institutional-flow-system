@@ -16,6 +16,7 @@ export default function EntryCalculator({
   livePrice,
   onEnter,
   submitting,
+  newsBlocked = false,
 }) {
   const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
   const zone = parseZone(setup.rejection_block_zone);
@@ -208,14 +209,25 @@ export default function EntryCalculator({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleEnter}
-        disabled={submitting || !isValid || rrWarning}
-        className="w-full py-4 rounded-lg bg-green-700 hover:bg-green-600 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {submitting ? "Entering trade..." : "ENTER TRADE"}
-      </button>
+      {newsBlocked && (
+  <div className="p-3 rounded-lg bg-red-950/60 border border-red-700 text-red-200 text-sm">
+    🚫 Trade blocked — high-impact news window active. Wait 60 minutes after
+    the release.
+  </div>
+)}
+
+<button
+  type="button"
+  onClick={handleEnter}
+  disabled={submitting || !isValid || rrWarning || newsBlocked}
+  className="w-full py-4 rounded-lg bg-green-700 hover:bg-green-600 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+>
+  {submitting
+    ? "Entering trade..."
+    : newsBlocked
+    ? "TRADE BLOCKED — News Window"
+    : "ENTER TRADE"}
+</button>
 
       <p className="text-xs text-gray-500 text-center">
         Validates direction, calculates lot size, and logs the trade.
