@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
+import { cycleInfo, fvgInfo, obInfo } from "@/lib/contextLayers";
 import EditSetupForm from "@/components/EditSetupForm";
 
 export default async function SetupDetailPage({ params }) {
@@ -34,6 +35,10 @@ export default async function SetupDetailPage({ params }) {
     );
   }
 
+  const cycle = cycleInfo(setup.institutional_cycle);
+  const fvg = fvgInfo(setup.fvg_present, setup.fvg_direction);
+  const ob = obInfo(setup.ob_present, setup.ob_type);
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-2xl mx-auto">
@@ -45,37 +50,34 @@ export default async function SetupDetailPage({ params }) {
           <p className="text-gray-400 text-sm">
             Created {formatDate(setup.created_at)}
           </p>
-        </div>
-        import { cycleInfo, fvgInfo, obInfo } from "@/lib/contextLayers";
 
-// ... later in JSX:
-<div className="flex items-center gap-2 mt-2 flex-wrap">
-  {setup.institutional_cycle && (
-    <span
-      className={`text-xs px-2 py-0.5 rounded-full ${
-        cycleInfo(setup.institutional_cycle)?.color || ""
-      }`}
-    >
-      {cycleInfo(setup.institutional_cycle)?.emoji}{" "}
-      {cycleInfo(setup.institutional_cycle)?.label}
-    </span>
-  )}
-  {setup.fvg_present && (
-    <span className={`text-xs ${fvgInfo(true, setup.fvg_direction).color}`}>
-      {fvgInfo(true, setup.fvg_direction).label}
-    </span>
-  )}
-  {setup.ob_present && (
-    <span className={`text-xs ${obInfo(true, setup.ob_type).color}`}>
-      {obInfo(true, setup.ob_type).label}
-    </span>
-  )}
-  {setup.twice_blocked && (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300">
-      ⚡ Twice-Blocked
-    </span>
-  )}
-</div>
+          {/* Context Layer Badges */}
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            {cycle && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${cycle.color}`}
+              >
+                {cycle.emoji} {cycle.label}
+              </span>
+            )}
+            {setup.fvg_present && (
+              <span className={`text-xs ${fvg.color}`}>📊 {fvg.label}</span>
+            )}
+            {setup.ob_present && (
+              <span className={`text-xs ${ob.color}`}>📦 {ob.label}</span>
+            )}
+            {setup.twice_blocked && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300">
+                ⚡ Twice-Blocked
+              </span>
+            )}
+            {setup.use_ce_entry && setup.ce_price && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300">
+                CE {setup.ce_price.toFixed(2)}
+              </span>
+            )}
+          </div>
+        </div>
 
         <EditSetupForm setup={setup} />
       </div>
