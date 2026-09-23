@@ -13,14 +13,12 @@ export default async function SetupsPage({ searchParams }) {
 
   if (!user) redirect("/login");
 
-  // Read filters from URL
   const params = await searchParams;
   const pairFilter = params?.pair;
   const biasFilter = params?.bias;
   const sortFilter = params?.sort || "newest";
   const searchQuery = params?.q;
 
-  // Build query
   let query = supabase.from("setups").select("*");
 
   if (pairFilter && pairFilter !== "all") {
@@ -37,7 +35,6 @@ export default async function SetupsPage({ searchParams }) {
   const { data: setups } = await query;
   let safeSetups = setups || [];
 
-  // Client-side search filter (searches notes, zone, block_breaker)
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     safeSetups = safeSetups.filter(
@@ -72,11 +69,11 @@ export default async function SetupsPage({ searchParams }) {
         {safeSetups.length === 0 ? (
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-gray-400 mb-4">
-              {(pairFilter || biasFilter || searchQuery)
+              {pairFilter || biasFilter || searchQuery
                 ? "No setups match your filters."
                 : "No setups saved yet."}
             </p>
-            {(pairFilter || biasFilter || searchQuery) ? (
+            {pairFilter || biasFilter || searchQuery ? (
               <Link
                 href="/setups"
                 className="inline-block px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
@@ -94,59 +91,83 @@ export default async function SetupsPage({ searchParams }) {
           </div>
         ) : (
           <div className="space-y-3">
-            {safeSetups.map((s) => (
-              <Link
-                key={s.id}
-                href={`/setups/${s.id}`}
-                className="block p-4 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-600 transition"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="font-semibold text-lg">{s.pair}</h2>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          s.d1_bias === "bullish"
-                            ? "bg-green-900/40 text-green-300"
-                            : "bg-red-900/40 text-red-300"
-                        }`}
-                      >
-                        {s.d1_bias}
-                      </span>
+            {safeSetups.map((s) => {
+              const rbScore = s.rb_quality_score || 0;
+              return (
+                <Link
+                  key={s.id}
+                  href={`/setups/${s.id}`}
+                  className="block p-4 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-600 transition"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-semibold text-lg">{s.pair}</h2>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full ${
+                            s.d1_bias === "bullish"
+                              ? "bg-green-900/40 text-green-300"
+                              : "bg-red-900/40 text-red-300"
+                          }`}
+                        >
+                          {s.d1_bias}
+                        </span>
+                        {rbScore > 0 && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              rbScore >= 8
+                                ? "bg-green-900/40 text-green-300"
+                                : rbScore >= 6
+                                ? "bg-yellow-900/40 text-yellow-300"
+                                : "bg-red-900/40 text-red-300"
+                            }`}
+                          >
+                            RB {rbScore}/10
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-gray-500 text-xs mt-1">
+                        {formatDate(s.created_at)}
+                      </p>
                     </div>
-                    <p className="text-gray-500 text-xs mt-1">
-                      {formatDate(s.created_at)}
+                    <span className="text-gray-600 text-xs">Edit →</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <p className="text-gray-500 text-xs">EMA 50</p>
+                      <p className="text-gray-200">
+                        {s.ema50_position || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 text-xs">Block Breaker</p>
+                      <p className="text-gray-200">
+                        {s.block_breaker_level ?? "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 text-xs">Liquidity</p>
+                      <p className="text-gray-200">
+                        {s.aligned_liquidity ?? "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 text-xs">Rejection Zone</p>
+                      <p className="text-gray-200">
+                        {s.rejection_block_zone || "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {s.notes && (
+                    <p className="text-gray-400 text-sm mt-3 pt-3 border-t border-gray-800">
+                      {s.notes}
                     </p>
-                  </div>
-                  <span className="text-gray-600 text-xs">Edit →</span>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-500 text-xs">EMA 50</p>
-                    <p className="text-gray-200">{s.ema50_position || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 text-xs">Block Breaker</p>
-                    <p className="text-gray-200">{s.block_breaker_level ?? "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 text-xs">Liquidity</p>
-                    <p className="text-gray-200">{s.aligned_liquidity ?? "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 text-xs">Rejection Zone</p>
-                    <p className="text-gray-200">{s.rejection_block_zone || "—"}</p>
-                  </div>
-                </div>
-
-                {s.notes && (
-                  <p className="text-gray-400 text-sm mt-3 pt-3 border-t border-gray-800">
-                    {s.notes}
-                  </p>
-                )}
-              </Link>
-            ))}
+                  )}
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

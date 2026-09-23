@@ -60,7 +60,9 @@ function TradeContent() {
     async function fetchPrice() {
       try {
         const bridgeUrl = process.env.NEXT_PUBLIC_MT5_BRIDGE_URL;
-        const url = bridgeUrl ? `${bridgeUrl}/api/price/mt5` : "/api/price/mt5";
+        const url = bridgeUrl
+          ? `${bridgeUrl}/api/price/mt5`
+          : "/api/price/mt5";
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
@@ -98,6 +100,7 @@ function TradeContent() {
         pair: setup.pair,
         direction,
         status: "open",
+        rb_quality_score: setup.rb_quality_score || 0,
         ...entryData,
       })
       .select()
@@ -165,6 +168,9 @@ function TradeContent() {
   const colors = statusColors(zoneStatus.status);
   const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
 
+  const rbScore = setup.rb_quality_score || 0;
+  const qualityFails = rbScore > 0 && rbScore < 8;
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -181,11 +187,33 @@ function TradeContent() {
           </p>
         </div>
 
+        {/* RB Quality Warning */}
+        {qualityFails && (
+          <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
+            <p className="text-red-200 font-semibold">
+              ⚠️ Rejection Block Quality: {rbScore}/10
+            </p>
+            <p className="text-red-300 text-xs">
+              IFS rule: only trade rejection blocks scoring 8 or higher. This
+              setup does not meet the filter. Consider waiting for a
+              higher-quality setup.
+            </p>
+          </div>
+        )}
+
+        {rbScore >= 8 && (
+          <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
+            <p className="text-green-300 text-sm font-semibold">
+              ✅ Rejection Block Quality: {rbScore}/10 — passes the IFS filter
+            </p>
+          </div>
+        )}
+
         {/* Setup Context */}
         <div className={`p-4 rounded-lg border ${colors.bg} ${colors.border}`}>
           <div className="flex items-start justify-between mb-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="font-semibold text-lg">{setup.pair}</h2>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full ${
@@ -196,6 +224,19 @@ function TradeContent() {
                 >
                   {setup.d1_bias}
                 </span>
+                {rbScore > 0 && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      rbScore >= 8
+                        ? "bg-green-900/40 text-green-300"
+                        : rbScore >= 6
+                        ? "bg-yellow-900/40 text-yellow-300"
+                        : "bg-red-900/40 text-red-300"
+                    }`}
+                  >
+                    RB {rbScore}/10
+                  </span>
+                )}
               </div>
               <p className="text-gray-500 text-xs mt-1">
                 Zone: {setup.rejection_block_zone || "—"}
@@ -219,7 +260,12 @@ function TradeContent() {
             <div>
               <p className="text-gray-500 text-xs">Risk per Trade</p>
               <p className="font-bold tabular-nums text-yellow-400">
-                ${((profile?.account_size || 0) * (profile?.risk_percent || 1) / 100).toFixed(2)}
+                $
+                {(
+                  ((profile?.account_size || 0) *
+                    (profile?.risk_percent || 1)) /
+                  100
+                ).toFixed(2)}
               </p>
             </div>
             <div>
@@ -242,7 +288,7 @@ function TradeContent() {
         {/* Gated Checklist */}
         <TradeChecklist onComplete={setChecklistComplete} />
 
-        {/* Entry Calculator — only when checklist complete */}
+        {/* Entry Calculator */}
         {checklistComplete && (
           <EntryCalculator
             setup={setup}

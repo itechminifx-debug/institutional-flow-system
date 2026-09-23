@@ -1,4 +1,9 @@
-// Aggregate stats from a list of trades
+// ============================================================
+// STATS ENGINE — Institutional Flow System
+// Aggregates all trade performance metrics including
+// Rejection Block Quality Score correlation
+// ============================================================
+
 export function computeStats(trades) {
   const safe = trades || [];
   const closed = safe.filter((t) => t.status !== "open");
@@ -26,7 +31,7 @@ export function computeStats(trades) {
     0
   );
 
-  // Group by pair
+  // ---------------- By Pair ----------------
   const byPair = {};
   closed.forEach((t) => {
     const p = t.pair || "Unknown";
@@ -35,7 +40,7 @@ export function computeStats(trades) {
     byPair[p].total += 1;
   });
 
-  // Rule adherence: what % of closed trades had partial + BE applied
+  // ---------------- Rule Adherence ----------------
   const partialCount = closed.filter((t) => t.partial_taken).length;
   const beCount = closed.filter((t) => t.sl_moved_to_be).length;
   const ruleAdherence =
@@ -43,7 +48,7 @@ export function computeStats(trades) {
       ? ((partialCount + beCount) / (closed.length * 2)) * 100
       : 0;
 
-  // Emotion breakdown
+  // ---------------- By Emotion ----------------
   const byEmotion = {};
   closed.forEach((t) => {
     const e = t.emotion || "Unspecified";
@@ -52,7 +57,7 @@ export function computeStats(trades) {
     byEmotion[e].total += 1;
   });
 
-  // Best & worst pair (by win rate, min 1 trade)
+  // ---------------- Best & Worst Pair ----------------
   let bestPair = null;
   let worstPair = null;
   let bestRate = -1;
@@ -70,7 +75,52 @@ export function computeStats(trades) {
     }
   });
 
+  // ---------------- Rejection Block Quality Correlation ----------------
+  // Only consider trades that have a non-zero quality score
+  const scoredTrades = closed.filter(
+    (t) => (t.rb_quality_score || 0) > 0
+  );
+
+  const highQuality = scoredTrades.filter(
+    (t) => (t.rb_quality_score || 0) >= 8
+  );
+  const mediumQuality = scoredTrades.filter(
+    (t) => (t.rb_quality_score || 0) >= 6 && (t.rb_quality_score || 0) < 8
+  );
+  const lowQuality = scoredTrades.filter(
+    (t) => (t.rb_quality_score || 0) < 6
+  );
+
+  const highQualityWinRate =
+    highQuality.length > 0
+      ? (highQuality.filter((t) => t.status === "won").length /
+          highQuality.length) *
+        100
+      : 0;
+  const mediumQualityWinRate =
+    mediumQuality.length > 0
+      ? (mediumQuality.filter((t) => t.status === "won").length /
+          mediumQuality.length) *
+        100
+      : 0;
+  const lowQualityWinRate =
+    lowQuality.length > 0
+      ? (lowQuality.filter((t) => t.status === "won").length /
+          lowQuality.length) *
+        100
+      : 0;
+
+  // Average quality score across all scored trades
+  const avgQualityScore =
+    scoredTrades.length > 0
+      ? scoredTrades.reduce(
+          (sum, t) => sum + (t.rb_quality_score || 0),
+          0
+        ) / scoredTrades.length
+      : 0;
+
   return {
+    // Overall
     totalTrades: safe.length,
     openCount: open.length,
     closedCount: closed.length,
@@ -81,12 +131,26 @@ export function computeStats(trades) {
     avgRR,
     totalPips,
     totalPercent,
+
+    // Rule adherence
     partialCount,
     beCount,
     ruleAdherence,
+
+    // By category
     byPair,
     byEmotion,
     bestPair,
     worstPair,
+
+    // Rejection Block Quality
+    scoredTradesCount: scoredTrades.length,
+    highQualityCount: highQuality.length,
+    mediumQualityCount: mediumQuality.length,
+    lowQualityCount: lowQuality.length,
+    highQualityWinRate,
+    mediumQualityWinRate,
+    lowQualityWinRate,
+    avgQualityScore,
   };
 }

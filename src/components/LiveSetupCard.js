@@ -8,7 +8,6 @@ export default function LiveSetupCard({ setup }) {
   const [livePrice, setLivePrice] = useState(null);
   const [mt5Symbol, setMt5Symbol] = useState(null);
 
-  // Poll MT5 price every second
   useEffect(() => {
     async function fetchPrice() {
       try {
@@ -24,21 +23,16 @@ export default function LiveSetupCard({ setup }) {
           setLivePrice(data.bid);
           setMt5Symbol(data.symbol);
 
-          // Compute status for alerts
           const zone = parseZone(setup?.rejection_block_zone);
           const status = getZoneStatus(data.bid, zone);
           const direction =
             setup?.d1_bias === "bullish" ? "buy" : "sell";
 
-          // Zone Hit alert (once per session)
           if (
             status.status === "in-zone" &&
             !sessionStorage.getItem(`alerted-zone-${setup.id}`)
           ) {
-            sessionStorage.setItem(
-              `alerted-zone-${setup.id}`,
-              "true"
-            );
+            sessionStorage.setItem(`alerted-zone-${setup.id}`, "true");
             fetch("/api/alerts/telegram", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -54,7 +48,6 @@ export default function LiveSetupCard({ setup }) {
             }).catch(() => {});
           }
 
-          // Approaching alert (once per session)
           if (
             status.status === "approaching" &&
             !sessionStorage.getItem(`alerted-approach-${setup.id}`)
@@ -98,7 +91,7 @@ export default function LiveSetupCard({ setup }) {
 
   if (!isVol80) return null;
 
-  const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
+  const rbScore = setup?.rb_quality_score || 0;
 
   return (
     <div
@@ -117,6 +110,19 @@ export default function LiveSetupCard({ setup }) {
             >
               {setup.d1_bias}
             </span>
+            {rbScore > 0 && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  rbScore >= 8
+                    ? "bg-green-900/40 text-green-300"
+                    : rbScore >= 6
+                    ? "bg-yellow-900/40 text-yellow-300"
+                    : "bg-red-900/40 text-red-300"
+                }`}
+              >
+                RB {rbScore}/10
+              </span>
+            )}
           </div>
           <p className="text-gray-500 text-xs mt-1">
             Zone: {setup.rejection_block_zone || "—"}
@@ -135,9 +141,7 @@ export default function LiveSetupCard({ setup }) {
         <div>
           <p className="text-gray-500 text-xs">Live Price</p>
           <p className="font-bold tabular-nums text-white">
-            {typeof livePrice === "number"
-              ? livePrice.toFixed(2)
-              : "—"}
+            {typeof livePrice === "number" ? livePrice.toFixed(2) : "—"}
           </p>
         </div>
 
@@ -153,7 +157,6 @@ export default function LiveSetupCard({ setup }) {
         </div>
       </div>
 
-      {/* Zone Hit Banner */}
       {status.status === "in-zone" && (
         <div className="mt-3 p-2 rounded-md bg-green-900/60 border border-green-500 text-center">
           <p className="text-green-200 text-sm font-bold">
@@ -162,7 +165,6 @@ export default function LiveSetupCard({ setup }) {
         </div>
       )}
 
-      {/* Approaching Banner */}
       {status.status === "approaching" && (
         <div className="mt-3 p-2 rounded-md bg-yellow-900/40 border border-yellow-700 text-center">
           <p className="text-yellow-200 text-sm font-bold">
@@ -171,7 +173,6 @@ export default function LiveSetupCard({ setup }) {
         </div>
       )}
 
-      {/* Action buttons */}
       <div className="grid grid-cols-2 gap-2 mt-3">
         <Link
           href={`/setups/${setup.id}`}

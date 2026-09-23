@@ -134,6 +134,42 @@ export default async function StatsPage() {
                 </div>
               </div>
             </Section>
+{stats.highQualityCount + stats.lowQualityCount > 0 && (
+  <Section title="Rejection Block Quality">
+    <div className="grid grid-cols-2 gap-3">
+      <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
+        <p className="text-green-400 text-xs mb-1">
+          High Quality (8+)
+        </p>
+        <p className="text-xl font-bold text-green-300">
+          {stats.highQualityWinRate.toFixed(0)}%
+        </p>
+        <p className="text-xs text-green-500/70 mt-1">
+          {stats.highQualityCount} trades
+        </p>
+      </div>
+      <div className="p-3 rounded-lg bg-red-950/40 border border-red-800">
+        <p className="text-red-400 text-xs mb-1">
+          Low Quality (&lt; 8)
+        </p>
+        <p className="text-xl font-bold text-red-300">
+          {stats.lowQualityWinRate.toFixed(0)}%
+        </p>
+        <p className="text-xs text-red-500/70 mt-1">
+          {stats.lowQualityCount} trades
+        </p>
+      </div>
+    </div>
+    {stats.highQualityWinRate > stats.lowQualityWinRate && (
+      <p className="text-xs text-gray-400 mt-3">
+        ✅ Your high-quality setups outperform low-quality by{" "}
+        {(stats.highQualityWinRate - stats.lowQualityWinRate).toFixed(0)}%
+        — the filter works.
+      </p>
+    )}
+  </Section>
+)}
+
 
             {/* By pair */}
             {Object.keys(stats.byPair).length > 0 && (

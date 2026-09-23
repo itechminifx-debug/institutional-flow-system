@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
+import QualityScoreCard from "@/components/QualityScoreCard";
+import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
 export default function NewSetupPage() {
   const router = useRouter();
@@ -18,6 +20,14 @@ export default function NewSetupPage() {
     aligned_liquidity: "",
     rejection_block_zone: "",
     notes: "",
+  });
+
+  const [qualityScores, setQualityScores] = useState({
+    sweep: 0,
+    wick_body: 0,
+    displacement: 0,
+    alignment: 0,
+    freshness: 0,
   });
 
   const [loading, setLoading] = useState(false);
@@ -42,6 +52,8 @@ export default function NewSetupPage() {
       return;
     }
 
+    const qualityTotal = computeQualityScore(qualityScores);
+
     const { error: insertError } = await supabase.from("setups").insert({
       user_id: user.id,
       pair: form.pair,
@@ -55,6 +67,13 @@ export default function NewSetupPage() {
         : null,
       rejection_block_zone: form.rejection_block_zone,
       notes: form.notes,
+      // Quality scores
+      rb_quality_score: qualityTotal,
+      rb_sweep_score: qualityScores.sweep,
+      rb_wick_body_score: qualityScores.wick_body,
+      rb_displacement_score: qualityScores.displacement,
+      rb_alignment_score: qualityScores.alignment,
+      rb_freshness_score: qualityScores.freshness,
     });
 
     setLoading(false);
@@ -202,6 +221,12 @@ export default function NewSetupPage() {
               />
             </div>
           </div>
+
+          {/* Step 5: Rejection Block Quality Score */}
+          <QualityScoreCard
+            scores={qualityScores}
+            onChange={setQualityScores}
+          />
 
           {error && (
             <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">

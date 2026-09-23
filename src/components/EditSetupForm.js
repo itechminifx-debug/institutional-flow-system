@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
+import QualityScoreCard from "@/components/QualityScoreCard";
+import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
 export default function EditSetupForm({ setup }) {
   const router = useRouter();
@@ -17,6 +19,14 @@ export default function EditSetupForm({ setup }) {
     aligned_liquidity: setup.aligned_liquidity ?? "",
     rejection_block_zone: setup.rejection_block_zone || "",
     notes: setup.notes || "",
+  });
+
+  const [qualityScores, setQualityScores] = useState({
+    sweep: setup.rb_sweep_score || 0,
+    wick_body: setup.rb_wick_body_score || 0,
+    displacement: setup.rb_displacement_score || 0,
+    alignment: setup.rb_alignment_score || 0,
+    freshness: setup.rb_freshness_score || 0,
   });
 
   const [loading, setLoading] = useState(false);
@@ -34,6 +44,8 @@ export default function EditSetupForm({ setup }) {
     setSuccess("");
     setLoading(true);
 
+    const qualityTotal = computeQualityScore(qualityScores);
+
     const { error: updateError } = await supabase
       .from("setups")
       .update({
@@ -48,6 +60,12 @@ export default function EditSetupForm({ setup }) {
           : null,
         rejection_block_zone: form.rejection_block_zone,
         notes: form.notes,
+        rb_quality_score: qualityTotal,
+        rb_sweep_score: qualityScores.sweep,
+        rb_wick_body_score: qualityScores.wick_body,
+        rb_displacement_score: qualityScores.displacement,
+        rb_alignment_score: qualityScores.alignment,
+        rb_freshness_score: qualityScores.freshness,
       })
       .eq("id", setup.id);
 
@@ -86,16 +104,16 @@ export default function EditSetupForm({ setup }) {
     router.push("/setups");
   }
 
-  async function handleConvertToTrade() {
-  // Option B: No DB write — just navigate to the checklist
-  // The trade is created only at the final ENTER step.
-  router.push(`/trade?setup=${setup.id}`);
+  function handleConvertToTrade() {
+    router.push(`/trade?setup=${setup.id}`);
   }
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
-        <h2 className="text-lg font-semibold text-blue-400">Step 1 — D1 Direction</h2>
+        <h2 className="text-lg font-semibold text-blue-400">
+          Step 1 — D1 Direction
+        </h2>
 
         <div>
           <label className="block text-sm mb-2 text-gray-300">Pair</label>
@@ -114,7 +132,9 @@ export default function EditSetupForm({ setup }) {
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm mb-2 text-gray-300">D1 Bias</label>
+            <label className="block text-sm mb-2 text-gray-300">
+              D1 Bias
+            </label>
             <select
               value={form.d1_bias}
               onChange={(e) => update("d1_bias", e.target.value)}
@@ -126,7 +146,9 @@ export default function EditSetupForm({ setup }) {
           </div>
 
           <div>
-            <label className="block text-sm mb-2 text-gray-300">EMA 50 Position</label>
+            <label className="block text-sm mb-2 text-gray-300">
+              EMA 50 Position
+            </label>
             <select
               value={form.ema50_position}
               onChange={(e) => update("ema50_position", e.target.value)}
@@ -140,7 +162,9 @@ export default function EditSetupForm({ setup }) {
       </div>
 
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
-        <h2 className="text-lg font-semibold text-blue-400">Step 2 — Block Breaker</h2>
+        <h2 className="text-lg font-semibold text-blue-400">
+          Step 2 — Block Breaker
+        </h2>
         <div>
           <label className="block text-sm mb-2 text-gray-300">
             Block Breaker Level (Flip Zone)
@@ -156,9 +180,13 @@ export default function EditSetupForm({ setup }) {
       </div>
 
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
-        <h2 className="text-lg font-semibold text-blue-400">Step 3 — Aligned Liquidity</h2>
+        <h2 className="text-lg font-semibold text-blue-400">
+          Step 3 — Aligned Liquidity
+        </h2>
         <div>
-          <label className="block text-sm mb-2 text-gray-300">Liquidity Level</label>
+          <label className="block text-sm mb-2 text-gray-300">
+            Liquidity Level
+          </label>
           <input
             type="number"
             step="any"
@@ -170,9 +198,13 @@ export default function EditSetupForm({ setup }) {
       </div>
 
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
-        <h2 className="text-lg font-semibold text-blue-400">Step 4 — Rejection Block</h2>
+        <h2 className="text-lg font-semibold text-blue-400">
+          Step 4 — Rejection Block
+        </h2>
         <div>
-          <label className="block text-sm mb-2 text-gray-300">Rejection Block Zone</label>
+          <label className="block text-sm mb-2 text-gray-300">
+            Rejection Block Zone
+          </label>
           <input
             type="text"
             value={form.rejection_block_zone}
@@ -191,6 +223,12 @@ export default function EditSetupForm({ setup }) {
           />
         </div>
       </div>
+
+      {/* Quality Score */}
+      <QualityScoreCard
+        scores={qualityScores}
+        onChange={setQualityScores}
+      />
 
       {error && (
         <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">
