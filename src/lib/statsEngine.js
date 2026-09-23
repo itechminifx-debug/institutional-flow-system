@@ -82,11 +82,11 @@ export function computeStats(trades) {
   );
 
   const highQuality = scoredTrades.filter(
-    (t) => (t.rb_quality_score || 0) >= 8
-  );
-  const mediumQuality = scoredTrades.filter(
-    (t) => (t.rb_quality_score || 0) >= 6 && (t.rb_quality_score || 0) < 8
-  );
+  (t) => (t.rb_quality_score || 0) >= 9
+);
+const mediumQuality = scoredTrades.filter(
+  (t) => (t.rb_quality_score || 0) >= 7 && (t.rb_quality_score || 0) < 9
+);
   const lowQuality = scoredTrades.filter(
     (t) => (t.rb_quality_score || 0) < 6
   );

@@ -201,8 +201,9 @@ function TradeContent() {
   const colors = statusColors(zoneStatus.status);
   const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
 
-  const rbScore = setup.rb_quality_score || 0;
-  const qualityFails = rbScore > 0 && rbScore < 8;
+ const rbScore = setup.rb_quality_score || 0;
+const gateThreshold = profile?.rb_gate_threshold || 8;
+const qualityFails = rbScore > 0 && rbScore < gateThreshold;
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -238,21 +239,21 @@ function TradeContent() {
         {qualityFails && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
-              ⚠️ Rejection Block Quality: {rbScore}/10
-            </p>
-            <p className="text-red-300 text-xs">
-              IFS rule: only trade rejection blocks scoring 8 or higher.
-            </p>
+  ⚠️ Rejection Block Quality: {rbScore}/12
+</p>
+<p className="text-red-300 text-xs">
+  IFS rule: only trade rejection blocks scoring {gateThreshold} or higher.
+</p>
           </div>
         )}
 
-        {rbScore >= 8 && !newsWarning && (
-          <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
-            <p className="text-green-300 text-sm font-semibold">
-              ✅ Rejection Block Quality: {rbScore}/10 — passes the IFS filter
-            </p>
-          </div>
-        )}
+       {rbScore >= gateThreshold && !newsWarning && (
+  <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
+    <p className="text-green-300 text-sm font-semibold">
+      ✅ Rejection Block Quality: {rbScore}/12 — passes the IFS filter
+    </p>
+  </div>
+)}
 
         {/* Setup Context */}
         <div className={`p-4 rounded-lg border ${colors.bg} ${colors.border}`}>

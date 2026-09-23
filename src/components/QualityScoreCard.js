@@ -4,16 +4,19 @@ import { useState } from "react";
 import {
   QUALITY_FIELDS,
   qualityLabel,
+  maxQualityScore,
 } from "@/lib/rejectionBlockScorer";
 
-export default function QualityScoreCard({ scores, onChange }) {
+export default function QualityScoreCard({ scores, onChange, threshold = 8 }) {
   const [expanded, setExpanded] = useState(false);
 
   const total = QUALITY_FIELDS.reduce(
     (sum, f) => sum + (parseInt(scores[f.key]) || 0),
     0
   );
+  const max = maxQualityScore();
   const label = qualityLabel(total);
+  const passes = total >= threshold;
 
   return (
     <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -23,12 +26,12 @@ export default function QualityScoreCard({ scores, onChange }) {
             Rejection Block Quality
           </h2>
           <p className="text-gray-500 text-xs mt-1">
-            Score 8+ to trade (IFS filter rule)
+            Score {threshold}+ to trade (IFS filter rule)
           </p>
         </div>
         <div className="text-right">
           <p className={`text-2xl font-bold tabular-nums ${label.color}`}>
-            {total}/10
+            {total}/{max}
           </p>
           <p className={`text-xs ${label.color}`}>
             {label.emoji} {label.label}
@@ -36,17 +39,12 @@ export default function QualityScoreCard({ scores, onChange }) {
         </div>
       </div>
 
-      {/* Progress bar */}
       <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
         <div
           className={`h-full transition-all ${
-            total >= 8
-              ? "bg-green-500"
-              : total >= 6
-              ? "bg-yellow-500"
-              : "bg-red-500"
+            passes ? "bg-green-500" : total >= threshold - 2 ? "bg-yellow-500" : "bg-red-500"
           }`}
-          style={{ width: `${(total / 10) * 100}%` }}
+          style={{ width: `${(total / max) * 100}%` }}
         />
       </div>
 
@@ -94,14 +92,14 @@ export default function QualityScoreCard({ scores, onChange }) {
         </div>
       )}
 
-      {total > 0 && total < 8 && (
+      {total > 0 && !passes && (
         <div className="p-3 rounded-lg bg-yellow-900/30 border border-yellow-800 text-yellow-200 text-xs">
-          ⚠️ Score below 8. IFS rule: wait for a higher-quality rejection
-          block, or skip this setup.
+          ⚠️ Score below {threshold}. IFS rule: wait for a higher-quality
+          rejection block, or skip this setup.
         </div>
       )}
 
-      {total >= 8 && (
+      {passes && (
         <div className="p-3 rounded-lg bg-green-900/30 border border-green-800 text-green-200 text-xs">
           ✅ Score passes the IFS filter — proceed to checklist.
         </div>

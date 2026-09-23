@@ -24,13 +24,14 @@ export default function EditSetupForm({ setup }) {
     notes: setup.notes || "",
   });
 
-  const [qualityScores, setQualityScores] = useState({
-    sweep: setup.rb_sweep_score || 0,
-    wick_body: setup.rb_wick_body_score || 0,
-    displacement: setup.rb_displacement_score || 0,
-    alignment: setup.rb_alignment_score || 0,
-    freshness: setup.rb_freshness_score || 0,
-  });
+ const [qualityScores, setQualityScores] = useState({
+  sweep: setup.rb_sweep_score || 0,
+  wick_body: setup.rb_wick_body_score || 0,
+  displacement: setup.rb_displacement_score || 0,
+  alignment: setup.rb_alignment_score || 0,
+  freshness: setup.rb_freshness_score || 0,
+  battlefield: setup.rb_battlefield_score || 0,
+});
 
   const [context, setContext] = useState({
     institutional_cycle: setup.institutional_cycle || null,
@@ -89,6 +90,15 @@ export default function EditSetupForm({ setup }) {
         rb_displacement_score: qualityScores.displacement,
         rb_alignment_score: qualityScores.alignment,
         rb_freshness_score: qualityScores.freshness,
+       rb_battlefield_score: qualityScores.battlefield || 0,
+battlefield_size:
+  qualityScores.battlefield === 2
+    ? "very_narrow"
+    : qualityScores.battlefield === 1
+    ? "narrow"
+    : qualityScores.battlefield === 0
+    ? "wide"
+    : null,
         ce_price: cePrice,
         use_ce_entry: useCeEntry,
         // Context Layers

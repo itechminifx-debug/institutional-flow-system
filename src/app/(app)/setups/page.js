@@ -118,19 +118,18 @@ export default async function SetupsPage({ searchParams }) {
                         </span>
 
                         {rbScore > 0 && (
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${
-                              rbScore >= 8
-                                ? "bg-green-900/40 text-green-300"
-                                : rbScore >= 6
-                                ? "bg-yellow-900/40 text-yellow-300"
-                                : "bg-red-900/40 text-red-300"
-                            }`}
-                          >
-                            RB {rbScore}/10
-                          </span>
-                        )}
-
+  <span
+    className={`text-xs px-2 py-0.5 rounded-full ${
+      rbScore >= 9
+        ? "bg-green-900/40 text-green-300"
+        : rbScore >= 7
+        ? "bg-yellow-900/40 text-yellow-300"
+        : "bg-red-900/40 text-red-300"
+    }`}
+  >
+    RB {rbScore}/12
+  </span>
+)}
                         {cycle && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${cycle.color}`}

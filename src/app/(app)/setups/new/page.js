@@ -25,13 +25,14 @@ export default function NewSetupPage() {
     notes: "",
   });
 
-  const [qualityScores, setQualityScores] = useState({
-    sweep: 0,
-    wick_body: 0,
-    displacement: 0,
-    alignment: 0,
-    freshness: 0,
-  });
+ const [qualityScores, setQualityScores] = useState({
+  sweep: 0,
+  wick_body: 0,
+  displacement: 0,
+  alignment: 0,
+  freshness: 0,
+  battlefield: 0,
+});
 
   const [context, setContext] = useState({
     institutional_cycle: null,
@@ -96,6 +97,15 @@ export default function NewSetupPage() {
       rb_displacement_score: qualityScores.displacement,
       rb_alignment_score: qualityScores.alignment,
       rb_freshness_score: qualityScores.freshness,
+      rb_battlefield_score: qualityScores.battlefield || 0,
+      battlefield_size:
+      qualityScores.battlefield === 2
+    ? "very_narrow"
+    : qualityScores.battlefield === 1
+    ? "narrow"
+    : qualityScores.battlefield === 0
+    ? "wide"
+    : null,
       ce_price: cePrice,
       use_ce_entry: useCeEntry,
       // Context Layers

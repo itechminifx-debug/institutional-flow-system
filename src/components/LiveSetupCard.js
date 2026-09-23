@@ -111,18 +111,18 @@ export default function LiveSetupCard({ setup }) {
               {setup.d1_bias}
             </span>
             {rbScore > 0 && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full ${
-                  rbScore >= 8
-                    ? "bg-green-900/40 text-green-300"
-                    : rbScore >= 6
-                    ? "bg-yellow-900/40 text-yellow-300"
-                    : "bg-red-900/40 text-red-300"
-                }`}
-              >
-                RB {rbScore}/10
-              </span>
-            )}
+  <span
+    className={`text-xs px-2 py-0.5 rounded-full ${
+      rbScore >= 9
+        ? "bg-green-900/40 text-green-300"
+        : rbScore >= 7
+        ? "bg-yellow-900/40 text-yellow-300"
+        : "bg-red-900/40 text-red-300"
+    }`}
+  >
+    RB {rbScore}/12
+  </span>
+)}
           </div>
           <p className="text-gray-500 text-xs mt-1">
             Zone: {setup.rejection_block_zone || "—"}

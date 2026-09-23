@@ -13,7 +13,8 @@ export default function SettingsForm({ profile, userId }) {
     max_trades_per_day: profile?.max_trades_per_day ?? 3,
     default_lot_size: profile?.default_lot_size ?? 0.01,
     telegram_bot_token: profile?.telegram_bot_token ?? "",
-  telegram_chat_id: profile?.telegram_chat_id ?? "",
+    telegram_chat_id: profile?.telegram_chat_id ?? "",
+    rb_gate_threshold: profile?.rb_gate_threshold ?? 8,
   });
 
   const [loading, setLoading] = useState(false);
@@ -37,7 +38,8 @@ export default function SettingsForm({ profile, userId }) {
       max_trades_per_day: parseInt(form.max_trades_per_day) || 3,
       default_lot_size: parseFloat(form.default_lot_size) || 0.01,
       telegram_bot_token: form.telegram_bot_token || null,
-  telegram_chat_id: form.telegram_chat_id || null,
+      telegram_chat_id: form.telegram_chat_id || null,
+      rb_gate_threshold: parseInt(form.rb_gate_threshold) || 8,
       updated_at: new Date().toISOString(),
     };
 
@@ -56,7 +58,6 @@ export default function SettingsForm({ profile, userId }) {
     setTimeout(() => setSuccess(""), 2000);
   }
 
-  // Compute the dollar risk for preview
   const accountSize = parseFloat(form.account_size) || 0;
   const riskPercent = parseFloat(form.risk_percent) || 1;
   const dollarRisk = (accountSize * riskPercent) / 100;
@@ -65,10 +66,9 @@ export default function SettingsForm({ profile, userId }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Account */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
-        <h2 className="text-lg font-semibold text-blue-400">
-          Account
-        </h2>
+        <h2 className="text-lg font-semibold text-blue-400">Account</h2>
 
         <div>
           <label className="block text-sm mb-2 text-gray-300">
@@ -89,6 +89,7 @@ export default function SettingsForm({ profile, userId }) {
         </div>
       </div>
 
+      {/* Risk Management */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Risk Management
@@ -152,45 +153,77 @@ export default function SettingsForm({ profile, userId }) {
         </div>
       </div>
 
-{/* Telegram Alerts */}
-<div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
-  <h2 className="text-lg font-semibold text-blue-400">
-    Telegram Alerts
-  </h2>
-  <p className="text-xs text-gray-500">
-    Receive a message when price hits your rejection zones.
-  </p>
+      {/* RB Quality Gate */}
+      <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
+        <h2 className="text-lg font-semibold text-blue-400">
+          Rejection Block Gate
+        </h2>
+        <p className="text-xs text-gray-500">
+          Only rejection blocks scoring ≥ this value pass the trade filter.
+        </p>
 
-  <div>
-    <label className="block text-sm mb-2 text-gray-300">
-      Bot Token
-    </label>
-    <input
-      type="password"
-      value={form.telegram_bot_token || ""}
-      onChange={(e) => update("telegram_bot_token", e.target.value)}
-      placeholder="123456789:ABCdef..."
-      className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-    />
-  </div>
+        <div>
+          <label className="block text-sm mb-2 text-gray-300">
+            RB Gate Threshold (out of 12)
+          </label>
+          <select
+            value={form.rb_gate_threshold}
+            onChange={(e) => update("rb_gate_threshold", e.target.value)}
+            className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
+          >
+            <option value={7}>7/12 — Lenient</option>
+            <option value={8}>8/12 — Standard (default)</option>
+            <option value={9}>9/12 — Strict</option>
+            <option value={10}>10/12 — Very Strict</option>
+            <option value={11}>11/12 — Elite Only</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Recommended: 8 or 9 depending on your discipline level.
+          </p>
+        </div>
+      </div>
 
-  <div>
-    <label className="block text-sm mb-2 text-gray-300">
-      Chat ID
-    </label>
-    <input
-      type="text"
-      value={form.telegram_chat_id || ""}
-      onChange={(e) => update("telegram_chat_id", e.target.value)}
-      placeholder="123456789"
-      className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-    />
-  </div>
-</div>
+      {/* Telegram Alerts */}
+      <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
+        <h2 className="text-lg font-semibold text-blue-400">
+          Telegram Alerts
+        </h2>
+        <p className="text-xs text-gray-500">
+          Get notified when price hits your rejection zones.
+        </p>
 
+        <div>
+          <label className="block text-sm mb-2 text-gray-300">
+            Bot Token
+          </label>
+          <input
+            type="password"
+            value={form.telegram_bot_token}
+            onChange={(e) => update("telegram_bot_token", e.target.value)}
+            placeholder="123456789:ABCdef..."
+            className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Get this from @BotFather on Telegram.
+          </p>
+        </div>
 
+        <div>
+          <label className="block text-sm mb-2 text-gray-300">Chat ID</label>
+          <input
+            type="text"
+            value={form.telegram_chat_id}
+            onChange={(e) => update("telegram_chat_id", e.target.value)}
+            placeholder="123456789"
+            className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Message @userinfobot on Telegram to get your Chat ID.
+          </p>
+        </div>
+      </div>
 
-      {/* Preview */}
+      {/* Risk Preview */}
       <div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 space-y-2">
         <h3 className="text-sm font-semibold text-blue-300">
           Risk Preview

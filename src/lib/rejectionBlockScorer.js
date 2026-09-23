@@ -1,12 +1,14 @@
-// Rejection Block Quality Score — 0 to 10 total
+// Rejection Block Quality Score — 0 to 12 total
 //
 // Sweep of key level: 0-2
 // Wick-to-body ratio: 0-2
 // Displacement: 0-3
 // Timeframe alignment: 0-2
 // Freshness: 0-1
+// Battlefield size: 0-2  ← NEW
 //
-// Rule from IFS: only trade if score >= 8
+// Default rule from IFS: only trade if score >= 8
+// Optional: gate >= 9 when Battlefield is enforced
 
 export const QUALITY_FIELDS = [
   {
@@ -64,6 +66,17 @@ export const QUALITY_FIELDS = [
       { value: 1, label: "First touch — fresh ✅" },
     ],
   },
+  {
+    key: "battlefield",
+    label: "Battlefield Size",
+    max: 2,
+    why: "Space between key level and rejection block. Narrower = more explosive.",
+    options: [
+      { value: 0, label: "Wide — indecision" },
+      { value: 1, label: "Narrow — compression" },
+      { value: 2, label: "Very Narrow — explosive ✅" },
+    ],
+  },
 ];
 
 export function computeQualityScore(scores) {
@@ -73,14 +86,47 @@ export function computeQualityScore(scores) {
   );
 }
 
+export function maxQualityScore() {
+  return QUALITY_FIELDS.reduce((sum, f) => sum + f.max, 0);
+}
+
 export function qualityLabel(score) {
-  if (score >= 9) return { label: "A+ Setup", emoji: "🏆", color: "text-green-300" };
-  if (score >= 8) return { label: "A Setup", emoji: "✅", color: "text-green-400" };
-  if (score >= 6) return { label: "B Setup", emoji: "⚠️", color: "text-yellow-400" };
-  if (score >= 4) return { label: "C Setup", emoji: "🟠", color: "text-orange-400" };
+  if (score >= 11)
+    return { label: "A+ Setup", emoji: "🏆", color: "text-green-300" };
+  if (score >= 9)
+    return { label: "A Setup", emoji: "✅", color: "text-green-400" };
+  if (score >= 7)
+    return { label: "B Setup", emoji: "⚠️", color: "text-yellow-400" };
+  if (score >= 5)
+    return { label: "C Setup", emoji: "🟠", color: "text-orange-400" };
   return { label: "D Setup", emoji: "🔴", color: "text-red-400" };
 }
 
-export function passesQualityGate(score) {
-  return score >= 8;
+// Default gate: 8/12 OR 9/12 (user configurable)
+export function passesQualityGate(score, threshold = 8) {
+  return score >= threshold;
+}
+
+// Auto-suggest battlefield size from key level + zone
+// Returns 'wide' | 'narrow' | 'very_narrow' | null
+export function suggestBattlefield(keyLevel, zone) {
+  if (!keyLevel || !zone || zone.low == null || zone.high == null) return null;
+
+  const key = parseFloat(keyLevel);
+  if (isNaN(key)) return null;
+
+  // Distance from key level to nearest zone edge
+  const distance = Math.min(
+    Math.abs(key - zone.low),
+    Math.abs(key - zone.high)
+  );
+
+  const zoneSize = zone.high - zone.low;
+  if (zoneSize <= 0) return null;
+
+  const ratio = distance / zoneSize;
+
+  if (ratio <= 0.3) return "very_narrow";
+  if (ratio <= 1.0) return "narrow";
+  return "wide";
 }
