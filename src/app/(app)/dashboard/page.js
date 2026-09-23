@@ -10,6 +10,7 @@ import NewsWidget from "@/components/NewsWidget";
 import ReviewWidget from "@/components/ReviewWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
+import PlanWidget from "@/components/PlanWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
           <ConfluenceWidget />
           <NewsWidget />
           <ReviewWidget />
+          <PlanWidget />
         </div>
 
         {/* Live Zone Watchdog */}
