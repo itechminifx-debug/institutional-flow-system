@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
+import { parseZone } from "@/lib/zoneHelpers";
+import { computeCEPrice } from "@/lib/riskEngine";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
@@ -30,12 +32,18 @@ export default function NewSetupPage() {
     freshness: 0,
   });
 
+  const [useCeEntry, setUseCeEntry] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
+
+  const parsedZone = form.rejection_block_zone
+    ? parseZone(form.rejection_block_zone)
+    : null;
+  const cePrice = parsedZone ? computeCEPrice(parsedZone) : null;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -67,13 +75,14 @@ export default function NewSetupPage() {
         : null,
       rejection_block_zone: form.rejection_block_zone,
       notes: form.notes,
-      // Quality scores
       rb_quality_score: qualityTotal,
       rb_sweep_score: qualityScores.sweep,
       rb_wick_body_score: qualityScores.wick_body,
       rb_displacement_score: qualityScores.displacement,
       rb_alignment_score: qualityScores.alignment,
       rb_freshness_score: qualityScores.freshness,
+      ce_price: cePrice,
+      use_ce_entry: useCeEntry,
     });
 
     setLoading(false);
@@ -91,7 +100,10 @@ export default function NewSetupPage() {
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <Link href="/setups" className="text-blue-400 text-sm hover:underline">
+          <Link
+            href="/setups"
+            className="text-blue-400 text-sm hover:underline"
+          >
             ← Back to Setups
           </Link>
           <h1 className="text-2xl font-bold mt-2">New Setup</h1>
@@ -101,7 +113,7 @@ export default function NewSetupPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Step 1: Direction */}
+          {/* Step 1 */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
             <h2 className="text-lg font-semibold text-blue-400">
               Step 1 — D1 Direction
@@ -153,7 +165,7 @@ export default function NewSetupPage() {
             </div>
           </div>
 
-          {/* Step 2: Block Breaker */}
+          {/* Step 2 */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
             <h2 className="text-lg font-semibold text-blue-400">
               Step 2 — Block Breaker
@@ -166,14 +178,16 @@ export default function NewSetupPage() {
                 type="number"
                 step="any"
                 value={form.block_breaker_level}
-                onChange={(e) => update("block_breaker_level", e.target.value)}
+                onChange={(e) =>
+                  update("block_breaker_level", e.target.value)
+                }
                 placeholder="e.g. 2450.50"
                 className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
               />
             </div>
           </div>
 
-          {/* Step 3: Aligned Liquidity */}
+          {/* Step 3 */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
             <h2 className="text-lg font-semibold text-blue-400">
               Step 3 — Aligned Liquidity
@@ -193,7 +207,7 @@ export default function NewSetupPage() {
             </div>
           </div>
 
-          {/* Step 4: Rejection Block */}
+          {/* Step 4 */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
             <h2 className="text-lg font-semibold text-blue-400">
               Step 4 — Rejection Block
@@ -205,8 +219,10 @@ export default function NewSetupPage() {
               <input
                 type="text"
                 value={form.rejection_block_zone}
-                onChange={(e) => update("rejection_block_zone", e.target.value)}
-                placeholder="e.g. 2452-2458"
+                onChange={(e) =>
+                  update("rejection_block_zone", e.target.value)
+                }
+                placeholder="e.g. 208700-208900"
                 className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
               />
             </div>
@@ -222,7 +238,50 @@ export default function NewSetupPage() {
             </div>
           </div>
 
-          {/* Step 5: Rejection Block Quality Score */}
+          {/* Consequent Encroachment */}
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold text-blue-400">
+                Consequent Encroachment (CE)
+              </h2>
+              <p className="text-gray-500 text-xs mt-1">
+                50% midpoint of rejection block — precision entry
+              </p>
+            </div>
+
+            {parsedZone && cePrice && (
+              <div className="p-3 rounded-lg bg-black border border-gray-800">
+                <p className="text-xs text-gray-400 mb-1">CE Price</p>
+                <p className="text-lg font-bold tabular-nums text-yellow-400">
+                  {cePrice.toFixed(2)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Strong trends often tap CE and reverse without touching the
+                  wick extreme.
+                </p>
+              </div>
+            )}
+
+            {!parsedZone && (
+              <p className="text-xs text-gray-500">
+                Enter a rejection block zone to compute CE.
+              </p>
+            )}
+
+            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-black border border-gray-800">
+              <input
+                type="checkbox"
+                checked={useCeEntry}
+                onChange={(e) => setUseCeEntry(e.target.checked)}
+                className="w-5 h-5 accent-blue-500"
+              />
+              <span className="text-sm">
+                Use CE price as my default entry on checklist
+              </span>
+            </label>
+          </div>
+
+          {/* Quality Score */}
           <QualityScoreCard
             scores={qualityScores}
             onChange={setQualityScores}

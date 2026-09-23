@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
+import { parseZone } from "@/lib/zoneHelpers";
+import { computeCEPrice } from "@/lib/riskEngine";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
@@ -29,6 +31,7 @@ export default function EditSetupForm({ setup }) {
     freshness: setup.rb_freshness_score || 0,
   });
 
+  const [useCeEntry, setUseCeEntry] = useState(setup.use_ce_entry || false);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -37,6 +40,11 @@ export default function EditSetupForm({ setup }) {
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
+
+  const parsedZone = form.rejection_block_zone
+    ? parseZone(form.rejection_block_zone)
+    : null;
+  const cePrice = parsedZone ? computeCEPrice(parsedZone) : null;
 
   async function handleSave(e) {
     e.preventDefault();
@@ -66,6 +74,8 @@ export default function EditSetupForm({ setup }) {
         rb_displacement_score: qualityScores.displacement,
         rb_alignment_score: qualityScores.alignment,
         rb_freshness_score: qualityScores.freshness,
+        ce_price: cePrice,
+        use_ce_entry: useCeEntry,
       })
       .eq("id", setup.id);
 
@@ -222,6 +232,49 @@ export default function EditSetupForm({ setup }) {
             className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none resize-none"
           />
         </div>
+      </div>
+
+      {/* Consequent Encroachment */}
+      <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-blue-400">
+            Consequent Encroachment (CE)
+          </h2>
+          <p className="text-gray-500 text-xs mt-1">
+            50% midpoint of rejection block — precision entry
+          </p>
+        </div>
+
+        {parsedZone && cePrice && (
+          <div className="p-3 rounded-lg bg-black border border-gray-800">
+            <p className="text-xs text-gray-400 mb-1">CE Price</p>
+            <p className="text-lg font-bold tabular-nums text-yellow-400">
+              {cePrice.toFixed(2)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Strong trends often tap CE and reverse without touching the wick
+              extreme.
+            </p>
+          </div>
+        )}
+
+        {!parsedZone && (
+          <p className="text-xs text-gray-500">
+            Enter a rejection block zone to compute CE.
+          </p>
+        )}
+
+        <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-black border border-gray-800">
+          <input
+            type="checkbox"
+            checked={useCeEntry}
+            onChange={(e) => setUseCeEntry(e.target.checked)}
+            className="w-5 h-5 accent-blue-500"
+          />
+          <span className="text-sm">
+            Use CE price as my default entry on checklist
+          </span>
+        </label>
       </div>
 
       {/* Quality Score */}

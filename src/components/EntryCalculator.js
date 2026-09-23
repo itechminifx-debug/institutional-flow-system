@@ -7,6 +7,7 @@ import {
   suggestStopLoss,
   suggestTakeProfit,
   validateTrade,
+  computeCEPrice,
 } from "@/lib/riskEngine";
 import { parseZone } from "@/lib/zoneHelpers";
 
@@ -21,6 +22,9 @@ export default function EntryCalculator({
   const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
   const zone = parseZone(setup.rejection_block_zone);
 
+  const cePrice = computeCEPrice(zone);
+  const useCe = setup.use_ce_entry && cePrice;
+
   const [entryPrice, setEntryPrice] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
@@ -30,13 +34,17 @@ export default function EntryCalculator({
     tp: false,
   });
 
-  // Auto-fill entry price from live price
+  // Auto-fill entry price — prefer CE if enabled
   useEffect(() => {
-    if (livePrice && !entryPrice) {
-      setEntryPrice(livePrice.toFixed(2));
+    if (!entryPrice) {
+      if (useCe && cePrice) {
+        setEntryPrice(cePrice.toFixed(2));
+      } else if (livePrice) {
+        setEntryPrice(livePrice.toFixed(2));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [livePrice]);
+  }, [livePrice, cePrice, useCe]);
 
   // Auto-suggest SL when entry is set
   useEffect(() => {
@@ -86,7 +94,7 @@ export default function EntryCalculator({
   const rrWarning = rr > 0 && rr < 1;
 
   function handleEnter() {
-    if (!isValid || rrWarning) return;
+    if (!isValid || rrWarning || newsBlocked) return;
     onEnter({
       entry_price: entryNum,
       stop_loss: slNum,
@@ -114,10 +122,26 @@ export default function EntryCalculator({
         </span>
       </div>
 
+      {useCe && cePrice && (
+        <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800 space-y-1">
+          <p className="text-blue-300 text-xs font-semibold">
+            🎯 CE Entry Active
+          </p>
+          <p className="text-xs text-blue-200/80">
+            Default entry auto-filled to <strong>{cePrice.toFixed(2)}</strong>{" "}
+            — the 50% midpoint of your rejection block.
+          </p>
+          <p className="text-xs text-blue-200/60">
+            You can override manually if price never reaches CE.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label className="block text-sm mb-2 text-gray-300">
             Entry Price
+            {useCe && <span className="ml-2 text-xs text-blue-400">(CE)</span>}
           </label>
           <input
             type="number"
@@ -193,7 +217,6 @@ export default function EntryCalculator({
         </div>
       </div>
 
-      {/* Validation errors */}
       {(touched.entry || touched.sl || touched.tp) &&
         validationErrors.length > 0 && (
           <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm space-y-1">
@@ -210,24 +233,24 @@ export default function EntryCalculator({
       )}
 
       {newsBlocked && (
-  <div className="p-3 rounded-lg bg-red-950/60 border border-red-700 text-red-200 text-sm">
-    🚫 Trade blocked — high-impact news window active. Wait 60 minutes after
-    the release.
-  </div>
-)}
+        <div className="p-3 rounded-lg bg-red-950/60 border border-red-700 text-red-200 text-sm">
+          🚫 Trade blocked — high-impact news window active. Wait 60 minutes
+          after the release.
+        </div>
+      )}
 
-<button
-  type="button"
-  onClick={handleEnter}
-  disabled={submitting || !isValid || rrWarning || newsBlocked}
-  className="w-full py-4 rounded-lg bg-green-700 hover:bg-green-600 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
->
-  {submitting
-    ? "Entering trade..."
-    : newsBlocked
-    ? "TRADE BLOCKED — News Window"
-    : "ENTER TRADE"}
-</button>
+      <button
+        type="button"
+        onClick={handleEnter}
+        disabled={submitting || !isValid || rrWarning || newsBlocked}
+        className="w-full py-4 rounded-lg bg-green-700 hover:bg-green-600 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {submitting
+          ? "Entering trade..."
+          : newsBlocked
+          ? "TRADE BLOCKED — News Window"
+          : "ENTER TRADE"}
+      </button>
 
       <p className="text-xs text-gray-500 text-center">
         Validates direction, calculates lot size, and logs the trade.

@@ -101,7 +101,6 @@ function TradeContent() {
     setSubmitting(true);
     setError("");
 
-    // Hard block if within news window
     if (newsWarning) {
       setError(
         "Trading blocked: high-impact news window active. Wait 60 minutes after release."
@@ -131,6 +130,8 @@ function TradeContent() {
         direction,
         status: "open",
         rb_quality_score: setup.rb_quality_score || 0,
+        ce_price: setup.ce_price || null,
+        used_ce_entry: setup.use_ce_entry || false,
         ...entryData,
       })
       .select()
@@ -219,7 +220,7 @@ function TradeContent() {
           </p>
         </div>
 
-        {/* News Warning — highest priority */}
+        {/* News Warning */}
         {newsWarning && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -228,8 +229,7 @@ function TradeContent() {
             <p className="text-red-300 text-xs">
               <strong>{newsWarning.event_name}</strong> ({newsWarning.currency})
               — do not open new positions. Wait 60 minutes after the release
-              for the first move to settle. The initial spike is almost always
-              a trap.
+              for the first move to settle.
             </p>
           </div>
         )}
@@ -241,9 +241,7 @@ function TradeContent() {
               ⚠️ Rejection Block Quality: {rbScore}/10
             </p>
             <p className="text-red-300 text-xs">
-              IFS rule: only trade rejection blocks scoring 8 or higher. This
-              setup does not meet the filter. Consider waiting for a
-              higher-quality setup.
+              IFS rule: only trade rejection blocks scoring 8 or higher.
             </p>
           </div>
         )}
@@ -282,6 +280,11 @@ function TradeContent() {
                     }`}
                   >
                     RB {rbScore}/10
+                  </span>
+                )}
+                {setup.use_ce_entry && setup.ce_price && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300">
+                    CE {setup.ce_price.toFixed(2)}
                   </span>
                 )}
               </div>

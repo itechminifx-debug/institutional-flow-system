@@ -100,6 +100,11 @@ export function validateTrade({
   } else {
     errors.push("Direction must be 'buy' or 'sell'.");
   }
-
+// Compute the Consequent Encroachment (CE) price
+// = 50% midpoint of the rejection block zone
+export function computeCEPrice(zone) {
+  if (!zone || zone.low == null || zone.high == null) return null;
+  return Math.round(((zone.low + zone.high) / 2) * 100) / 100;
+}
   return errors;
 }
