@@ -20,6 +20,14 @@ export const INSTITUTIONAL_CYCLES = [
     description: "Institutions exiting — real move begins. Prepare entry.",
     color: "bg-red-900/40 text-red-300",
   },
+  {
+  key: "re_accumulation",
+  label: "Re-accumulation",
+  emoji: "🔁",
+  description:
+    "Institutions build again after a big move. Retail thinks it's a trend change — it's not.",
+  color: "bg-purple-900/40 text-purple-300",
+},
 ];
 
 export function cycleInfo(key) {

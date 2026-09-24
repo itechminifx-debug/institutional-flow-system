@@ -11,6 +11,7 @@ import ReviewWidget from "@/components/ReviewWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 import PlanWidget from "@/components/PlanWidget";
+import TrapWidget from "@/components/TrapWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -66,6 +67,8 @@ export default async function DashboardPage() {
           <NewsWidget />
           <ReviewWidget />
           <PlanWidget />
+          <LiquidityWidget />
+          <TrapWidget />
         </div>
 
         {/* Live Zone Watchdog */}

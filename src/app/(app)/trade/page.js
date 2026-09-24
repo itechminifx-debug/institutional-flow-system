@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
 import { isWithinNewsWindow } from "@/lib/newsHelpers";
+import { TRAP_TYPES } from "@/lib/trapHelpers";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
@@ -20,6 +21,7 @@ function TradeContent() {
   const [livePrice, setLivePrice] = useState(null);
   const [checklistComplete, setChecklistComplete] = useState(false);
   const [newsWarning, setNewsWarning] = useState(null);
+  const [selectedTrap, setSelectedTrap] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -131,10 +133,9 @@ function TradeContent() {
         direction,
         status: "open",
         rb_quality_score: setup.rb_quality_score || 0,
-        // Scenario is computed on the fly — no column needed
-// But we can store the label for stats later:
         ce_price: setup.ce_price || null,
         used_ce_entry: setup.use_ce_entry || false,
+        trap_type: selectedTrap || null,
         ...entryData,
       })
       .select()
@@ -204,9 +205,9 @@ function TradeContent() {
   const colors = statusColors(zoneStatus.status);
   const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
 
- const rbScore = setup.rb_quality_score || 0;
-const gateThreshold = profile?.rb_gate_threshold || 8;
-const qualityFails = rbScore > 0 && rbScore < gateThreshold;
+  const rbScore = setup.rb_quality_score || 0;
+  const gateThreshold = profile?.rb_gate_threshold || 8;
+  const qualityFails = rbScore > 0 && rbScore < gateThreshold;
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -237,6 +238,7 @@ const qualityFails = rbScore > 0 && rbScore < gateThreshold;
             </p>
           </div>
         )}
+
         {/* RB Scenario */}
         <ScenarioBanner setup={setup} />
 
@@ -244,21 +246,22 @@ const qualityFails = rbScore > 0 && rbScore < gateThreshold;
         {qualityFails && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
-  ⚠️ Rejection Block Quality: {rbScore}/12
-</p>
-<p className="text-red-300 text-xs">
-  IFS rule: only trade rejection blocks scoring {gateThreshold} or higher.
-</p>
+              ⚠️ Rejection Block Quality: {rbScore}/12
+            </p>
+            <p className="text-red-300 text-xs">
+              IFS rule: only trade rejection blocks scoring {gateThreshold} or
+              higher.
+            </p>
           </div>
         )}
 
-       {rbScore >= gateThreshold && !newsWarning && (
-  <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
-    <p className="text-green-300 text-sm font-semibold">
-      ✅ Rejection Block Quality: {rbScore}/12 — passes the IFS filter
-    </p>
-  </div>
-)}
+        {rbScore >= gateThreshold && !newsWarning && (
+          <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
+            <p className="text-green-300 text-sm font-semibold">
+              ✅ Rejection Block Quality: {rbScore}/12 — passes the IFS filter
+            </p>
+          </div>
+        )}
 
         {/* Setup Context */}
         <div className={`p-4 rounded-lg border ${colors.bg} ${colors.border}`}>
@@ -278,14 +281,14 @@ const qualityFails = rbScore > 0 && rbScore < gateThreshold;
                 {rbScore > 0 && (
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${
-                      rbScore >= 8
+                      rbScore >= 9
                         ? "bg-green-900/40 text-green-300"
-                        : rbScore >= 6
+                        : rbScore >= 7
                         ? "bg-yellow-900/40 text-yellow-300"
                         : "bg-red-900/40 text-red-300"
                     }`}
                   >
-                    RB {rbScore}/10
+                    RB {rbScore}/12
                   </span>
                 )}
                 {setup.use_ce_entry && setup.ce_price && (
@@ -339,6 +342,40 @@ const qualityFails = rbScore > 0 && rbScore < gateThreshold;
               </p>
             </div>
           )}
+        </div>
+
+        {/* Trap Tag */}
+        <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
+          <label className="block text-xs text-gray-400">
+            Was this setup triggered by a retail trap? (optional)
+          </label>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedTrap(null)}
+              className={`py-2 rounded-lg text-xs transition ${
+                selectedTrap === null
+                  ? "bg-gray-700 text-white font-medium"
+                  : "bg-black border border-gray-800 text-gray-400"
+              }`}
+            >
+              None
+            </button>
+            {TRAP_TYPES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setSelectedTrap(t.key)}
+                className={`py-2 rounded-lg text-xs transition ${
+                  selectedTrap === t.key
+                    ? `${t.color} font-bold border border-current`
+                    : "bg-black border border-gray-800 text-gray-400"
+                }`}
+              >
+                {t.emoji} {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Gated Checklist */}

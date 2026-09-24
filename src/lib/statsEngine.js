@@ -1,7 +1,7 @@
 // ============================================================
 // STATS ENGINE — Institutional Flow System
 // Aggregates all trade performance metrics including
-// Rejection Block Quality Score correlation
+// Rejection Block Quality and Trap correlation
 // ============================================================
 
 export function computeStats(trades) {
@@ -76,19 +76,18 @@ export function computeStats(trades) {
   });
 
   // ---------------- Rejection Block Quality Correlation ----------------
-  // Only consider trades that have a non-zero quality score
   const scoredTrades = closed.filter(
     (t) => (t.rb_quality_score || 0) > 0
   );
 
   const highQuality = scoredTrades.filter(
-  (t) => (t.rb_quality_score || 0) >= 9
-);
-const mediumQuality = scoredTrades.filter(
-  (t) => (t.rb_quality_score || 0) >= 7 && (t.rb_quality_score || 0) < 9
-);
+    (t) => (t.rb_quality_score || 0) >= 9
+  );
+  const mediumQuality = scoredTrades.filter(
+    (t) => (t.rb_quality_score || 0) >= 7 && (t.rb_quality_score || 0) < 9
+  );
   const lowQuality = scoredTrades.filter(
-    (t) => (t.rb_quality_score || 0) < 6
+    (t) => (t.rb_quality_score || 0) < 7
   );
 
   const highQualityWinRate =
@@ -110,7 +109,6 @@ const mediumQuality = scoredTrades.filter(
         100
       : 0;
 
-  // Average quality score across all scored trades
   const avgQualityScore =
     scoredTrades.length > 0
       ? scoredTrades.reduce(
@@ -118,6 +116,32 @@ const mediumQuality = scoredTrades.filter(
           0
         ) / scoredTrades.length
       : 0;
+
+  // ---------------- Trap Correlation ----------------
+  const trapTrades = closed.filter((t) => t.trap_type);
+  const nonTrapTrades = closed.filter((t) => !t.trap_type);
+
+  const trapWinRate =
+    trapTrades.length > 0
+      ? (trapTrades.filter((t) => t.status === "won").length /
+          trapTrades.length) *
+        100
+      : 0;
+
+  const nonTrapWinRate =
+    nonTrapTrades.length > 0
+      ? (nonTrapTrades.filter((t) => t.status === "won").length /
+          nonTrapTrades.length) *
+        100
+      : 0;
+
+  const byTrap = {};
+  trapTrades.forEach((t) => {
+    const key = t.trap_type;
+    if (!byTrap[key]) byTrap[key] = { won: 0, lost: 0, be: 0, total: 0 };
+    byTrap[key][t.status] = (byTrap[key][t.status] || 0) + 1;
+    byTrap[key].total += 1;
+  });
 
   return {
     // Overall
@@ -152,5 +176,12 @@ const mediumQuality = scoredTrades.filter(
     mediumQualityWinRate,
     lowQualityWinRate,
     avgQualityScore,
+
+    // Trap correlation
+    trapTradesCount: trapTrades.length,
+    nonTrapTradesCount: nonTrapTrades.length,
+    trapWinRate,
+    nonTrapWinRate,
+    byTrap,
   };
 }
