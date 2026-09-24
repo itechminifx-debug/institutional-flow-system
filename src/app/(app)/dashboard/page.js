@@ -12,6 +12,7 @@ import PlanWidget from "@/components/PlanWidget";
 import TrapWidget from "@/components/TrapWidget";
 import ChartChecklistWidget from "@/components/ChartChecklistWidget";
 import SweepConfluenceWidget from "@/components/SweepConfluenceWidget";
+import CEFlipWidget from "@/components/CEFlipWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 
@@ -68,6 +69,7 @@ export default async function DashboardPage() {
           <PlanWidget />
           <TrapWidget />
           <SweepConfluenceWidget />
+          <CEFlipWidget />
         </div>
 
         {safeSetups.length > 0 && (

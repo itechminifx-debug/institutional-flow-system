@@ -139,13 +139,39 @@ export default function EditSetupForm({ setup }) {
       })
       .eq("id", setup.id);
 
-    setLoading(false);
-
     if (updateError) {
       setError(updateError.message);
+      setLoading(false);
       return;
     }
 
+    // Auto-create CE flip tracker entry if not already exists
+    if (cePrice) {
+      const { data: existing } = await supabase
+        .from("ce_flips")
+        .select("id")
+        .eq("setup_id", setup.id)
+        .maybeSingle();
+
+      if (!existing) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from("ce_flips").insert({
+            user_id: user.id,
+            setup_id: setup.id,
+            pair: form.pair,
+            ce_price: cePrice,
+            original_direction:
+              form.d1_bias === "bullish" ? "bullish" : "bearish",
+            state: "fresh",
+          });
+        }
+      }
+    }
+
+    setLoading(false);
     setSuccess("Setup updated.");
     setTimeout(() => router.push("/setups"), 800);
   }
@@ -388,10 +414,8 @@ export default function EditSetupForm({ setup }) {
         </label>
       </div>
 
-      {/* Context Layers */}
       <ContextLayersCard values={context} onChange={setContext} />
 
-      {/* Quality Score */}
       <QualityScoreCard scores={qualityScores} onChange={setQualityScores} />
 
       {error && (

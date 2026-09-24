@@ -118,60 +118,77 @@ function NewSetupPageContent() {
 
     const qualityTotal = computeQualityScore(qualityScores);
 
-    const { error: insertError } = await supabase.from("setups").insert({
-      user_id: user.id,
-      pair: form.pair,
-      d1_bias: form.d1_bias,
-      ema50_position: form.ema50_position,
-      block_breaker_level: form.block_breaker_level
-        ? parseFloat(form.block_breaker_level)
-        : null,
-      aligned_liquidity: form.aligned_liquidity
-        ? parseFloat(form.aligned_liquidity)
-        : null,
-      rejection_block_zone: form.rejection_block_zone,
-      sweep_price: sweepPrice,
-      sweep_overlap: sweepOverlap,
-      effectiveness_tier: computedTier.key,
-      effectiveness_score: effectivenessScore(computedTier),
-      notes: form.notes,
-      rb_quality_score: qualityTotal,
-      rb_sweep_score: qualityScores.sweep,
-      rb_wick_body_score: qualityScores.wick_body,
-      rb_displacement_score: qualityScores.displacement,
-      rb_alignment_score: qualityScores.alignment,
-      rb_freshness_score: qualityScores.freshness,
-      rb_battlefield_score: qualityScores.battlefield || 0,
-      battlefield_size:
-        qualityScores.battlefield === 2
-          ? "very_narrow"
-          : qualityScores.battlefield === 1
-          ? "narrow"
-          : qualityScores.battlefield === 0
-          ? "wide"
+    const { data: insertedSetup, error: insertError } = await supabase
+      .from("setups")
+      .insert({
+        user_id: user.id,
+        pair: form.pair,
+        d1_bias: form.d1_bias,
+        ema50_position: form.ema50_position,
+        block_breaker_level: form.block_breaker_level
+          ? parseFloat(form.block_breaker_level)
           : null,
-      ce_price: cePrice,
-      use_ce_entry: useCeEntry,
-      institutional_cycle: context.institutional_cycle,
-      fvg_present: context.fvg_present,
-      fvg_direction: context.fvg_direction,
-      fvg_low: context.fvg_low ? parseFloat(context.fvg_low) : null,
-      fvg_high: context.fvg_high ? parseFloat(context.fvg_high) : null,
-      ob_present: context.ob_present,
-      ob_type: context.ob_type,
-      ob_low: context.ob_low ? parseFloat(context.ob_low) : null,
-      ob_high: context.ob_high ? parseFloat(context.ob_high) : null,
-      twice_blocked: context.twice_blocked,
-      twice_blocked_notes: context.twice_blocked_notes,
-    });
-
-    setLoading(false);
+        aligned_liquidity: form.aligned_liquidity
+          ? parseFloat(form.aligned_liquidity)
+          : null,
+        rejection_block_zone: form.rejection_block_zone,
+        sweep_price: sweepPrice,
+        sweep_overlap: sweepOverlap,
+        effectiveness_tier: computedTier.key,
+        effectiveness_score: effectivenessScore(computedTier),
+        notes: form.notes,
+        rb_quality_score: qualityTotal,
+        rb_sweep_score: qualityScores.sweep,
+        rb_wick_body_score: qualityScores.wick_body,
+        rb_displacement_score: qualityScores.displacement,
+        rb_alignment_score: qualityScores.alignment,
+        rb_freshness_score: qualityScores.freshness,
+        rb_battlefield_score: qualityScores.battlefield || 0,
+        battlefield_size:
+          qualityScores.battlefield === 2
+            ? "very_narrow"
+            : qualityScores.battlefield === 1
+            ? "narrow"
+            : qualityScores.battlefield === 0
+            ? "wide"
+            : null,
+        ce_price: cePrice,
+        use_ce_entry: useCeEntry,
+        institutional_cycle: context.institutional_cycle,
+        fvg_present: context.fvg_present,
+        fvg_direction: context.fvg_direction,
+        fvg_low: context.fvg_low ? parseFloat(context.fvg_low) : null,
+        fvg_high: context.fvg_high ? parseFloat(context.fvg_high) : null,
+        ob_present: context.ob_present,
+        ob_type: context.ob_type,
+        ob_low: context.ob_low ? parseFloat(context.ob_low) : null,
+        ob_high: context.ob_high ? parseFloat(context.ob_high) : null,
+        twice_blocked: context.twice_blocked,
+        twice_blocked_notes: context.twice_blocked_notes,
+      })
+      .select()
+      .single();
 
     if (insertError) {
       setError(insertError.message);
+      setLoading(false);
       return;
     }
 
+    // Auto-create CE flip tracker entry
+    if (cePrice && insertedSetup) {
+      await supabase.from("ce_flips").insert({
+        user_id: user.id,
+        setup_id: insertedSetup.id,
+        pair: form.pair,
+        ce_price: cePrice,
+        original_direction:
+          form.d1_bias === "bullish" ? "bullish" : "bearish",
+        state: "fresh",
+      });
+    }
+
+    setLoading(false);
     router.push("/setups");
     router.refresh();
   }

@@ -5,22 +5,23 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/chart-checklist", label: "Chart" },
+  { href: "/mindset", label: "Mindset" },
+  { href: "/trend", label: "Trend" },
   { href: "/confluence", label: "Confluence" },
+  { href: "/liquidity", label: "Liquidity" },
+  { href: "/rb-validator", label: "RB Validator" },
+  { href: "/ce-tracker", label: "CE Tracker" },
   { href: "/setups", label: "Setups" },
   { href: "/trade", label: "Trade" },
   { href: "/news", label: "News" },
   { href: "/traps", label: "Traps" },
-  { href: "/rb-validator", label: "RB Validator" },
-  { href: "/trend", label: "Trend" },
-  { href: "/mindset", label: "Mindset" },
-  { href: "/chart-checklist", label: "Chart" },
-  { href: "/notes", label: "Notes" },
   { href: "/journal", label: "Journal" },
   { href: "/stats", label: "Stats" },
   { href: "/review", label: "Review" },
   { href: "/plan", label: "Plan" },
+  { href: "/notes", label: "Notes" },
   { href: "/settings", label: "Settings" },
-  
 ];
 
 export default function Navbar() {
@@ -28,9 +29,9 @@ export default function Navbar() {
 
   return (
     <nav className="border-b border-gray-800 bg-black sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-4">
+      <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-14">
-          <Link href="/dashboard" className="font-bold text-sm">
+          <Link href="/dashboard" className="font-bold text-sm shrink-0">
             IFS
           </Link>
 
@@ -43,9 +44,9 @@ export default function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition ${
+                  className={`px-3 py-1.5 rounded-md text-xs whitespace-nowrap transition ${
                     active
-                      ? "bg-blue-600 text-white"
+                      ? "bg-blue-600 text-white font-medium"
                       : "text-gray-400 hover:text-white hover:bg-gray-900"
                   }`}
                 >
