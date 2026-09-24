@@ -8,10 +8,10 @@ import MindsetWidget from "@/components/MindsetWidget";
 import ConfluenceWidget from "@/components/ConfluenceWidget";
 import NewsWidget from "@/components/NewsWidget";
 import ReviewWidget from "@/components/ReviewWidget";
-import GoldenBanner from "@/components/GoldenBanner";
-import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 import PlanWidget from "@/components/PlanWidget";
 import TrapWidget from "@/components/TrapWidget";
+import GoldenBanner from "@/components/GoldenBanner";
+import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -60,14 +60,13 @@ export default async function DashboardPage() {
         </div>
 
         {/* System Widgets */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
           <TrendWidget />
           <MindsetWidget />
           <ConfluenceWidget />
           <NewsWidget />
           <ReviewWidget />
           <PlanWidget />
-          <LiquidityWidget />
           <TrapWidget />
         </div>
 
