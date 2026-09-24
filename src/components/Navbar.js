@@ -13,12 +13,14 @@ const links = [
   { href: "/rb-validator", label: "RB Validator" },
   { href: "/trend", label: "Trend" },
   { href: "/mindset", label: "Mindset" },
+  { href: "/chart-checklist", label: "Chart" },
   { href: "/notes", label: "Notes" },
   { href: "/journal", label: "Journal" },
   { href: "/stats", label: "Stats" },
   { href: "/review", label: "Review" },
   { href: "/plan", label: "Plan" },
   { href: "/settings", label: "Settings" },
+  
 ];
 
 export default function Navbar() {

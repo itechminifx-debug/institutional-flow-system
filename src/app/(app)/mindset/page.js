@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { MINDSET_SECTIONS, totalItems } from "@/lib/mindsetContent";
+import Link from "next/link";
 
 export default function MindsetPage() {
   const router = useRouter();
@@ -127,6 +128,26 @@ export default function MindsetPage() {
                     ? "bg-red-950/30 border-red-900/50"
                     : "bg-gray-900 border-gray-800"
                 }`}
+{/* Chart Checklist link */}
+<div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 mb-4">
+  <div className="flex items-start justify-between">
+    <div>
+      <p className="text-sm font-semibold text-blue-300">
+        📊 Now walk the Chart Checklist
+      </p>
+      <p className="text-xs text-blue-200/70 mt-1">
+        After preparing your mind, prep your chart — 10 phases
+      </p>
+    </div>
+    <Link
+      href="/chart-checklist"
+      className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs whitespace-nowrap"
+    >
+      Open →
+    </Link>
+  </div>
+</div>
+
               >
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg font-semibold text-blue-400">
