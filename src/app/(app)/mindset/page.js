@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { MINDSET_SECTIONS, totalItems } from "@/lib/mindsetContent";
-import Link from "next/link";
 
 export default function MindsetPage() {
   const router = useRouter();
@@ -22,7 +22,6 @@ export default function MindsetPage() {
   const total = totalItems(MINDSET_SECTIONS);
   const completed = Object.values(checked).filter(Boolean).length;
 
-  // Check if emotional section is fully covered
   const emotionalSection = MINDSET_SECTIONS.find((s) => s.key === "emotional");
   const emotionalPass = emotionalSection.items.every(
     (item) => checked[item.key]
@@ -31,7 +30,6 @@ export default function MindsetPage() {
   async function handleComplete() {
     setError("");
 
-    // Soft warning if emotional section incomplete
     if (!emotionalPass && !showWarning) {
       setShowWarning(true);
       return;
@@ -55,7 +53,6 @@ export default function MindsetPage() {
       emotional_pass: emotionalPass,
     };
 
-    // Add all checkbox values
     MINDSET_SECTIONS.forEach((section) => {
       section.items.forEach((item) => {
         payload[item.key] = !!checked[item.key];
@@ -73,8 +70,7 @@ export default function MindsetPage() {
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    router.push("/chart-checklist");
   }
 
   return (
@@ -88,7 +84,7 @@ export default function MindsetPage() {
         </div>
 
         {/* Progress */}
-        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-6">
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-400">
               {completed}/{total} completed
@@ -111,6 +107,26 @@ export default function MindsetPage() {
           </div>
         </div>
 
+        {/* Chart Checklist link */}
+        <div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 mb-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-300">
+                📊 Now walk the Chart Checklist
+              </p>
+              <p className="text-xs text-blue-200/70 mt-1">
+                After preparing your mind, prep your chart — 10 phases
+              </p>
+            </div>
+            <Link
+              href="/chart-checklist"
+              className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs whitespace-nowrap"
+            >
+              Open →
+            </Link>
+          </div>
+        </div>
+
         {/* Sections */}
         <div className="space-y-4 mb-6">
           {MINDSET_SECTIONS.map((section) => {
@@ -128,26 +144,6 @@ export default function MindsetPage() {
                     ? "bg-red-950/30 border-red-900/50"
                     : "bg-gray-900 border-gray-800"
                 }`}
-{/* Chart Checklist link */}
-<div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 mb-4">
-  <div className="flex items-start justify-between">
-    <div>
-      <p className="text-sm font-semibold text-blue-300">
-        📊 Now walk the Chart Checklist
-      </p>
-      <p className="text-xs text-blue-200/70 mt-1">
-        After preparing your mind, prep your chart — 10 phases
-      </p>
-    </div>
-    <Link
-      href="/chart-checklist"
-      className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs whitespace-nowrap"
-    >
-      Open →
-    </Link>
-  </div>
-</div>
-
               >
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg font-semibold text-blue-400">
@@ -223,9 +219,9 @@ export default function MindsetPage() {
               ⚠️ Your emotional state is not clear.
             </p>
             <p className="text-red-300 text-xs">
-              Your blueprint says: if you're anxious, rushed, greedy, fearful, or
-              revenge-driven — do NOT trade today. Your capital will still be
-              there tomorrow.
+              Your blueprint says: if you're anxious, rushed, greedy, fearful,
+              or revenge-driven — do NOT trade today. Your capital will still
+              be there tomorrow.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -271,13 +267,13 @@ export default function MindsetPage() {
             : completed < total
             ? `Complete all ${total} items (${completed}/${total})`
             : emotionalPass
-            ? "✅ Complete Ritual — Begin Trading"
+            ? "✅ Complete Ritual — Walk the Chart"
             : "⚠️ Proceed with Warning"}
         </button>
 
         {emotionalPass && completed === total && (
           <p className="text-xs text-center text-green-400 mt-3">
-            Mind and heart prepared. Go trade with discipline.
+            Mind and heart prepared. Now walk the chart →
           </p>
         )}
       </div>
