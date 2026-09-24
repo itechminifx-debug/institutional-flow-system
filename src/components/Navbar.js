@@ -10,6 +10,7 @@ const links = [
   { href: "/trade", label: "Trade" },
   { href: "/news", label: "News" },
   { href: "/traps", label: "Traps" },
+  { href: "/rb-validator", label: "RB Validator" },
   { href: "/trend", label: "Trend" },
   { href: "/mindset", label: "Mindset" },
   { href: "/notes", label: "Notes" },

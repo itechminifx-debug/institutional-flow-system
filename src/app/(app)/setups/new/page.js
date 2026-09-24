@@ -263,6 +263,13 @@ export default function NewSetupPage() {
                 className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
               />
             </div>
+            <Link
+  href="/rb-validator"
+  target="_blank"
+  className="inline-block text-xs text-blue-400 hover:underline mt-1"
+>
+  🔍 Validate this Rejection Block first →
+</Link>
             <div>
               <label className="block text-sm mb-2 text-gray-300">Notes</label>
               <textarea
