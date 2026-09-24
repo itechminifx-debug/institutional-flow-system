@@ -1,38 +1,55 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
 import { parseZone } from "@/lib/zoneHelpers";
 import { computeCEPrice } from "@/lib/riskEngine";
+import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
-import { computeQualityScore } from "@/lib/rejectionBlockScorer";
 
-export default function NewSetupPage() {
+function NewSetupPageContent() {
   const router = useRouter();
   const supabase = createClient();
+  const searchParams = useSearchParams();
+
+  // Pre-fill from RB Validator
+  const prefillPair = searchParams.get("rb_pair");
+  const prefillLow = searchParams.get("rb_zone_low");
+  const prefillHigh = searchParams.get("rb_zone_high");
+  const prefillCe = searchParams.get("rb_ce");
+  const prefillConfidence = searchParams.get("rb_confidence");
+  const prefillDirection = searchParams.get("rb_direction");
 
   const [form, setForm] = useState({
-    pair: "Volatility 80",
-    d1_bias: "bullish",
+    pair: prefillPair || "Volatility 80",
+    d1_bias:
+      prefillDirection === "rfz"
+        ? "bearish"
+        : prefillDirection === "sfz"
+        ? "bullish"
+        : "bullish",
     ema50_position: "above",
     block_breaker_level: "",
     aligned_liquidity: "",
-    rejection_block_zone: "",
-    notes: "",
+    rejection_block_zone:
+      prefillLow && prefillHigh ? `${prefillLow}-${prefillHigh}` : "",
+    notes: prefillConfidence
+      ? `RB validated with confidence ${prefillConfidence}/10`
+      : "",
   });
 
- const [qualityScores, setQualityScores] = useState({
-  sweep: 0,
-  wick_body: 0,
-  displacement: 0,
-  alignment: 0,
-  freshness: 0,
-  battlefield: 0,
-});
+  const [qualityScores, setQualityScores] = useState({
+    sweep: 0,
+    wick_body: 0,
+    displacement: 0,
+    alignment: 0,
+    freshness: 0,
+    battlefield: 0,
+  });
 
   const [context, setContext] = useState({
     institutional_cycle: null,
@@ -48,7 +65,7 @@ export default function NewSetupPage() {
     twice_blocked_notes: "",
   });
 
-  const [useCeEntry, setUseCeEntry] = useState(false);
+  const [useCeEntry, setUseCeEntry] = useState(!!prefillCe);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -59,7 +76,11 @@ export default function NewSetupPage() {
   const parsedZone = form.rejection_block_zone
     ? parseZone(form.rejection_block_zone)
     : null;
-  const cePrice = parsedZone ? computeCEPrice(parsedZone) : null;
+  const cePrice = parsedZone
+    ? prefillCe && !form.cePrice
+      ? parseFloat(prefillCe)
+      : computeCEPrice(parsedZone)
+    : null;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -99,16 +120,15 @@ export default function NewSetupPage() {
       rb_freshness_score: qualityScores.freshness,
       rb_battlefield_score: qualityScores.battlefield || 0,
       battlefield_size:
-      qualityScores.battlefield === 2
-    ? "very_narrow"
-    : qualityScores.battlefield === 1
-    ? "narrow"
-    : qualityScores.battlefield === 0
-    ? "wide"
-    : null,
+        qualityScores.battlefield === 2
+          ? "very_narrow"
+          : qualityScores.battlefield === 1
+          ? "narrow"
+          : qualityScores.battlefield === 0
+          ? "wide"
+          : null,
       ce_price: cePrice,
       use_ce_entry: useCeEntry,
-      // Context Layers
       institutional_cycle: context.institutional_cycle,
       fvg_present: context.fvg_present,
       fvg_direction: context.fvg_direction,
@@ -148,6 +168,20 @@ export default function NewSetupPage() {
             Institutional Flow System — Steps 1 to 4 + Context Layers
           </p>
         </div>
+
+        {/* Pre-fill banner */}
+        {prefillConfidence && (
+          <div className="mb-4 p-3 rounded-lg bg-blue-950/40 border border-blue-800">
+            <p className="text-blue-300 text-xs font-semibold">
+              🔍 Pre-filled from RB Validator
+            </p>
+            <p className="text-blue-200/80 text-xs mt-1">
+              Confidence: {prefillConfidence}/10 · Zone: {prefillLow}-
+              {prefillHigh}
+              {prefillCe ? ` · CE: ${prefillCe}` : ""}
+            </p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Step 1 */}
@@ -262,14 +296,14 @@ export default function NewSetupPage() {
                 placeholder="e.g. 208700-208900"
                 className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
               />
+              <Link
+                href="/rb-validator"
+                target="_blank"
+                className="inline-block text-xs text-blue-400 hover:underline mt-2"
+              >
+                🔍 Validate this Rejection Block first →
+              </Link>
             </div>
-            <Link
-  href="/rb-validator"
-  target="_blank"
-  className="inline-block text-xs text-blue-400 hover:underline mt-1"
->
-  🔍 Validate this Rejection Block first →
-</Link>
             <div>
               <label className="block text-sm mb-2 text-gray-300">Notes</label>
               <textarea
@@ -346,5 +380,13 @@ export default function NewSetupPage() {
         </form>
       </div>
     </main>
+  );
+}
+
+export default function NewSetupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <NewSetupPageContent />
+    </Suspense>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
+import { formatPrice, fullPrice } from "@/lib/formatNumbers";
 import {
   validateRejectionBlock,
   confidenceLabel,
@@ -12,6 +14,7 @@ import {
 } from "@/lib/rbValidator";
 
 export default function RBValidatorPage() {
+  const router = useRouter();
   const supabase = createClient();
 
   const [form, setForm] = useState({
@@ -39,7 +42,7 @@ export default function RBValidatorPage() {
 
   const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedId, setSavedId] = useState(null);
   const [error, setError] = useState("");
 
   function update(field, value) {
@@ -49,7 +52,7 @@ export default function RBValidatorPage() {
   function handleValidate(e) {
     e.preventDefault();
     setError("");
-    setSaved(false);
+    setSavedId(null);
 
     const c1 = {
       open: parseFloat(form.c1_open),
@@ -99,7 +102,7 @@ export default function RBValidatorPage() {
       return;
     }
 
-    const { error: insertError } = await supabase
+    const { data, error: insertError } = await supabase
       .from("rb_validations")
       .insert({
         user_id: user.id,
@@ -139,7 +142,9 @@ export default function RBValidatorPage() {
         ce_price: result.cePrice,
         invalid_reason: result.invalidReason,
         notes: form.notes,
-      });
+      })
+      .select()
+      .single();
 
     setSaving(false);
 
@@ -148,7 +153,22 @@ export default function RBValidatorPage() {
       return;
     }
 
-    setSaved(true);
+    setSavedId(data.id);
+  }
+
+  function handleUseInSetup() {
+    if (!result || !result.isValid) return;
+
+    const params = new URLSearchParams({
+      rb_zone_low: result.zoneLow,
+      rb_zone_high: result.zoneHigh,
+      rb_pair: form.pair,
+      rb_ce: result.cePrice,
+      rb_direction: form.direction,
+      rb_confidence: result.confidenceScore,
+    });
+
+    router.push(`/setups/new?${params.toString()}`);
   }
 
   const label = result ? confidenceLabel(result.confidenceScore) : null;
@@ -349,7 +369,6 @@ export default function RBValidatorPage() {
         {/* Result */}
         {result && (
           <div className="space-y-4">
-            {/* Verdict banner */}
             <div
               className={`p-4 rounded-lg border-2 ${
                 result.isValid
@@ -380,7 +399,6 @@ export default function RBValidatorPage() {
               </p>
             </div>
 
-            {/* Checklist */}
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
               <h3 className="text-sm font-semibold text-blue-400 mb-2">
                 Condition Checks
@@ -398,14 +416,8 @@ export default function RBValidatorPage() {
                 label="Previous candle did NOT make both extremes"
                 ok={!result.previousCandleMadeBoth}
               />
-              <CheckRow
-                label="Sweep occurred"
-                ok={result.sweepOccurred}
-              />
-              <CheckRow
-                label="Close back inside"
-                ok={result.closeInside}
-              />
+              <CheckRow label="Sweep occurred" ok={result.sweepOccurred} />
+              <CheckRow label="Close back inside" ok={result.closeInside} />
               <CheckRow
                 label={`Wick/Body ≥ ${form.wickRatioMin}x`}
                 ok={result.wickRatioOk}
@@ -418,7 +430,6 @@ export default function RBValidatorPage() {
               />
             </div>
 
-            {/* Zone output */}
             {result.isValid && (
               <div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 space-y-2">
                 <h3 className="text-sm font-semibold text-blue-300">
@@ -428,29 +439,34 @@ export default function RBValidatorPage() {
                   <div>
                     <p className="text-gray-500 text-xs">Zone High</p>
                     <p className="font-bold tabular-nums text-white">
-                      {result.zoneHigh.toFixed(2)}
+                      {formatPrice(result.zoneHigh)}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      {fullPrice(result.zoneHigh)}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">CE (50%)</p>
                     <p className="font-bold tabular-nums text-yellow-400">
-                      {result.cePrice.toFixed(2)}
+                      {formatPrice(result.cePrice)}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      {fullPrice(result.cePrice)}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Zone Low</p>
                     <p className="font-bold tabular-nums text-white">
-                      {result.zoneLow.toFixed(2)}
+                      {formatPrice(result.zoneLow)}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      {fullPrice(result.zoneLow)}
                     </p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Use this zone in your Setup → Rejection Block field.
-                </p>
               </div>
             )}
 
-            {/* Notes */}
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
               <label className="block text-xs mb-1 text-gray-400">
                 Notes
@@ -470,24 +486,36 @@ export default function RBValidatorPage() {
               </div>
             )}
 
-            {saved && (
+            {savedId && (
               <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
-                ✅ Validation saved to history.
+                ✅ Saved to history.
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || saved}
-              className="w-full py-3 rounded-lg bg-green-700 hover:bg-green-600 font-medium disabled:opacity-50"
-            >
-              {saving
-                ? "Saving..."
-                : saved
-                ? "✓ Saved"
-                : "Save to History"}
-            </button>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || !!savedId}
+                className="py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-medium disabled:opacity-50 text-sm"
+              >
+                {saving
+                  ? "Saving..."
+                  : savedId
+                  ? "✓ Saved"
+                  : "💾 Save to History"}
+              </button>
+
+              {result.isValid && (
+                <button
+                  type="button"
+                  onClick={handleUseInSetup}
+                  className="py-3 rounded-lg bg-green-700 hover:bg-green-600 font-medium text-sm md:col-span-2"
+                >
+                  📋 Use this zone in a New Setup →
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
 import { confidenceLabel } from "@/lib/rbValidator";
+import { formatPrice } from "@/lib/formatNumbers";
+import DeleteValidationButton from "@/components/DeleteValidationButton";
 
 export default async function RBValidatorHistoryPage() {
   const supabase = await createClient();
@@ -44,9 +46,7 @@ export default async function RBValidatorHistoryPage() {
 
         {safe.length === 0 ? (
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
-            <p className="text-gray-400 mb-4">
-              No validations yet.
-            </p>
+            <p className="text-gray-400 mb-4">No validations yet.</p>
             <Link
               href="/rb-validator"
               className="inline-block px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm"
@@ -55,7 +55,7 @@ export default async function RBValidatorHistoryPage() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {safe.map((v) => {
               const label = confidenceLabel(v.confidence_score);
               return (
@@ -86,39 +86,71 @@ export default async function RBValidatorHistoryPage() {
                         {label.emoji} {label.label}
                       </span>
                     </div>
-                    <span className="text-xs text-gray-500">
-                      {v.confidence_score}/10
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">
+                        {v.confidence_score}/10
+                      </span>
+                      <DeleteValidationButton id={v.id} />
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-xs mt-2 pt-2 border-t border-current/20">
+                  {/* Condition checks */}
+                  <div className="grid grid-cols-2 gap-1 text-xs mt-3 pt-3 border-t border-current/20">
+                    <CheckLine label="Current made wick" ok={v.current_candle_made_wick} />
+                    <CheckLine label="No prev wick" ok={v.current_candle_made_wick && !v.previous_candle_made_both} />
+                    <CheckLine label="Sweep" ok={v.sweep_occurred} />
+                    <CheckLine label="Close inside" ok={v.close_inside} />
+                    <CheckLine
+                      label={`Wick ${v.wick_body_ratio?.toFixed(1)}x`}
+                      ok={(v.wick_body_ratio || 0) >= (v.wick_ratio_min || 2)}
+                    />
+                    <CheckLine
+                      label={`Disp ${v.displacement_actual?.toFixed(0)}`}
+                      ok={v.displacement_ok}
+                    />
+                  </div>
+
+                  {/* Zone */}
+                  <div className="grid grid-cols-3 gap-3 text-xs mt-3 pt-3 border-t border-current/20">
                     <div>
                       <p className="text-gray-500">Zone High</p>
-                      <p className="tabular-nums text-white">
-                        {v.zone_high?.toFixed(2) || "—"}
+                      <p className="tabular-nums text-white font-bold">
+                        {formatPrice(v.zone_high)}
                       </p>
                     </div>
                     <div>
                       <p className="text-gray-500">CE (50%)</p>
-                      <p className="tabular-nums text-yellow-400">
-                        {v.ce_price?.toFixed(2) || "—"}
+                      <p className="tabular-nums text-yellow-400 font-bold">
+                        {formatPrice(v.ce_price)}
                       </p>
                     </div>
                     <div>
                       <p className="text-gray-500">Zone Low</p>
-                      <p className="tabular-nums text-white">
-                        {v.zone_low?.toFixed(2) || "—"}
+                      <p className="tabular-nums text-white font-bold">
+                        {formatPrice(v.zone_low)}
                       </p>
                     </div>
                   </div>
 
                   {v.notes && (
-                    <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-current/20">
+                    <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-current/20">
                       {v.notes}
                     </p>
                   )}
 
-                  <p className="text-xs text-gray-600 mt-2">
+                  {/* Actions */}
+                  {v.is_valid && (
+                    <Link
+                      href={`/setups/new?rb_zone_low=${v.zone_low}&rb_zone_high=${v.zone_high}&rb_pair=${encodeURIComponent(
+                        v.pair
+                      )}&rb_ce=${v.ce_price}&rb_direction=${v.direction}&rb_confidence=${v.confidence_score}`}
+                      className="block mt-3 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-center text-xs font-medium"
+                    >
+                      📋 Use this zone in a New Setup →
+                    </Link>
+                  )}
+
+                  <p className="text-xs text-gray-600 mt-3">
                     {formatDate(v.created_at)}
                   </p>
                 </div>
@@ -128,5 +160,16 @@ export default async function RBValidatorHistoryPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function CheckLine({ label, ok }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={ok ? "text-green-400" : "text-red-400"}>
+        {ok ? "✅" : "❌"}
+      </span>
+      <span className="text-gray-300">{label}</span>
+    </div>
   );
 }
