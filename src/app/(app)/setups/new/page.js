@@ -8,6 +8,11 @@ import { PAIRS } from "@/lib/setupHelpers";
 import { parseZone } from "@/lib/zoneHelpers";
 import { computeCEPrice } from "@/lib/riskEngine";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
+import {
+  computeSweepOverlap,
+  computeEffectivenessTier,
+  effectivenessScore,
+} from "@/lib/sweepConfluence";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
 
@@ -16,7 +21,6 @@ function NewSetupPageContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
 
-  // Pre-fill from RB Validator
   const prefillPair = searchParams.get("rb_pair");
   const prefillLow = searchParams.get("rb_zone_low");
   const prefillHigh = searchParams.get("rb_zone_high");
@@ -37,6 +41,7 @@ function NewSetupPageContent() {
     aligned_liquidity: "",
     rejection_block_zone:
       prefillLow && prefillHigh ? `${prefillLow}-${prefillHigh}` : "",
+    sweep_price: "",
     notes: prefillConfidence
       ? `RB validated with confidence ${prefillConfidence}/10`
       : "",
@@ -82,6 +87,20 @@ function NewSetupPageContent() {
       : computeCEPrice(parsedZone)
     : null;
 
+  const sweepPrice = form.sweep_price ? parseFloat(form.sweep_price) : null;
+  const sweepOverlap =
+    sweepPrice && parsedZone
+      ? computeSweepOverlap(sweepPrice, parsedZone)
+      : false;
+
+  const computedTier = computeEffectivenessTier({
+    sweepConfirmed: sweepOverlap,
+    tfAligned: (qualityScores.alignment || 0) >= 2,
+    emaAligned:
+      (form.d1_bias === "bearish" && form.ema50_position === "above") ||
+      (form.d1_bias === "bullish" && form.ema50_position === "below"),
+  });
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -111,6 +130,10 @@ function NewSetupPageContent() {
         ? parseFloat(form.aligned_liquidity)
         : null,
       rejection_block_zone: form.rejection_block_zone,
+      sweep_price: sweepPrice,
+      sweep_overlap: sweepOverlap,
+      effectiveness_tier: computedTier.key,
+      effectiveness_score: effectivenessScore(computedTier),
       notes: form.notes,
       rb_quality_score: qualityTotal,
       rb_sweep_score: qualityScores.sweep,
@@ -169,7 +192,6 @@ function NewSetupPageContent() {
           </p>
         </div>
 
-        {/* Pre-fill banner */}
         {prefillConfidence && (
           <div className="mb-4 p-3 rounded-lg bg-blue-950/40 border border-blue-800">
             <p className="text-blue-300 text-xs font-semibold">
@@ -316,7 +338,64 @@ function NewSetupPageContent() {
             </div>
           </div>
 
-          {/* Consequent Encroachment */}
+          {/* Sweep Confluence */}
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold text-blue-400">
+                Sweep Confluence
+              </h2>
+              <p className="text-gray-500 text-xs mt-1">
+                Was the Rejection Block formed inside a liquidity sweep?
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Swept Price (swing high/low that was swept)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.sweep_price}
+                onChange={(e) => update("sweep_price", e.target.value)}
+                placeholder="e.g. 209500"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+
+            {sweepPrice && parsedZone && (
+              <div
+                className={`p-3 rounded-lg border ${
+                  sweepOverlap
+                    ? "bg-green-950/40 border-green-800"
+                    : "bg-yellow-950/40 border-yellow-800"
+                }`}
+              >
+                <p
+                  className={`text-xs font-semibold ${
+                    sweepOverlap ? "text-green-300" : "text-yellow-300"
+                  }`}
+                >
+                  {sweepOverlap
+                    ? "✅ Sweep inside RB zone — Confluence confirmed"
+                    : "⚠️ Sweep price is outside the RB zone"}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {sweepOverlap
+                    ? "Liquidity collected. Orders filled. High-probability zone."
+                    : "Rejection Block may not be institutional. Verify the zone."}
+                </p>
+              </div>
+            )}
+
+            {!form.sweep_price && (
+              <p className="text-xs text-gray-500">
+                Enter the swept price to enable confluence detection.
+              </p>
+            )}
+          </div>
+
+          {/* CE */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <div>
               <h2 className="text-lg font-semibold text-blue-400">
@@ -355,10 +434,8 @@ function NewSetupPageContent() {
             </label>
           </div>
 
-          {/* Context Layers */}
           <ContextLayersCard values={context} onChange={setContext} />
 
-          {/* Quality Score */}
           <QualityScoreCard
             scores={qualityScores}
             onChange={setQualityScores}

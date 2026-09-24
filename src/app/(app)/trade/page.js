@@ -10,6 +10,7 @@ import { TRAP_TYPES } from "@/lib/trapHelpers";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
+import SweepTierBadge from "@/components/SweepTierBadge";
 
 function TradeContent() {
   const searchParams = useSearchParams();
@@ -28,7 +29,6 @@ function TradeContent() {
 
   const supabase = createClient();
 
-  // Load setup + profile
   useEffect(() => {
     async function load() {
       if (!setupId) {
@@ -60,7 +60,6 @@ function TradeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setupId]);
 
-  // Poll live MT5 price
   useEffect(() => {
     async function fetchPrice() {
       try {
@@ -81,7 +80,6 @@ function TradeContent() {
     return () => clearInterval(interval);
   }, []);
 
-  // Check for active news window
   useEffect(() => {
     async function checkNews() {
       const { data } = await supabase
@@ -135,6 +133,7 @@ function TradeContent() {
         rb_quality_score: setup.rb_quality_score || 0,
         ce_price: setup.ce_price || null,
         used_ce_entry: setup.use_ce_entry || false,
+        effectiveness_tier: setup.effectiveness_tier || null,
         trap_type: selectedTrap || null,
         ...entryData,
       })
@@ -225,7 +224,6 @@ function TradeContent() {
           </p>
         </div>
 
-        {/* News Warning */}
         {newsWarning && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -233,16 +231,17 @@ function TradeContent() {
             </p>
             <p className="text-red-300 text-xs">
               <strong>{newsWarning.event_name}</strong> ({newsWarning.currency})
-              — do not open new positions. Wait 60 minutes after the release
-              for the first move to settle.
+              — do not open new positions. Wait 60 minutes after the release.
             </p>
           </div>
         )}
 
-        {/* RB Scenario */}
         <ScenarioBanner setup={setup} />
 
-        {/* RB Quality Warning */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <SweepTierBadge setup={setup} size="lg" />
+        </div>
+
         {qualityFails && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -263,7 +262,6 @@ function TradeContent() {
           </div>
         )}
 
-        {/* Setup Context */}
         <div className={`p-4 rounded-lg border ${colors.bg} ${colors.border}`}>
           <div className="flex items-start justify-between mb-3">
             <div>
@@ -344,7 +342,6 @@ function TradeContent() {
           )}
         </div>
 
-        {/* Trap Tag */}
         <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
           <label className="block text-xs text-gray-400">
             Was this setup triggered by a retail trap? (optional)
@@ -378,10 +375,8 @@ function TradeContent() {
           </div>
         </div>
 
-        {/* Gated Checklist */}
         <TradeChecklist onComplete={setChecklistComplete} />
 
-        {/* Entry Calculator */}
         {checklistComplete && (
           <EntryCalculator
             setup={setup}

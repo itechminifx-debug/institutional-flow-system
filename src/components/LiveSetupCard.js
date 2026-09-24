@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
 import ScenarioBadge from "@/components/ScenarioBadge";
+import SweepTierBadge from "@/components/SweepTierBadge";
 
 export default function LiveSetupCard({ setup }) {
   const [livePrice, setLivePrice] = useState(null);
@@ -112,19 +113,20 @@ export default function LiveSetupCard({ setup }) {
               {setup.d1_bias}
             </span>
             {rbScore > 0 && (
-  <span
-    className={`text-xs px-2 py-0.5 rounded-full ${
-      rbScore >= 9
-        ? "bg-green-900/40 text-green-300"
-        : rbScore >= 7
-        ? "bg-yellow-900/40 text-yellow-300"
-        : "bg-red-900/40 text-red-300"
-    }`}
-  >
-    RB {rbScore}/12
-  </span>
-)}
-<ScenarioBadge setup={setup} />
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  rbScore >= 9
+                    ? "bg-green-900/40 text-green-300"
+                    : rbScore >= 7
+                    ? "bg-yellow-900/40 text-yellow-300"
+                    : "bg-red-900/40 text-red-300"
+                }`}
+              >
+                RB {rbScore}/12
+              </span>
+            )}
+            <ScenarioBadge setup={setup} />
+            <SweepTierBadge setup={setup} />
           </div>
           <p className="text-gray-500 text-xs mt-1">
             Zone: {setup.rejection_block_zone || "—"}

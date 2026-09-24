@@ -5,6 +5,7 @@ import { formatDate } from "@/lib/setupHelpers";
 import { cycleInfo } from "@/lib/contextLayers";
 import SetupsFilters from "@/components/SetupsFilters";
 import ScenarioBadge from "@/components/ScenarioBadge";
+import SweepTierBadge from "@/components/SweepTierBadge";
 
 export default async function SetupsPage({ searchParams }) {
   const supabase = await createClient();
@@ -119,19 +120,22 @@ export default async function SetupsPage({ searchParams }) {
                         </span>
 
                         {rbScore > 0 && (
-  <span
-    className={`text-xs px-2 py-0.5 rounded-full ${
-      rbScore >= 9
-        ? "bg-green-900/40 text-green-300"
-        : rbScore >= 7
-        ? "bg-yellow-900/40 text-yellow-300"
-        : "bg-red-900/40 text-red-300"
-    }`}
-  >
-    RB {rbScore}/12
-  </span>
-)}
-<ScenarioBadge setup={s} />
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              rbScore >= 9
+                                ? "bg-green-900/40 text-green-300"
+                                : rbScore >= 7
+                                ? "bg-yellow-900/40 text-yellow-300"
+                                : "bg-red-900/40 text-red-300"
+                            }`}
+                          >
+                            RB {rbScore}/12
+                          </span>
+                        )}
+
+                        <ScenarioBadge setup={s} />
+                        <SweepTierBadge setup={s} />
+
                         {cycle && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${cycle.color}`}

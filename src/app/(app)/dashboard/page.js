@@ -10,9 +10,10 @@ import NewsWidget from "@/components/NewsWidget";
 import ReviewWidget from "@/components/ReviewWidget";
 import PlanWidget from "@/components/PlanWidget";
 import TrapWidget from "@/components/TrapWidget";
+import ChartChecklistWidget from "@/components/ChartChecklistWidget";
+import SweepConfluenceWidget from "@/components/SweepConfluenceWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
-import ChartChecklistWidget from "@/components/ChartChecklistWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -39,13 +40,10 @@ export default async function DashboardPage() {
           Welcome, <span className="text-blue-400">{user.email}</span>
         </p>
 
-        {/* Golden Rule Banner */}
         <GoldenBanner />
 
-        {/* Pinned Notes */}
         <PinnedNotesWidget />
 
-        {/* Live Prices */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <Mt5Ticker />
           <PriceTicker
@@ -60,7 +58,6 @@ export default async function DashboardPage() {
           />
         </div>
 
-        {/* System Widgets */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
           <ChartChecklistWidget />
           <TrendWidget />
@@ -70,9 +67,9 @@ export default async function DashboardPage() {
           <ReviewWidget />
           <PlanWidget />
           <TrapWidget />
+          <SweepConfluenceWidget />
         </div>
 
-        {/* Live Zone Watchdog */}
         {safeSetups.length > 0 && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold mb-3 text-gray-300">
@@ -86,7 +83,6 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {/* Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <a
             href="/setups"
