@@ -41,6 +41,9 @@ export default function RBValidatorPage() {
   });
 
   const [result, setResult] = useState(null);
+  const [shotConfirmed, setShotConfirmed] = useState(false);
+  const [shotAutoDetected, setShotAutoDetected] = useState(null);
+  const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState(null);
   const [error, setError] = useState("");
@@ -49,10 +52,63 @@ export default function RBValidatorPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  // ============================================================
+  // SHOT CANDLE DETECTION
+  // ============================================================
+  function detectShotCandle() {
+    const c3Open = parseFloat(form.c3_open);
+    const c3High = parseFloat(form.c3_high);
+    const c3Low = parseFloat(form.c3_low);
+    const c3Close = parseFloat(form.c3_close);
+    const atr = parseFloat(form.atr);
+
+    if (
+      isNaN(c3Open) ||
+      isNaN(c3High) ||
+      isNaN(c3Low) ||
+      isNaN(c3Close) ||
+      isNaN(atr)
+    ) {
+      return null;
+    }
+
+    const isRFZ = form.direction === "rfz";
+    const body = Math.abs(c3Close - c3Open);
+    const upperWick = c3High - Math.max(c3Open, c3Close);
+    const lowerWick = Math.min(c3Open, c3Close) - c3Low;
+
+    // For RFZ (sell): shot is a bearish candle moving down
+    // For SFZ (buy): shot is a bullish candle moving up
+    const directionCorrect = isRFZ
+      ? c3Close < c3Open
+      : c3Close > c3Open;
+
+    const bodySize = body >= atr; // Body must be ≥ 1× ATR
+    const opposingWick = isRFZ ? upperWick : lowerWick;
+    const wickSmall = opposingWick <= body * 0.1; // ≤ 10% of body
+
+    const isShot = directionCorrect && bodySize && wickSmall;
+
+    return {
+      isShot,
+      directionCorrect,
+      bodySize,
+      wickSmall,
+      body: Math.round(body * 100) / 100,
+      bodyVsATR: atr > 0 ? Math.round((body / atr) * 100) / 100 : 0,
+      opposingWick: Math.round(opposingWick * 100) / 100,
+      wickPercent:
+        body > 0
+          ? Math.round((opposingWick / body) * 10000) / 100
+          : 100,
+    };
+  }
+
   function handleValidate(e) {
     e.preventDefault();
     setError("");
     setSavedId(null);
+    setCopied(false);
 
     const c1 = {
       open: parseFloat(form.c1_open),
@@ -85,6 +141,10 @@ export default function RBValidatorPage() {
     });
 
     setResult(res);
+
+    const shot = detectShotCandle();
+    setShotAutoDetected(shot);
+    setShotConfirmed(shot ? shot.isShot : false);
   }
 
   async function handleSave() {
@@ -156,6 +216,30 @@ export default function RBValidatorPage() {
     setSavedId(data.id);
   }
 
+  function handleCopyEntry() {
+    if (!result || !result.isValid) return;
+
+    const isRFZ = form.direction === "rfz";
+    const ce = result.cePrice;
+    const sl = isRFZ ? result.zoneHigh : result.zoneLow;
+    const risk = Math.abs(ce - sl);
+    const tp = isRFZ ? ce - risk * 2 : ce + risk * 2;
+    const direction = isRFZ ? "SELL" : "BUY";
+
+    const text = `${form.pair} ${form.timeframe} ${direction}
+Entry (CE): ${fullPrice(ce)}
+Stop Loss:  ${fullPrice(sl)}
+Take Profit: ${fullPrice(tp)}
+RR Ratio:  1:2.00
+Zone: ${fullPrice(result.zoneLow)} - ${fullPrice(result.zoneHigh)}
+Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   function handleUseInSetup() {
     if (!result || !result.isValid) return;
 
@@ -166,12 +250,32 @@ export default function RBValidatorPage() {
       rb_ce: result.cePrice,
       rb_direction: form.direction,
       rb_confidence: result.confidenceScore,
+      rb_shot: shotConfirmed ? "1" : "0",
     });
 
     router.push(`/setups/new?${params.toString()}`);
   }
 
   const label = result ? confidenceLabel(result.confidenceScore) : null;
+  const isRFZ = form.direction === "rfz";
+
+  // Compute entry/SL/TP for display
+  const entryData = result && result.isValid
+    ? (() => {
+        const ce = result.cePrice;
+        const sl = isRFZ ? result.zoneHigh : result.zoneLow;
+        const risk = Math.abs(ce - sl);
+        const tp = isRFZ ? ce - risk * 2 : ce + risk * 2;
+        return {
+          ce,
+          sl,
+          tp,
+          risk,
+          rr: risk > 0 ? 2 : 0,
+          direction: isRFZ ? "SELL" : "BUY",
+        };
+      })()
+    : null;
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -263,7 +367,7 @@ export default function RBValidatorPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs mb-1 text-gray-400">
-                  Swing {form.direction === "rfz" ? "High" : "Low"}
+                  Swing {isRFZ ? "High" : "Low"}
                 </label>
                 <input
                   type="number"
@@ -300,7 +404,7 @@ export default function RBValidatorPage() {
                 Candle {i + 1}
                 {i === 0 && " (previous)"}
                 {i === 1 && " (current — must create the wick)"}
-                {i === 2 && " (displacement)"}
+                {i === 2 && " (displacement / shot)"}
               </h2>
               <div className="grid grid-cols-4 gap-2">
                 {["open", "high", "low", "close"].map((field) => (
@@ -366,9 +470,12 @@ export default function RBValidatorPage() {
           </button>
         </form>
 
-        {/* Result */}
+        {/* ============================================================ */}
+        {/* RESULT */}
+        {/* ============================================================ */}
         {result && (
           <div className="space-y-4">
+            {/* Verdict banner */}
             <div
               className={`p-4 rounded-lg border-2 ${
                 result.isValid
@@ -377,9 +484,7 @@ export default function RBValidatorPage() {
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <p className="text-2xl">
-                  {result.isValid ? "✅" : "❌"}
-                </p>
+                <p className="text-2xl">{result.isValid ? "✅" : "❌"}</p>
                 <p className={`text-lg font-bold ${label.color}`}>
                   {label.emoji} {label.label}
                 </p>
@@ -399,6 +504,210 @@ export default function RBValidatorPage() {
               </p>
             </div>
 
+            {/* ============================================================ */}
+            {/* CE ENTRY CARD — the key addition */}
+            {/* ============================================================ */}
+            {result.isValid && entryData && (
+              <div className="p-4 rounded-lg bg-gradient-to-br from-blue-950/60 via-blue-900/40 to-yellow-950/40 border-2 border-yellow-700 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-yellow-300">
+                    ⭐ CE ENTRY LEVEL
+                  </h3>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                      isRFZ
+                        ? "bg-red-900/40 text-red-300"
+                        : "bg-green-900/40 text-green-300"
+                    }`}
+                  >
+                    {entryData.direction}
+                  </span>
+                </div>
+
+                {/* Visual Zone Bar */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Zone High</span>
+                    <span className="tabular-nums font-bold text-white">
+                      {formatPrice(result.zoneHigh)}
+                    </span>
+                  </div>
+                  <div className="w-full h-3 rounded-full overflow-hidden bg-gradient-to-r from-red-900/60 via-yellow-700/60 to-green-900/60 relative">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-xs font-bold text-white drop-shadow">
+                        ⭐ CE
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Zone Low</span>
+                    <span className="tabular-nums font-bold text-white">
+                      {formatPrice(result.zoneLow)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Entry details */}
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-yellow-800/40">
+                  <div className="p-3 rounded-lg bg-black/40 border border-yellow-700/40">
+                    <p className="text-xs text-yellow-400/80 mb-1">
+                      ENTRY (CE)
+                    </p>
+                    <p className="text-lg font-bold tabular-nums text-yellow-300">
+                      {formatPrice(entryData.ce)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {fullPrice(entryData.ce)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-black/40 border border-red-800/40">
+                    <p className="text-xs text-red-400/80 mb-1">
+                      STOP LOSS
+                    </p>
+                    <p className="text-lg font-bold tabular-nums text-red-300">
+                      {formatPrice(entryData.sl)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {fullPrice(entryData.sl)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-black/40 border border-green-800/40">
+                    <p className="text-xs text-green-400/80 mb-1">
+                      TAKE PROFIT (2R)
+                    </p>
+                    <p className="text-lg font-bold tabular-nums text-green-300">
+                      {formatPrice(entryData.tp)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {fullPrice(entryData.tp)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-black/40 border border-blue-800/40">
+                    <p className="text-xs text-blue-400/80 mb-1">RR RATIO</p>
+                    <p className="text-lg font-bold tabular-nums text-blue-300">
+                      1:2.00
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Risk: {formatPrice(entryData.risk)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* ============================================================ */}
+                {/* SHOT CANDLE CHECK */}
+                {/* ============================================================ */}
+                <div className="pt-3 border-t border-yellow-800/40 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-yellow-300">
+                      ⚡ Shot Candle Check
+                    </h4>
+                    {shotAutoDetected && (
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${
+                          shotAutoDetected.isShot
+                            ? "bg-green-900/40 text-green-300"
+                            : "bg-gray-800 text-gray-400"
+                        }`}
+                      >
+                        {shotAutoDetected.isShot
+                          ? "Auto-detected ✅"
+                          : "Auto-detected ❌"}
+                      </span>
+                    )}
+                  </div>
+
+                  {shotAutoDetected && (
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
+                        <span className="text-gray-400">
+                          Direction correct ({isRFZ ? "bearish" : "bullish"})
+                        </span>
+                        <span
+                          className={
+                            shotAutoDetected.directionCorrect
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }
+                        >
+                          {shotAutoDetected.directionCorrect ? "✅" : "❌"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
+                        <span className="text-gray-400">
+                          Body ≥ 1× ATR ({shotAutoDetected.bodyVsATR}×)
+                        </span>
+                        <span
+                          className={
+                            shotAutoDetected.bodySize
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }
+                        >
+                          {shotAutoDetected.bodySize ? "✅" : "❌"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
+                        <span className="text-gray-400">
+                          Opposing wick ≤ 10% ({shotAutoDetected.wickPercent}%)
+                        </span>
+                        <span
+                          className={
+                            shotAutoDetected.wickSmall
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }
+                        >
+                          {shotAutoDetected.wickSmall ? "✅" : "❌"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-black/40 border border-yellow-700/40">
+                    <input
+                      type="checkbox"
+                      checked={shotConfirmed}
+                      onChange={(e) => setShotConfirmed(e.target.checked)}
+                      className="w-5 h-5 accent-yellow-500"
+                    />
+                    <span className="text-sm font-medium text-yellow-200">
+                      ⚡ Confirm: shot candle launched from CE
+                    </span>
+                  </label>
+
+                  {shotConfirmed && (
+                    <div className="p-3 rounded-lg bg-green-950/60 border border-green-700 text-center">
+                      <p className="text-sm font-bold text-green-300">
+                        ⚡ CE ENTRY + SHOT CONFIRMED
+                      </p>
+                      <p className="text-xs text-green-400/80 mt-1">
+                        Highest-probability setup. Enter at CE on next tap.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-3 border-t border-yellow-800/40">
+                  <button
+                    type="button"
+                    onClick={handleCopyEntry}
+                    className="py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-medium text-sm"
+                  >
+                    {copied ? "✓ Copied" : "📋 Copy Entry"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUseInSetup}
+                    className="py-3 rounded-lg bg-green-700 hover:bg-green-600 font-medium text-sm"
+                  >
+                    📋 Use in New Setup →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Condition Checks */}
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
               <h3 className="text-sm font-semibold text-blue-400 mb-2">
                 Condition Checks
@@ -406,7 +715,7 @@ export default function RBValidatorPage() {
               <CheckRow
                 label="Current candle made the wick"
                 ok={result.c2MadeWick}
-                detail={form.direction === "rfz" ? "higher high" : "lower low"}
+                detail={isRFZ ? "higher high" : "lower low"}
               />
               <CheckRow
                 label="Previous candle did NOT make the swing"
@@ -430,43 +739,7 @@ export default function RBValidatorPage() {
               />
             </div>
 
-            {result.isValid && (
-              <div className="p-4 rounded-lg bg-blue-950/40 border border-blue-800 space-y-2">
-                <h3 className="text-sm font-semibold text-blue-300">
-                  Computed Zone
-                </h3>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-500 text-xs">Zone High</p>
-                    <p className="font-bold tabular-nums text-white">
-                      {formatPrice(result.zoneHigh)}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-0.5">
-                      {fullPrice(result.zoneHigh)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 text-xs">CE (50%)</p>
-                    <p className="font-bold tabular-nums text-yellow-400">
-                      {formatPrice(result.cePrice)}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-0.5">
-                      {fullPrice(result.cePrice)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 text-xs">Zone Low</p>
-                    <p className="font-bold tabular-nums text-white">
-                      {formatPrice(result.zoneLow)}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-0.5">
-                      {fullPrice(result.zoneLow)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
+            {/* Notes */}
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
               <label className="block text-xs mb-1 text-gray-400">
                 Notes
@@ -492,30 +765,14 @@ export default function RBValidatorPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving || !!savedId}
-                className="py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-medium disabled:opacity-50 text-sm"
-              >
-                {saving
-                  ? "Saving..."
-                  : savedId
-                  ? "✓ Saved"
-                  : "💾 Save to History"}
-              </button>
-
-              {result.isValid && (
-                <button
-                  type="button"
-                  onClick={handleUseInSetup}
-                  className="py-3 rounded-lg bg-green-700 hover:bg-green-600 font-medium text-sm md:col-span-2"
-                >
-                  📋 Use this zone in a New Setup →
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !!savedId}
+              className="w-full py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-medium disabled:opacity-50 text-sm"
+            >
+              {saving ? "Saving..." : savedId ? "✓ Saved" : "💾 Save to History"}
+            </button>
           </div>
         )}
       </div>
