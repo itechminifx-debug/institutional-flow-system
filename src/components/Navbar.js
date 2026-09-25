@@ -22,6 +22,7 @@ const links = [
   { href: "/plan", label: "Plan" },
   { href: "/notes", label: "Notes" },
   { href: "/settings", label: "Settings" },
+  { href: "/manual", label: "Manual" },
 ];
 
 export default function Navbar() {
