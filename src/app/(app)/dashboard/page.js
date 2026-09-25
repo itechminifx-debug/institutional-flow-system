@@ -15,6 +15,7 @@ import SweepConfluenceWidget from "@/components/SweepConfluenceWidget";
 import CEFlipWidget from "@/components/CEFlipWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
+import LiquidityWidget from "@/components/LiquidityWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -70,6 +71,7 @@ export default async function DashboardPage() {
           <TrapWidget />
           <SweepConfluenceWidget />
           <CEFlipWidget />
+          <LiquidityWidget />
         </div>
 
         {safeSetups.length > 0 && (
