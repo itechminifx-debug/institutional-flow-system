@@ -3038,6 +3038,686 @@ When you have profit:
     `,
   },
 
+  // ==========================================================
+  // PART 4 — CHART IDENTIFICATION
+  // ==========================================================
+
+  ch33: {
+    title: "Finding a Swing High",
+    content: `
+## Finding a Swing High
+
+A **swing high** is the previous peak that price swept — the top of the last meaningful upward move.
+
+**Every Rejection Block starts with a swing high that gets swept.**
+
+### The Exact Rules
+
+A valid swing high must be:
+
+1. **A HIGH, not a close** — the wick tip, not the body
+2. **From a PREVIOUS candle** — never the current one
+3. **The HIGHEST high in the last 5 candles** (your lookback window)
+4. **Visible on the same timeframe** you're validating on
+
+### How to Find It — Step by Step
+
+**On your MT5 chart (say H4 Vol 80):**
+
+1. Find the last **5 candles before the current one**
+2. Zoom in so you can see the wicks clearly
+3. Identify the **highest HIGH** among those 5 candles
+4. **Hover over that candle** — the tooltip shows its OHLC
+5. **Write down the HIGH value** — this is your swing high
+6. Check: did the **current candle's wick exceed** that value?
+
+### Visual Example
+
+\`\`\`
+Swing High: 209,500  ← highest high in the last 5
+
+[ Candle -5 ]  H: 209,300
+[ Candle -4 ]  H: 209,450
+[ Candle -3 ]  H: 209,500  ← 🎯 THE SWING HIGH
+[ Candle -2 ]  H: 209,350
+[ Candle -1 ]  H: 209,200
+
+[ Current Candle ]
+  High: 209,650 ← ✅ exceeded the swing (sweep!)
+  Close: 209,400 ← ✅ closed back below
+\`\`\`
+
+### Common Mistakes
+
+- ❌ Using the current candle's high
+- ❌ Using a close price instead of a wick
+- ❌ Using a high from 20+ candles ago that wasn't swept
+- ❌ Guessing instead of hovering for the exact value
+
+### The Rule
+
+> "The swing high is the last peak before the current candle. If the current candle's wick didn't exceed it, there is no sweep — and no valid Rejection Block."
+
+### Practice
+
+For the next 20 charts:
+
+- Mark every swing high you see
+- Note if the next candle swept it
+- Note what happened after
+
+You'll start to see swing highs instantly.
+
+---
+
+*Continue to Chapter 34 →*
+    `,
+  },
+
+  ch34: {
+    title: "Finding a Swing Low",
+    content: `
+## Finding a Swing Low
+
+A **swing low** is the previous trough that price swept — the bottom of the last meaningful downward move.
+
+**Every bullish Rejection Block (SFZ) starts with a swing low that gets swept.**
+
+### The Exact Rules
+
+A valid swing low must be:
+
+1. **A LOW, not a close** — the wick tip, not the body
+2. **From a PREVIOUS candle** — never the current one
+3. **The LOWEST low in the last 5 candles** (your lookback window)
+4. **Visible on the same timeframe** you're validating on
+
+### How to Find It — Step by Step
+
+**On your MT5 chart:**
+
+1. Find the last **5 candles before the current one**
+2. Zoom in on the wicks
+3. Identify the **lowest LOW** among those 5 candles
+4. Hover over that candle — note its LOW value
+5. That's your swing low
+6. Check: did the **current candle's wick go BELOW** that value?
+
+### Visual Example
+
+\`\`\`
+Swing Low: 208,400  ← lowest low in the last 5
+
+[ Candle -5 ]  L: 208,700
+[ Candle -4 ]  L: 208,550
+[ Candle -3 ]  L: 208,400  ← 🎯 THE SWING LOW
+[ Candle -2 ]  L: 208,600
+[ Candle -1 ]  L: 208,750
+
+[ Current Candle ]
+  Low: 208,250  ← ✅ swept the swing low
+  Close: 208,900 ← ✅ closed back above
+\`\`\`
+
+### The Bullish RB Pattern
+
+For a bullish rejection (SFZ):
+
+1. Price sweeps a swing low (creates a lower wick)
+2. Then closes back above the swing low
+3. Next candle displaces up
+4. **That's the bullish Rejection Block**
+
+### Common Mistakes
+
+- ❌ Using the current candle's low
+- ❌ Using a low from an unswept level
+- ❌ Using a low that's not the lowest in the lookback window
+
+### The Golden Rule
+
+> "The swing low is the last trough before the current candle. If the wick didn't go below it, there's no sweep — and no SFZ."
+
+---
+
+*Continue to Chapter 35 →*
+    `,
+  },
+
+  ch35: {
+    title: "Identifying a Rejection Block",
+    content: `
+## Identifying a Rejection Block
+
+A **Rejection Block** is the candle formation that confirms a Flip Zone is being defended.
+
+### The 5 Conditions
+
+For a valid RB, ALL must be true:
+
+1. **Sweep** — the current candle's wick exceeds a previous swing high (RFZ) or low (SFZ)
+2. **Current candle made the wick** — NOT the previous one
+3. **Close back inside** — the candle closes within the previous range
+4. **Wick-to-body ratio ≥ 2.0×** — the wick is at least twice the body
+5. **Displacement ≥ 0.6× ATR** — the next candle moves aggressively
+
+### Valid RFZ (Bearish) — Visual
+
+\`\`\`
+       │  ← long upper wick (sweep)
+      ╱ ╲
+     │   │
+     ╰───╯  ← small body, closes lower
+      │
+      ▼   ← displacement down
+\`\`\`
+
+### Valid SFZ (Bullish) — Visual
+
+\`\`\`
+      ▲   ← displacement up
+      │
+      ╭───╮ ← small body
+     │   │
+      ╲ ╱
+       │  ← long lower wick (sweep)
+\`\`\`
+
+### What Invalid Looks Like
+
+\`\`\`
+     ╭───╮
+     │   │
+     │   │ ← big body
+     ╰───╯
+      │
+\`\`\`
+
+**Body bigger than wick → NOT an RB. This is a reversal pattern.**
+
+### The Critical Rule
+
+**The previous candle must NOT have made the swing.**
+
+If Candle 1 already made the higher high (or lower low), and Candle 2 just follows it, then Candle 1 created the swing — not Candle 2. **Invalid RB.**
+
+### The Sweep Rule
+
+**No sweep = no RB.**
+
+If the current candle didn't exceed a previous high/low, there is nothing to reject from.
+
+### The Golden Rule
+
+> "The Rejection Block is not a pattern. It is the fingerprint of an institutional order fill. If the wick isn't dominant, they didn't defend the level."
+
+### Practice
+
+For the next 20 charts:
+
+- Circle every candle that looks like a rejection
+- Check all 5 conditions
+- Only call it an RB if all 5 pass
+
+---
+
+*Continue to Chapter 36 →*
+    `,
+  },
+
+  ch36: {
+    title: "Measuring Wick-to-Body Ratio",
+    content: `
+## Measuring Wick-to-Body Ratio
+
+The wick-to-body ratio determines whether a candle is a **rejection** or a **reversal**.
+
+### Which Candle?
+
+**Candle 2 — the CURRENT candle** (the one that swept and closed back inside).
+
+- Candle 1 = previous (context)
+- **Candle 2 = the RB candle** — measure this one
+- Candle 3 = displacement
+
+### The Formula
+
+**For RFZ (bearish):**
+\`\`\`
+Upper Wick = Candle 2 High − max(Candle 2 Open, Candle 2 Close)
+Body = |Candle 2 Close − Candle 2 Open|
+Ratio = Upper Wick ÷ Body
+\`\`\`
+
+**For SFZ (bullish):**
+\`\`\`
+Lower Wick = min(Candle 2 Open, Candle 2 Close) − Candle 2 Low
+Body = |Candle 2 Close − Candle 2 Open|
+Ratio = Lower Wick ÷ Body
+\`\`\`
+
+### Example — RFZ
+
+**Candle 2:**
+- Open: 209,400
+- High: 209,600
+- Low: 209,350
+- Close: 209,420
+
+\`\`\`
+Upper Wick = 209,600 − max(209,400, 209,420)
+           = 209,600 − 209,420
+           = 180
+
+Body = |209,420 − 209,400|
+     = 20
+
+Ratio = 180 ÷ 20 = 9.0×
+\`\`\`
+
+**9× ratio = exceptional rejection.**
+
+### The Quality Ladder
+
+| Ratio | Quality |
+|---|---|
+| < 2× | ❌ Not a valid RB |
+| 2× | ⚠️ Minimum |
+| 3-4× | ✅ Good |
+| 5×+ | 🏆 Exceptional |
+| 7×+ | 🏆🏆 Elite |
+
+### How to Eyeball It
+
+**On the chart, ask:**
+
+> "Is the wick at least **twice as long** as the body?"
+
+- Wick ≈ half body → 0.5× ❌
+- Wick ≈ body → 1× ❌
+- Wick ≈ 2× body → 2× ⚠️
+- Wick ≈ 3-5× body → 3-5× ✅
+- Wick dominates, body tiny → 5×+ 🏆
+
+**After 50 charts, you'll read this without measuring.**
+
+### The Golden Rule
+
+> "If the wick doesn't dominate the body, the level wasn't defended. It was just passed through."
+
+---
+
+*Continue to Chapter 37 →*
+    `,
+  },
+
+  ch37: {
+    title: "Reading ATR from MT5",
+    content: `
+## Reading ATR from MT5
+
+**ATR (Average True Range)** tells you how much price typically moves per candle on a given timeframe.
+
+**You need it to check displacement.**
+
+### What It Does
+
+ATR measures the average of the last 14 candles' ranges (High − Low, with adjustment for gaps).
+
+**Higher ATR = more volatile timeframe.**
+**Lower ATR = quieter timeframe.**
+
+### How to Add ATR in MT5
+
+1. Open **MT5**
+2. Open the chart for your pair (Vol 80, XAUUSD, etc.)
+3. Set the **timeframe** you're validating on (D1, H4, H1, etc.)
+4. Top menu → **Insert → Indicators → Oscillators → Average True Range**
+5. Settings:
+   - **Period:** 14 (default)
+   - **Shift:** 0
+   - **Apply to:** Close
+6. Click **OK**
+
+**ATR appears in a sub-panel below the chart.**
+
+### Where to Read It
+
+The current ATR value shows at the **bottom of the ATR sub-panel** — e.g., **"ATR(14): 415.32"**.
+
+**That's your ATR for the current timeframe.**
+
+### Alternative — Data Window
+
+1. In MT5, press **Ctrl + D** (opens Data Window)
+2. Scroll to **ATR(14)** in the list
+3. Its current value shows next to it
+
+### Typical ATR Ranges for Vol 80
+
+| Timeframe | Typical ATR |
+|---|---|
+| D1 | 1,500 - 3,000 |
+| H4 | 400 - 800 |
+| H1 | 150 - 400 |
+| M30 | 80 - 200 |
+| M15 | 40 - 100 |
+
+**If your ATR is wildly different, check you're on the right timeframe.**
+
+### Typical ATR for XAUUSD
+
+| Timeframe | Typical ATR |
+|---|---|
+| D1 | 20 - 40 |
+| H4 | 8 - 15 |
+| H1 | 4 - 8 |
+
+### What to Enter in the RB Validator
+
+Enter the **current ATR value** as shown on the chart.
+
+**Example:** If MT5 shows **ATR(14): 415.32**, enter **415.32**.
+
+### Why ATR Matters
+
+- The **displacement check** uses ATR: the next candle must move ≥ 0.6× ATR
+- The **shot candle check** uses ATR: the body must be ≥ 1× ATR
+
+**Without ATR, the validator can't verify institutional conviction.**
+
+### The Golden Rule
+
+> "ATR is the ruler. Without it, you can't measure whether the move was big enough to be institutional."
+
+---
+
+*Continue to Chapter 38 →*
+    `,
+  },
+
+  ch38: {
+    title: "Calculating Displacement",
+    content: `
+## Calculating Displacement
+
+**Displacement** measures how aggressively the next candle moved after the rejection.
+
+**It's the fingerprint of institutional conviction.**
+
+### Which Candle?
+
+**Candle 3 — the one AFTER the rejection candle.**
+
+- Candle 1 = previous
+- Candle 2 = the rejection (measured for wick/body)
+- **Candle 3 = displacement (measured for this)**
+
+### The Formula
+
+**For RFZ (bearish):**
+\`\`\`
+Displacement = Candle 2 Close − Candle 3 Close
+\`\`\`
+
+**For SFZ (bullish):**
+\`\`\`
+Displacement = Candle 3 Close − Candle 2 Close
+\`\`\`
+
+### The Threshold
+
+\`\`\`
+Threshold = ATR × Displacement Multiplier
+\`\`\`
+
+Default multiplier: **0.6**
+
+**Valid if:** Displacement ≥ Threshold
+
+### Example — SFZ (Bullish)
+
+**Assume:**
+- ATR = 400
+- Multiplier = 0.6
+- Threshold = **240**
+
+**Candle 2 Close** = 208,900
+**Candle 3 Close** = 209,300
+
+\`\`\`
+Displacement = 209,300 − 208,900 = 400
+400 ≥ 240 ✅ VALID
+\`\`\`
+
+### Example — RFZ (Bearish)
+
+**Assume:**
+- ATR = 400
+- Threshold = 240
+
+**Candle 2 Close** = 209,400
+**Candle 3 Close** = 208,800
+
+\`\`\`
+Displacement = 209,400 − 208,800 = 600
+600 ≥ 240 ✅ VALID
+\`\`\`
+
+### The Strength Ladder
+
+| Displacement | Meaning |
+|---|---|
+| < 0.3× ATR | ❌ No displacement |
+| 0.3 - 0.6× ATR | ⚠️ Weak |
+| = 0.6× ATR | ✅ Minimum valid |
+| 0.6 - 1.0× ATR | ✅ Strong |
+| ≥ 1.0× ATR | 🏆 Exceptional |
+
+### The Shot Candle
+
+When displacement is ≥ 1× ATR AND the body has almost no opposing wick, it's a **shot candle** — the highest-probability entry.
+
+**The RB Validator auto-detects this.**
+
+### What to Enter
+
+In the RB Validator, the **Displacement Multiplier** field controls the threshold.
+
+- Default: **0.6**
+- Keep at 0.6 unless you want stricter filtering
+
+The app does the rest.
+
+### The Golden Rule
+
+> "No displacement = no conviction. If the next candle didn't move hard, the 'rejection' was just noise."
+
+---
+
+*Continue to Chapter 39 →*
+    `,
+  },
+
+  ch39: {
+    title: "Finding the CE",
+    content: `
+## Finding the CE
+
+The **CE (Consequent Encroachment)** is the **50% midpoint** of the Rejection Block zone.
+
+**It is the exact price where institutions entered. It is your entry.**
+
+### The Formula
+
+**For RFZ (bearish):**
+\`\`\`
+Zone High = Wick tip (candle 2 High)
+Zone Low = Body close (candle 2 Close)
+CE = (Zone High + Zone Low) / 2
+\`\`\`
+
+**For SFZ (bullish):**
+\`\`\`
+Zone High = Body close (candle 2 Close)
+Zone Low = Wick tip (candle 2 Low)
+CE = (Zone High + Zone Low) / 2
+\`\`\`
+
+### Example — RFZ
+
+- Wick tip (High) = 209,600
+- Body close = 209,400
+
+\`\`\`
+CE = (209,600 + 209,400) / 2 = 209,500
+\`\`\`
+
+**CE = 209,500** — this is your entry.
+
+### Example — SFZ
+
+- Body close = 208,900
+- Wick tip (Low) = 208,400
+
+\`\`\`
+CE = (208,900 + 208,400) / 2 = 208,650
+\`\`\`
+
+**CE = 208,650** — this is your entry.
+
+### Why 50%?
+
+- The **wick tip** is where price was rejected
+- The **body close** is where price settled
+- The **50% midpoint** is the fair value of the zone
+- Institutions enter there — not at the extremes
+
+### How It's Computed in the App
+
+When you enter the RB zone (e.g., "209400-209600"):
+
+- The app computes the midpoint
+- CE = (209400 + 209600) / 2 = 209500
+- It shows explicitly in the Consequent Encroachment section
+- If enabled, it auto-fills as your entry
+
+### The Shot from CE
+
+**The highest-probability entry is when the shot candle launches from the CE.**
+
+- Watch for price to tap the CE
+- The next candle should be a shot (big body, small opposing wick)
+- If yes → enter at CE
+
+### The Flip
+
+If price closes beyond the CE, the level flips:
+
+- **Bullish CE breaks below** → becomes resistance → SELL setup
+- **Bearish CE breaks above** → becomes support → BUY setup
+
+**The CE is a level that keeps giving.**
+
+### The Golden Rule
+
+> "The CE is where institutions entered. Enter where they entered. Risk what they risk. Win what they win."
+
+---
+
+*Continue to Chapter 40 →*
+    `,
+  },
+
+  ch40: {
+    title: "Spotting a Sweep",
+    content: `
+## Spotting a Sweep
+
+A **sweep** is when price briefly moves into a liquidity pool — triggering orders — then reverses.
+
+**The sweep is the trap. The rejection is the evidence. Together, they are the institutional footprint.**
+
+### What a Sweep Looks Like
+
+**Bullish sweep (SFZ):**
+- Lower wick extends below a previous swing low
+- Close comes back ABOVE the swing low
+- Confirms stops were swept and buyers filled
+
+**Bearish sweep (RFZ):**
+- Upper wick extends above a previous swing high
+- Close comes back BELOW the swing high
+- Confirms stops were swept and sellers filled
+
+### Visual — Bullish Sweep
+
+\`\`\`
+    │   ← closes above the swing low
+    │
+   ╱ ╲
+  │   │  ← small body
+   ╲ ╱
+    │
+    │  ← long lower wick (swept the low)
+    ▼
+ Swing Low: 208,400
+\`\`\`
+
+### How to Spot It
+
+Ask three questions:
+
+1. **Did the wick extend beyond a previous swing?** (Yes = sweep candidate)
+2. **Did the candle close back inside?** (Yes = confirmed rejection)
+3. **Was there displacement after?** (Yes = institutional conviction)
+
+**All three = valid sweep.**
+
+### Why It Matters
+
+A Rejection Block WITHOUT a sweep = a candle that just reversed at a level. **Might be random.**
+
+A Rejection Block WITH a sweep = liquidity was collected, orders were filled. **Definitely institutional.**
+
+### The Sweep Confluence Tier
+
+The app grades sweep quality:
+
+- 🥉 **Moderate** — RB only, no sweep
+- 🥈 **High** — RB + sweep
+- 🥇 **Very High** — RB + sweep + TF alignment
+- 🏆 **Extreme** — RB + sweep + TF + EMA 50
+
+**The sweep is the biggest jump in tier.**
+
+### How to Enter It
+
+In the Setup Planner's **Sweep Confluence** section:
+
+1. Enter the **Swept Price** (the swing high/low that was swept)
+2. The app auto-checks if it's inside the RB zone
+3. If yes → sweep confirmed ✅
+4. Tier auto-computes
+
+### Common Mistakes
+
+- ❌ Confusing the wick tip with the close
+- ❌ Marking a sweep when the close stayed beyond the level (that's a break, not a sweep)
+- ❌ Ignoring the sweep — treating the RB alone as enough
+
+### The Golden Rule
+
+> "A Rejection Block without a sweep is a guess. A Rejection Block WITH a sweep is a confirmed institutional footprint. Trade the evidence — not the guess."
+
+---
+
+*End of Part 4 — Continue to Part 5 (Worked Examples) in Stage 5 →*
+    `,
+  },
+
+  
+
 };
 
 
