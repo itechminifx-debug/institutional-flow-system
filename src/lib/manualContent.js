@@ -100,7 +100,7 @@ export const MANUAL_PARTS = [
       { key: "ch53", number: 53, title: "Withdrawing Profits" },
     ],
   },
-  {
+    {
     key: "part7",
     number: 7,
     title: "Reference",
@@ -110,6 +110,18 @@ export const MANUAL_PARTS = [
       { key: "ch56", number: 56, title: "Daily Checklist" },
       { key: "ch57", number: 57, title: "Weekly Checklist" },
       { key: "ch58", number: 58, title: "Monthly Checklist" },
+    ],
+  },
+  {
+    key: "part8",
+    number: 8,
+    title: "Framework Integration — SMC + ICT + CRT",
+    chapters: [
+      { key: "ch59", number: 59, title: "SMC + ICT + CRT — The Unified Framework" },
+      { key: "ch60", number: 60, title: "The 7-Step Institutional Sequence" },
+      { key: "ch61", number: 61, title: "The 10-Question Integrated Checklist" },
+      { key: "ch62", number: 62, title: "Killzones & Session Timing" },
+      { key: "ch63", number: 63, title: "Market Structure Shift (MSS)" },
     ],
   },
 ];
@@ -5335,10 +5347,528 @@ Write it down. Keep the history. Compare months.
 
 ---
 
-*End of the Manual — The Institutional Flow System is complete.*
+
+    `,
+  },
+  // ==========================================================
+  // PART 8 — FRAMEWORK INTEGRATION (SMC + ICT + CRT)
+  // ==========================================================
+
+  ch59: {
+    title: "SMC + ICT + CRT — The Unified Framework",
+    content: `
+## SMC + ICT + CRT — The Unified Framework
+
+Three industry frameworks. One truth.
+
+- **SMC** gives you the philosophy.
+- **ICT** gives you the tools.
+- **CRT** gives you the trigger.
+
+Together, they form the complete institutional blueprint — from accumulation to distribution.
+
+### SMC — Smart Money Concepts (The Framework)
+
+SMC is the **overall logic** — reading the market the way institutions move it.
+
+| Principle | Meaning |
+|---|---|
+| Liquidity Sweeps | Price hunts stops before the real move |
+| Order Flow | Institutions leave footprints — you follow them |
+| Premium / Discount | Buy in discount, sell in premium |
+| AMD Cycle | Accumulation → Manipulation → Distribution |
+
+**SMC is the big picture — the institutional cycle that repeats endlessly.**
+
+### ICT — Inner Circle Trader (The Tools)
+
+ICT is the **methodology** — the specific tools that give you precision.
+
+| Tool | What It Does |
+|---|---|
+| Order Block | The last opposing candle before the move |
+| Fair Value Gap (FVG) | The imbalance left behind by displacement |
+| Killzones | London, New York — when institutions are active |
+| Market Structure Shift (MSS) | The break of structure that confirms reversal |
+| Breaker Block | A failed Order Block — now flipped |
+| Mitigation Block | Price returns to an old zone to reload orders |
+| Rejection Block | The wick that swept liquidity and rejected |
+| Consequent Encroachment (CE) | The 50% midpoint of the zone |
+
+**ICT gives you the precision — where to enter, when to enter, and why.**
+
+### CRT — Candle Range Theory (The Trigger)
+
+CRT is the **3-candle trap** — the sweep + close back inside pattern.
+
+| Candle | Role | What It Does |
+|---|---|---|
+| Candle 1 | Range / Accumulation | Defines the range — high and low are liquidity pools |
+| Candle 2 | Manipulation / Sweep | Wicks beyond Candle 1's high/low — triggers stops — closes back inside |
+| Candle 3 | Distribution / Confirmation | Price moves toward the opposite side of the range |
+
+**CRT is the trap. The sweep is the bait. The close back inside is the confirmation.**
+
+### Why the Three Frameworks Align
+
+| Framework | Role | What It Gives You |
+|---|---|---|
+| SMC | Philosophy | The institutional cycle |
+| ICT | Toolbox | Precision entries |
+| CRT | Trigger | The sweep-and-reject pattern |
+
+**When all three align — you have the complete institutional blueprint.**
+
+### The Unification
+
+Your Institutional Flow System already has **every piece of this**:
+
+- **SMC** = your Setup Planner's Institutional Cycle
+- **ICT** = your Context Layers (OB, FVG) + RB Validator + CE Entry
+- **CRT** = your 3-candle RB pattern (Candle 1, 2, 3 in the RB Validator)
+
+**This chapter just puts names to what you've already been using.**
+
+### The Golden Rule of the Frameworks
+
+> "SMC gives you the framework. ICT gives you the tools. CRT gives you the trigger. When all three align — you have the complete institutional blueprint."
+
+---
+
+*Continue to Chapter 60 →*
     `,
   },
 
+  ch60: {
+    title: "The 7-Step Institutional Sequence",
+    content: `
+## The 7-Step Institutional Sequence
+
+From accumulation to distribution — the complete institutional cycle.
+
+### The 7 Steps
+
+| Step | What Happens | Which Concept |
+|---|---|---|
+| 1 | Price consolidates — range forms | SMC: Accumulation |
+| 2 | Price sweeps beyond the range — triggers stops | CRT: Candle 2 Manipulation |
+| 3 | Price closes back inside the range | CRT: Confirmation |
+| 4 | Displacement creates an Order Block and FVG | ICT: Tools |
+| 5 | Price returns to the OB, FVG, or Rejection Block | ICT: Entry |
+| 6 | Market Structure Shift confirms | ICT: MSS |
+| 7 | Price moves toward the opposite liquidity | SMC: Distribution |
+
+### Step-by-Step Walkthrough
+
+**Step 1 — Range Forms**
+- Price consolidates in a tight range
+- High and low of the range are now liquidity pools
+- You watch and wait
+
+**Step 2 — Sweep Beyond the Range**
+- Price briefly moves above the range high (or below the range low)
+- This triggers retail stops
+- The wick extends beyond the range
+
+**Step 3 — Close Back Inside**
+- The candle closes BACK INSIDE the range
+- This is the CRT confirmation
+- The sweep was a manipulation, not a breakout
+
+**Step 4 — Displacement Creates OB and FVG**
+- The next candle moves aggressively in the opposite direction
+- This creates a Fair Value Gap (the imbalance)
+- The last opposing candle becomes the Order Block
+
+**Step 5 — Price Returns**
+- Price retraces to the OB, FVG, or forms a Rejection Block
+- This is the entry zone
+- The RB Validator confirms the pattern
+
+**Step 6 — Market Structure Shift (MSS)**
+- Price breaks a minor structure in the new direction
+- This confirms the reversal
+- Now you have alignment: CRT + ICT + MSS
+
+**Step 7 — Move to Opposite Liquidity**
+- Price moves toward the opposite side of the range
+- Institutions distribute
+- This is the trade's target
+
+### How to Trade the Sequence
+
+**Step 1 — Wait.** Range is forming.
+
+**Step 2 — Watch.** Price is sweeping — don't enter yet.
+
+**Step 3 — Confirm.** Close back inside = CRT confirmed.
+
+**Step 4 — Identify.** Mark the OB and FVG.
+
+**Step 5 — Prepare.** Watch for the RB formation on the return.
+
+**Step 6 — Verify.** MSS confirms reversal.
+
+**Step 7 — Target.** Aim for the opposite range side.
+
+### The Integrated Timeframe Flow
+
+| Step | Action | Timeframe |
+|---|---|---|
+| 1 | Identify the trend | D1 |
+| 2 | Mark key levels — OBs, FVGs, RBs | H4 |
+| 3 | Watch for CRT — sweep + close back inside | H1 |
+| 4 | Confirm MSS | M30 / M15 |
+| 5 | Enter at OB, FVG, or RB | M5 / M1 |
+| 6 | Set SL beyond the sweep wick | — |
+| 7 | Target opposite liquidity | — |
+
+### In Your System
+
+You already have all 7 steps in your app:
+
+- **Step 1** → Institutional Cycle in Setup Planner (Accumulation)
+- **Step 2** → Sweep Price field + Sweep Confluence
+- **Step 3** → RB Validator (close back inside check)
+- **Step 4** → Context Layers (FVG + OB)
+- **Step 5** → RB Validator + Setup Planner
+- **Step 6** → Trend Analyzer (structure shift)
+- **Step 7** → Next structure level (in your Entry Calculator TP)
+
+### The Golden Rule
+
+> "The institutional cycle doesn't change. Only the charts do. Learn the 7 steps — you'll see them on every timeframe."
+
+---
+
+*Continue to Chapter 61 →*
+    `,
+  },
+
+  ch61: {
+    title: "The 10-Question Integrated Checklist",
+    content: `
+## The 10-Question Integrated Checklist
+
+A simple yes/no gate before any trade.
+
+### The 10 Questions
+
+| # | Question | Yes / No |
+|---|---|---|
+| 1 | Is there a liquidity sweep? | ___ |
+| 2 | Did price close back inside the range? | ___ |
+| 3 | Is there an Order Block or FVG? | ___ |
+| 4 | Is there a Rejection Block? | ___ |
+| 5 | Is the CE (50%) marked? | ___ |
+| 6 | Has a Market Structure Shift occurred? | ___ |
+| 7 | Is the EMA 50 aligned? | ___ |
+| 8 | Is the timeframe aligned? | ___ |
+| 9 | Is the risk-to-reward at least 1:2? | ___ |
+| 10 | Am I calm and disciplined? | ___ |
+
+### The Scoring Rule
+
+- **7+ checked** → high-probability trade
+- **< 7 checked** → wait for a better setup
+
+### How It Complements Your Existing Tools
+
+Your system already has **three layers of filtering**:
+
+1. **RB Quality Score (0-12)** — grades the rejection block itself
+2. **Sweep Confluence Tier** (Moderate → Extreme) — grades institutional quality
+3. **Trade Checklist (Steps 5-11)** — gates the entry process
+
+**This 10-Question Checklist adds a fourth layer — a quick binary sanity check.**
+
+### When to Use It
+
+- **After completing the Chart Checklist** — before creating a setup
+- **Before clicking ENTER TRADE** — as a final sanity check
+- **When in doubt** — if you're second-guessing, run the 10 questions
+
+### Question-by-Question Breakdown
+
+**Q1 — Liquidity Sweep?**
+Yes if: price's wick exceeded a previous swing high or low. In your app: check the Sweep Confluence section.
+
+**Q2 — Close Back Inside?**
+Yes if: the RB candle closed within the previous range. In your app: RB Validator confirms.
+
+**Q3 — OB or FVG?**
+Yes if: Context Layers shows FVG or OB present.
+
+**Q4 — Rejection Block?**
+Yes if: RB Validator returns VALID.
+
+**Q5 — CE Marked?**
+Yes if: the setup has a CE price computed.
+
+**Q6 — MSS Occurred?**
+Yes if: the recent structure has shifted in your direction. In your app: check the Trend Analyzer's structure factor.
+
+**Q7 — EMA 50 Aligned?**
+Yes if: bullish bias + price below EMA (support), or bearish bias + price above EMA (resistance).
+
+**Q8 — Timeframe Aligned?**
+Yes if: Confluence Analyzer score ≥ 65.
+
+**Q9 — RR ≥ 1:2?**
+Yes if: Entry Calculator shows RR of 1:2 or better.
+
+**Q10 — Calm and Disciplined?**
+Yes if: your Mindset Ritual emotional section is fully checked.
+
+### If You Score 7+ — Trade
+### If You Score < 7 — Skip
+
+**No exceptions. No negotiation.**
+
+### In Your System
+
+Every question maps to an existing module:
+
+| Q | App Module |
+|---|---|
+| 1 | Sweep Confluence |
+| 2 | RB Validator |
+| 3 | Context Layers |
+| 4 | RB Validator |
+| 5 | Setup Planner (CE) |
+| 6 | Trend Analyzer |
+| 7 | Setup Step 1 (EMA 50) |
+| 8 | Confluence Analyzer |
+| 9 | Entry Calculator |
+| 10 | Mindset Ritual |
+
+**The checklist is your final cross-reference before any trade.**
+
+### The Golden Rule
+
+> "Seven out of ten. That's the line. Cross it — trade. Don't — wait."
+
+---
+
+*Continue to Chapter 62 →*
+    `,
+  },
+
+  ch62: {
+    title: "Killzones & Session Timing",
+    content: `
+## Killzones & Session Timing
+
+Institutions do not trade 24 hours a day. They trade in specific windows — **killzones**.
+
+**Trading inside killzones = higher probability. Trading outside = noise.**
+
+### What Are Killzones?
+
+Killzones are the hours when institutional activity peaks. They occur around session opens:
+
+- **London Killzone** — 07:00-10:00 UTC
+- **New York Killzone** — 12:00-15:00 UTC
+
+**These are the windows where the biggest moves happen.**
+
+### The Two Major Killzones
+
+**London Killzone (07:00-10:00 UTC)**
+
+- London session opens
+- European institutions active
+- High volatility
+- Often the biggest daily range
+
+**New York Killzone (12:00-15:00 UTC)**
+
+- New York opens (overlaps with London for ~3 hours)
+- US institutions active
+- Highest liquidity of the day
+- The overlap (12:00-15:00 UTC) is the **most volatile window**
+
+### The Asian Session (Minor)
+
+Asian session (23:00-07:00 UTC) is **not a killzone**. It's a range — accumulation phase.
+
+**Trade the range, not the moves.** The real action is London + NY.
+
+### Session Timing Table
+
+| Session | UTC Hours | Role |
+|---|---|---|
+| Asian | 23:00 - 07:00 | Accumulation / Range |
+| London Open | 07:00 | Killzone — high activity |
+| London Killzone | 07:00 - 10:00 | **Trade window** |
+| NY Open | 12:00 | Killzone — high activity |
+| NY Killzone | 12:00 - 15:00 | **Trade window** |
+| London Close | 16:00 | Slowdown |
+| NY Close | 21:00 | Day ends |
+
+### Why This Matters
+
+- **Retail trades 24 hours** — mostly during low-liquidity windows
+- **Institutions trade killzones** — where liquidity and volatility align
+- **Your edge is being where the institutions are**
+
+### The Killzone Rule
+
+**Only trade during killzones.**
+
+- London killzone: 07:00-10:00 UTC
+- NY killzone: 12:00-15:00 UTC
+
+**Outside these windows → no new trades.**
+
+If you're already in a trade → manage it. But do not open new positions.
+
+### The Judas Swing Warning
+
+The **first 30 minutes** of a session open often produces a false move — a **Judas Swing**.
+
+Retail chases it. Institutions reverse it.
+
+**Rule:** Wait 30 minutes after session open. Trade the reaction, not the initial spike.
+
+### Combining Killzones + Judas Swing
+
+**Best practice:**
+
+- Killzone opens at 07:00 UTC (London)
+- Judas Swing possible 07:00-07:30 UTC
+- **Trade from 07:30-10:00 UTC** — after the trap
+
+Same for NY: open at 12:00, trade from 12:30-15:00.
+
+### In Your System
+
+- **Traps page** shows session-open warnings (Judas Swing)
+- **Setup creation** should note the killzone context
+- **Trade checklist** should mention: "Is this a killzone hour?"
+
+### The Golden Rule
+
+> "Trade when the institutions trade. Sit out when they sleep."
+
+---
+
+*Continue to Chapter 63 →*
+    `,
+  },
+
+  ch63: {
+    title: "Market Structure Shift (MSS)",
+    content: `
+## Market Structure Shift (MSS)
+
+A **Market Structure Shift (MSS)** is a **break of structure** — where price breaks a recent swing high or low, signaling a potential trend change.
+
+**MSS confirms reversals. It tells you the market just changed direction.**
+
+### What MSS Looks Like
+
+**Bullish MSS:**
+- Downtrend was in place (lower highs, lower lows)
+- Price breaks ABOVE the most recent swing high
+- Confirms bullish reversal
+
+**Bearish MSS:**
+- Uptrend was in place (higher highs, higher lows)
+- Price breaks BELOW the most recent swing low
+- Confirms bearish reversal
+
+### Visual — Bullish MSS
+
+\`\`\`
+         ╱╲      ← break above swing high = MSS
+        ╱  ╲
+       ╱    ╲
+      ╱      ╲
+     ╱        ╲
+    ╱          ╲
+   ╱            ╲
+  ╱              ╲
+ ╱                ╲  ← previous downtrend
+╱                  ╲
+\`\`\`
+
+The break of the last lower high = **bullish MSS**.
+
+### Visual — Bearish MSS
+
+\`\`\`
+╲                  ╱
+ ╲                ╱  ← previous uptrend
+  ╲              ╱
+   ╲            ╱
+    ╲          ╱
+     ╲        ╱
+      ╲      ╱
+       ╲    ╱
+        ╲  ╱
+         ╲╱      ← break below swing low = MSS
+\`\`\`
+
+The break of the last higher low = **bearish MSS**.
+
+### Why MSS Matters
+
+- **Confirms the reversal** — not just a pullback, but a real shift
+- **Aligns with the institutional cycle** — after manipulation, the shift begins
+- **Validates your entry** — if MSS hasn't happened, your entry might be early
+
+### When to Use MSS
+
+**Before entry:**
+
+- Has a bullish MSS occurred? → BUY setups are valid
+- Has a bearish MSS occurred? → SELL setups are valid
+- No MSS yet? → Wait — the trend hasn't confirmed
+
+### MSS vs. BOS
+
+- **BOS (Break of Structure)** — the trend continues (higher highs in uptrend)
+- **MSS (Market Structure Shift)** — the trend reverses (breaks the last opposing level)
+
+**BOS = continuation. MSS = reversal.**
+
+### How to Identify MSS on Your Chart
+
+1. Identify the current trend (up or down)
+2. Find the **last opposing high** (in a downtrend) or **last opposing low** (in an uptrend)
+3. Watch for price to **break through that level** with a close beyond
+4. If broken → MSS confirmed
+
+**A wick is not enough. You need a close beyond.**
+
+### In Your System
+
+- **Trend Analyzer** — has a "Market Structure Shift" factor
+- **Confluence Analyzer** — cross-checks this
+- **RB Validator** — the sweep + close-back-inside pattern often coincides with MSS
+
+### Common Mistakes
+
+- ❌ Confusing a wick with an MSS (need close)
+- ❌ Calling MSS too early (need a confirmed swing to break)
+- ❌ Ignoring MSS — entering without reversal confirmation
+
+### The Rule
+
+**No MSS = no reversal trade.**
+
+If you're betting on a reversal, wait for the MSS. Otherwise, you might be entering a counter-trend move.
+
+### The Golden Rule
+
+> "MSS is the confirmation. Before MSS, it's a guess. After MSS, it's a trade."
+
+---
+
+*End of the Manual — The Institutional Flow System now has 63 chapters across 8 Parts.*
+    `,
+  },
 
 };
 
