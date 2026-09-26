@@ -4425,6 +4425,921 @@ Shows:
     `,
   },
 
+  // ==========================================================
+  // PART 6 — DISCIPLINE & MINDSET
+  // ==========================================================
+
+  ch49: {
+    title: "The 10 Golden Rules",
+    content: `
+## The 10 Golden Rules
+
+Every rule in this system exists for a reason. Here are the 10 that override everything else.
+
+### Rule 1 — Price Moves to Fill Orders
+
+Price does not move randomly. Every move has a purpose. Ask: "Whose order is being filled right now?"
+
+### Rule 2 — Liquidity Is the Fuel
+
+Institutions cannot fill large orders without liquidity. Every trade you take should answer: "Which liquidity was swept?"
+
+### Rule 3 — Structure Reveals Intent
+
+Wicks, bodies, zones, breaks — these are footprints. Your job is to read them, not predict.
+
+### Rule 4 — The Rejection Block Is the Trigger
+
+The RB is not a pattern. It is the fingerprint of institutional order filling. Trade the fingerprint.
+
+### Rule 5 — The CE Is Your Entry
+
+Enter at the 50% midpoint. That's where institutions entered. Risk what they risk.
+
+### Rule 6 — No Sweep, No Trade
+
+If price hasn't swept liquidity beyond a key level, the move is suspect. Wait.
+
+### Rule 7 — Alignment Is the Confirmation
+
+D1 gives direction. H4 gives the zone. H1 confirms. Lower timeframes trigger.
+
+### Rule 8 — Displacement Proves Intent
+
+No displacement = no conviction. The next candle must move ≥ 0.6× ATR.
+
+### Rule 9 — Patience Beats Prediction
+
+Wait for the setup. Wait for the trigger. Never chase. Never improvise.
+
+### Rule 10 — The Golden Rule
+
+> "The market will always be there. Your capital may not. Prepare your mind before you prepare your chart."
+
+### The Application
+
+Before every trade, run all 10 rules mentally. If any rule fails — **do not trade.**
+
+### The Golden Rule of Rules
+
+> "A rule you break once is a rule you'll break again. Follow all 10 or follow none."
+
+---
+
+*Continue to Chapter 50 →*
+    `,
+  },
+
+  ch50: {
+    title: "Common Mistakes",
+    content: `
+## Common Mistakes
+
+Every mistake here is one you'll be tempted to make. Learn to spot them before they cost you.
+
+### Mistake 1 — Chasing Price
+
+Entering after a move has happened because you "don't want to miss it."
+
+**Fix:** Wait for the setup. There's always another one.
+
+### Mistake 2 — Skipping the Mindset Ritual
+
+"I don't have time today. Let me just trade."
+
+**Fix:** No ritual, no trading. It's that simple.
+
+### Mistake 3 — Entering Before Confirmation
+
+Buying before the shot candle. Selling before the rejection completes.
+
+**Fix:** Wait for confirmation. Always.
+
+### Mistake 4 — Moving the Stop Loss
+
+Price approaches your SL, so you move it further away.
+
+**Fix:** Never move the SL. If it hits, it hits. That's the risk you took.
+
+### Mistake 5 — Overtrading
+
+Three wins in a row → you take a 4th trade without a proper setup.
+
+**Fix:** Max 3 trades per day. Log it in Settings.
+
+### Mistake 6 — Ignoring the RB Score
+
+Taking a setup scoring 5/12 "because it looks good."
+
+**Fix:** The gate exists for a reason. If it's below threshold, skip.
+
+### Mistake 7 — Trading the News
+
+Entering 5 minutes after NFP because "the move looks strong."
+
+**Fix:** Hard block. Wait 60 min after the release.
+
+### Mistake 8 — Not Journaling
+
+"I'll journal it later."
+
+**Fix:** Journal within 1 hour of closing. Emotion fades fast.
+
+### Mistake 9 — Revenge Trading
+
+Lost a trade → immediately enter another to "make it back."
+
+**Fix:** After a loss, stop. Walk away. Come back tomorrow.
+
+### Mistake 10 — Skipping the Weekly Review
+
+"I'll do it next week."
+
+**Fix:** Every Sunday. No exceptions. This is when you learn.
+
+### Mistake 11 — Changing the System
+
+Losing 3 trades in a row → starting to doubt the system.
+
+**Fix:** Trust the system for 30 trades minimum before adjusting.
+
+### Mistake 12 — Trading Without a Setup
+
+"I see price moving, let me just jump in."
+
+**Fix:** No setup, no trade. Ever.
+
+### Mistake 13 — Using Too Much Risk
+
+"Just this once, I'll risk 5%."
+
+**Fix:** 1-2% per trade. No exceptions.
+
+### Mistake 14 — Ignoring Stats
+
+Not looking at the Stats page because "the numbers are depressing."
+
+**Fix:** Stats don't lie. Look weekly. Adjust based on data.
+
+### Mistake 15 — Trading When Tilted
+
+Angry, tired, hungry, or rushed — and still opening the app.
+
+**Fix:** Mindset ritual catches this. If any box is unchecked, don't trade.
+
+### The Golden Rule
+
+> "Most traders don't lose because of bad strategy. They lose because of these 15 mistakes. Master them — master yourself."
+
+---
+
+*Continue to Chapter 51 →*
+    `,
+  },
+
+  ch51: {
+    title: "Building Discipline",
+    content: `
+## Building Discipline
+
+Discipline is not a personality trait. It is a habit you build.
+
+### The Truth
+
+You will not become disciplined by reading about it. You become disciplined by **doing the same right thing, in the same order, every day — even when you don't feel like it.**
+
+### The 30-Day Rule
+
+For 30 consecutive sessions:
+
+1. Complete the Mindset Ritual — every morning
+2. Complete the Chart Checklist — before any setup
+3. Walk the Trade Checklist — before any entry
+4. Journal every trade — win or lose
+5. Complete the Weekly Review — every Sunday
+
+**After 30 days, these become automatic.**
+
+### The Discipline Stack
+
+- **Session 1-10:** You're forcing it. It feels unnatural.
+- **Session 11-20:** It's getting easier. You're catching yourself slipping.
+- **Session 21-30:** It's becoming habit. You feel off when you skip.
+- **Session 31+:** It's who you are now.
+
+### The Rule Tracker
+
+Every week, check Stats:
+
+- **Rule Adherence %** — are you applying partial + BE every time?
+- **RB Correlation** — do high-quality setups win more?
+- **Trap Alignment** — are you trading traps less?
+
+**If adherence drops below 80% → you're slipping. Reset.**
+
+### What Breaks Discipline
+
+- **A big win** → overconfidence
+- **A big loss** → revenge
+- **A boring week** → impatience
+- **A long streak** → complacency
+
+**Know your triggers.** Every trader has a "breaking point." Yours is predictable.
+
+### The Reset
+
+When you catch yourself slipping:
+
+1. Stop trading for the day
+2. Re-read Chapters 17-18 (Mindset + Chart)
+3. Come back tomorrow with the ritual
+4. Trade 0.01 lots for 10 trades minimum
+5. Focus on **following rules**, not making money
+
+### The Golden Rule
+
+> "Discipline is not a single decision. It is a thousand small decisions. Every one of them matters."
+
+### The Promise
+
+If you build discipline for 30 days, you will:
+
+- Take fewer trades
+- Win more of them
+- Lose less money on mistakes
+- Sleep better
+- Feel calmer
+
+**Discipline is not restriction. It is freedom.**
+
+---
+
+*Continue to Chapter 52 →*
+    `,
+  },
+
+  ch52: {
+    title: "Scaling Your Account",
+    content: `
+## Scaling Your Account
+
+Scaling is not about getting rich fast. It's about **growing without blowing up.**
+
+### The Three Phases
+
+**📚 Phase 1 — Learning**
+
+- Trade 0.01 lots
+- Focus: following rules 100%
+- Goal: consistency, not profit
+- Move up when: 30+ trades logged AND 80%+ rule adherence
+
+**📈 Phase 2 — Scaling**
+
+- Increase lot size by +0.01 for every 20% account growth
+- Never double up after a win
+- Goal: growth without drawdown spikes
+- Move up when: account doubles
+
+**💰 Phase 3 — Withdrawal**
+
+- Withdraw 50% of profits monthly
+- Pay yourself
+- Goal: real income from trading
+- Remain in Phase 3 for life (unless drawdown → demote)
+
+### How the App Handles This
+
+Open **Plan** in the navbar:
+
+- **Current Phase card** — shows your phase and rules
+- **Suggested Lot Size** — auto-calculated from your phase
+- **Milestone Progress** — progress to the next +0.01 lot
+- **Promotion Rules** — ready/when ready
+- **Demotion Warning** — if you draw down 30%
+
+### The +0.01 Rule
+
+**Learning phase:** Always 0.01.
+**Scaling phase:** +0.01 per +20% growth.
+
+Example:
+- Start: 100 units, lot 0.01
+- Account grows to 120 → lot 0.02
+- Account grows to 144 → lot 0.03
+- Account grows to 173 → lot 0.04
+
+**Never jump more than +0.01 at a time.**
+
+### The Demotion Rule
+
+If your account drops 30% from your starting balance:
+
+- Demote back to Learning phase
+- Trade 0.01 lots
+- Rebuild discipline
+- Do not scale until 30 trades + 80% adherence again
+
+**Why?** Because a 30% drawdown means something broke. Fix it before scaling further.
+
+### The Golden Rule
+
+> "You cannot build a business on an unstable foundation. Scale only when the foundation is solid."
+
+### The Math That Matters
+
+- Most traders: 100 units → 0 in 3 months
+- Disciplined traders: 100 units → 200 in 6 months
+- Compounding: 200 → 400 in another 6 months
+
+**The difference is not the strategy. It's the scaling discipline.**
+
+---
+
+*Continue to Chapter 53 →*
+    `,
+  },
+
+  ch53: {
+    title: "Withdrawing Profits",
+    content: `
+## Withdrawing Profits
+
+Trading is not real until you take money out. This chapter is about turning trading into income.
+
+### The Rule
+
+**Withdraw 50% of profits monthly.**
+
+- If you made 100 units → withdraw 50 → keep 50 for growth
+- If you made 200 units → withdraw 100 → keep 100 for growth
+
+**Why 50%?**
+- 50% pays you — builds belief
+- 50% compounds — grows the account
+
+### How to Track Withdrawals
+
+Open **Plan** in the navbar.
+
+- **Suggested Withdrawal** — auto-calculated as 50% of profit
+- Click **Log Withdrawal**
+- Enter the amount
+- It appears in the Withdrawal History
+
+### The Deposit Side
+
+Also track deposits:
+
+- Any time you add money to the account
+- Click **Log Deposit**
+- History tracked alongside withdrawals
+
+### The Business Summary
+
+The Plan page shows:
+
+- **Total Deposited** — all money you put in
+- **Total Withdrawn** — all money you took out
+- **Net P&L** — current balance + withdrawals − deposits
+
+**This is your true trading performance.**
+
+### Why You Must Withdraw
+
+Many traders grow their account forever — and one bad month wipes them out.
+
+**Withdrawing regularly:**
+
+- Locks in profit
+- Builds belief ("I actually made money trading")
+- Prevents "I'll withdraw when it's bigger" thinking
+- Makes trading a **business** not a hobby
+
+### The Withdrawal Rhythm
+
+- **Monthly** — 50% of profit
+- **Quarterly** — check if 50% still makes sense
+- **Yearly** — evaluate overall progress
+
+**If you had a losing month → no withdrawal.** That's fine. Sit out and wait.
+
+### The Golden Rule
+
+> "Profit is not real until it's in your account. Withdraw monthly. Pay yourself. This is a business."
+
+### What It Changes
+
+Once you withdraw real money from trading, something shifts:
+
+- You stop treating trading as entertainment
+- You stop chasing unrealistic returns
+- You start protecting the machine that pays you
+
+**That's when trading becomes real income.**
+
+---
+
+*End of Part 6 — Continue to Part 7 (Reference) →*
+    `,
+  },
+
+  // ==========================================================
+  // PART 7 — REFERENCE
+  // ==========================================================
+
+  ch54: {
+    title: "Glossary of Terms",
+    content: `
+## Glossary of Terms
+
+Every term in the system, defined.
+
+### A
+
+**ATR (Average True Range)** — A measure of how much price typically moves per candle. Used to check displacement.
+
+### B
+
+**Battlefield** — The space between a key level and a newly formed Rejection Block. Narrower = more explosive.
+
+**Block Breaker** — A Structure Block that has been broken. Signals control shift.
+
+### C
+
+**CE (Consequent Encroachment)** — The 50% midpoint of the Rejection Block zone. Your entry.
+
+**Confluence** — Alignment of multiple signals (timeframes, EMA, FVG) that increases probability.
+
+**Confluence Analyzer** — Tool that checks D1 + H4 + H1 alignment.
+
+### D
+
+**D1** — Daily timeframe.
+
+**Displacement** — A strong move after the rejection candle. ≥ 0.6× ATR = valid.
+
+### E
+
+**EMA 50** — Exponential Moving Average (period 50). Dynamic support/resistance.
+
+**Effectiveness Tier** — Sweep Confluence grading: Moderate, High, Very High, Extreme.
+
+### F
+
+**Flip Zone** — The break level from a Block Breaker. Where the RB forms.
+
+**Fresh RB** — First-time test of a level. Higher probability.
+
+**FVG (Fair Value Gap)** — A 3-candle imbalance. Price tends to return to fill it.
+
+### H
+
+**H1** — 1-hour timeframe.
+
+**H4** — 4-hour timeframe.
+
+### I
+
+**Institutional Cycle** — Accumulation, Manipulation, Distribution, Re-accumulation.
+
+**Institutional Flow System (IFS)** — This system.
+
+### J
+
+**Journal** — Where every trade is logged.
+
+### L
+
+**Liquidity** — Where orders rest. Fuel for institutional moves.
+
+**Liquidity Sweep** — A brief move into a liquidity pool, triggering orders, then reversing.
+
+### M
+
+**Manipulation Phase** — Where institutions push price to trap retail.
+
+**Mitigated RB** — A level that has been tested before. Lower probability.
+
+### N
+
+**News Protocol** — The rule to avoid trading 30 min before / 60 min after high-impact news.
+
+### O
+
+**Order Block (OB)** — The last opposing candle before a strong move. Context, not trigger.
+
+### P
+
+**Plan** — The trading plan: phases, lot sizing, withdrawals.
+
+### Q
+
+**Quality Score** — 0-12 rating of each Rejection Block setup.
+
+### R
+
+**RB (Rejection Block)** — The candle formation that confirms a Flip Zone is defended.
+
+**RFZ (Resistance Flip Zone)** — Bearish RB. Sellers rejected a level.
+
+**RR (Risk-to-Reward Ratio)** — Reward divided by risk. Minimum 1:1.
+
+### S
+
+**Setup** — A planned trade (pair, direction, zone, CE).
+
+**SFZ (Support Flip Zone)** — Bullish RB. Buyers rejected a level.
+
+**Shot Candle** — A candle with body ≥ 1× ATR and small opposing wick. Highest-probability entry when launched from CE.
+
+**Structure Block** — A zone where institutions built orders. The pause before a move.
+
+**Sweep Confluence** — Grading of how institutional a setup is, based on sweep presence.
+
+### T
+
+**Trade Checklist** — 7 gated steps (5-11) walked before any entry.
+
+**Trap** — An engineered move designed to trap retail (False Breakout, Stop Hunt, Judas Swing, Wick Sweep).
+
+**Trend Analyzer** — 10-factor tool for determining direction.
+
+### U
+
+**Unmitigated** — A level not yet swept. Stronger than mitigated.
+
+### V
+
+**Verdict** — The output of an analysis (Valid/Invalid, High/Low probability).
+
+### W
+
+**Wick** — The thin line above or below a candle body. Shows rejection.
+
+**Wick-to-Body Ratio** — Wick size divided by body size. Minimum 2.0× for a valid RB.
+
+### Z
+
+**Zone** — The Rejection Block's price range (high to low).
+
+---
+
+*Continue to Chapter 55 →*
+    `,
+  },
+
+  ch55: {
+    title: "The Complete Rulebook",
+    content: `
+## The Complete Rulebook
+
+Every rule in the system, in one place.
+
+### Chart Reading
+
+1. D1 gives direction
+2. H4 gives the zone
+3. H1 gives confirmation
+4. Lower timeframes give precision
+5. Price moves to fill orders — not randomly
+6. Liquidity is the fuel
+7. Structure reveals intent
+
+### Structure
+
+8. Structure Blocks are pauses — not signals
+9. Block Breakers signal control shift
+10. The break level becomes a Flip Zone
+11. Twice-blocked levels are battle-hardened
+12. Flip Zones can become either support or resistance
+
+### Rejection Blocks
+
+13. A valid RB requires a sweep
+14. The current candle must make the wick (not the previous)
+15. The close must return inside the range
+16. Wick-to-body ratio must be ≥ 2.0×
+17. Displacement must be ≥ 0.6× ATR
+18. Body bigger than wick = reversal pattern, not an RB
+
+### CE (Consequent Encroachment)
+
+19. CE = 50% midpoint of the RB zone
+20. Enter at CE — not at the wick tip
+21. CE breaks = flip zone activation
+22. Flipped CE = second trade opportunity (opposite direction)
+
+### Confluence
+
+23. FVG + RB = confluence
+24. OB + RB = confluence
+25. TF alignment = confluence
+26. EMA 50 + RB = confluence
+27. Sweep + RB = confluence (biggest one)
+28. All together = Extreme tier
+
+### Quality Score
+
+29. Every setup is scored 0-12
+30. Trade only if score ≥ 8 (configurable)
+31. High quality > low quality (proven in Stats)
+
+### Sweep Confluence
+
+32. Sweep alone = Moderate tier
+33. Sweep + TF alignment = Very High tier
+34. Sweep + TF + EMA = Extreme tier
+
+### Trade Checklist
+
+35. Steps 5-11 must be walked in order
+36. No step can be skipped
+37. Entry unlocks only after Step 11
+
+### Entry Rules
+
+38. Entry = CE
+39. SL = beyond the RB wick (with buffer)
+40. TP = 2R minimum
+41. RR ≥ 1:1 (else blocked)
+
+### Risk Management
+
+42. Risk 1-2% per trade
+43. Max daily loss 3%
+44. Max trades per day 3
+45. Never move the stop loss
+
+### Trade Management
+
+46. Partial at 1:1
+47. SL to BE after 1:1
+48. Exit at next structure level
+49. If zone fails → exit immediately
+
+### News
+
+50. No trades 30 min before high-impact news
+51. No trades 60 min after
+52. Trade the reaction, not the spike
+
+### Traps
+
+53. False Breakouts trap breakout traders
+54. Stop Hunts trap obvious levels
+55. Judas Swings trap session-open traders
+56. Wick Sweeps confirm continuation (not reversal)
+
+### Psychology
+
+57. Complete the Mindset Ritual before every session
+58. If emotional section fails → do not trade
+59. Journal every trade
+60. Weekly review every Sunday
+
+### Business
+
+61. Learning phase: 0.01 lots for 30 trades + 80% adherence
+62. Scaling phase: +0.01 lot per +20% growth
+63. Withdrawal phase: 50% of profit monthly
+64. Demote if drawdown ≥ 30%
+
+### The Golden Rule
+
+65. Prepare your mind before your chart
+
+### The Final Rule
+
+> "Follow all 65 rules — or accept that you are not following the system."
+
+---
+
+*Continue to Chapter 56 →*
+    `,
+  },
+
+  ch56: {
+    title: "Daily Checklist",
+    content: `
+## Daily Checklist
+
+A printable one-page checklist for every trading session.
+
+### Before Market
+
+- [ ] Pray / Meditate
+- [ ] Complete Mindset Ritual (30 items)
+- [ ] Open MT5 and log into Headway
+- [ ] Start Python bridge (Terminal 1)
+- [ ] Start cloudflared tunnel (Terminal 2)
+- [ ] Update Render env var if tunnel URL changed
+- [ ] Verify live prices on dashboard
+- [ ] Walk the Chart Checklist (10 phases)
+
+### Pre-Market Analysis
+
+- [ ] Run Trend Analyzer (D1 bias)
+- [ ] Run Confluence Analyzer (D1 + H4 + H1)
+- [ ] Check News Protocol (upcoming events)
+- [ ] Mark Liquidity Map levels
+
+### During Market
+
+- [ ] Create setups aligned with trend
+- [ ] Validate each setup with RB Validator
+- [ ] Wait for price to reach the RB zone
+- [ ] Watch for Telegram alert
+- [ ] Walk the Trade Checklist (7 steps)
+- [ ] Enter via Entry Calculator at CE
+- [ ] Monitor the trade in Journal
+
+### Trade Management
+
+- [ ] Take partial at 1:1
+- [ ] Move SL to BE after 1:1
+- [ ] Exit at next structure
+- [ ] If zone fails → exit immediately
+
+### End of Day
+
+- [ ] Journal every trade (emotion + notes + screenshots)
+- [ ] Mark Partial / BE if applied
+- [ ] Close trades as WON / LOST / BE
+- [ ] Review the day — did you follow rules?
+
+### The Rule
+
+> "Complete this checklist every session. Miss nothing."
+
+### The Verification
+
+If you can check every box above, you have traded your system. If you can't, you have broken it.
+
+**Track this daily. Aim for 100% completion.**
+
+---
+
+*Continue to Chapter 57 →*
+    `,
+  },
+
+  ch57: {
+    title: "Weekly Checklist",
+    content: `
+## Weekly Checklist
+
+A printable one-page checklist for the Sunday review.
+
+### Review Your Week
+
+- [ ] Open the Journal — count total trades
+- [ ] Count wins / losses / BE
+- [ ] Open Stats — check KPIs
+  - [ ] Win Rate
+  - [ ] Avg RR
+  - [ ] Total Pips
+  - [ ] RB Quality correlation
+  - [ ] Rule Adherence %
+  - [ ] By Pair
+  - [ ] By Emotion
+  - [ ] Trap correlation
+- [ ] Open the Weekly Review page
+- [ ] Complete the reflection fields
+
+### The Reflection Questions
+
+**"What did I do well this week?"**
+
+- [ ] Followed the checklist every time?
+- [ ] Waited for the CE?
+- [ ] Took partials at 1:1?
+- [ ] Journaled every trade?
+- [ ] Avoided news windows?
+
+**"What will I change next week?"**
+
+- [ ] Skipped setups below 8/10?
+- [ ] Avoided Judas Swing windows?
+- [ ] Waited 30 min after session open?
+- [ ] Journaled within 1 hour of closing?
+
+### The Deeper Review
+
+- [ ] Which RB tier had the best win rate?
+- [ ] Which emotion led to losses?
+- [ ] Did I stick to max 3 trades/day?
+- [ ] Did I respect the risk % cap?
+- [ ] Did I honor the SL always?
+
+### The Plan
+
+- [ ] Review the Trading Plan page
+- [ ] Check if promotion is available
+- [ ] Log any deposits / withdrawals
+- [ ] Update discipline focus for next week
+
+### Save the Review
+
+- [ ] Click Save Weekly Review
+- [ ] Verify it shows in History
+
+### The Golden Rule
+
+> "The trader who reflects weekly improves monthly. The trader who doesn't repeats the same mistakes forever."
+
+### The Commitment
+
+**Every Sunday. No exceptions.**
+
+Even if the week was great. Especially if the week was great. Complacency is the silent killer.
+
+---
+
+*Continue to Chapter 58 →*
+    `,
+  },
+
+  ch58: {
+    title: "Monthly Checklist",
+    content: `
+## Monthly Checklist
+
+A printable one-page checklist for the month-end review.
+
+### Financial Review
+
+- [ ] Open Stats — check the month's performance
+- [ ] Open Plan — check business summary
+- [ ] Calculate monthly P&L
+- [ ] Compare to previous months
+- [ ] Check if you're ready to scale up
+
+### Withdrawals & Deposits
+
+- [ ] If profitable → log a 50% withdrawal
+- [ ] If deposited → log the deposit
+- [ ] Update business summary
+- [ ] Verify Net P&L is accurate
+
+### Discipline Check
+
+- [ ] Review Rule Adherence across the month
+- [ ] If below 80% → slow down
+- [ ] If above 90% → consider scaling
+- [ ] Count rule violations across the month
+- [ ] Note which rules you broke most
+
+### Performance Patterns
+
+- [ ] Best pair — keep trading it
+- [ ] Worst pair — reduce or eliminate
+- [ ] Best session (Asian / London / NY)
+- [ ] Worst session
+- [ ] Best emotion
+- [ ] Worst emotion
+
+### System Refinement
+
+- [ ] Any rule that consistently fails?
+- [ ] Any rule that consistently works?
+- [ ] Should you adjust the RB gate threshold?
+- [ ] Should you adjust the Displacement multiplier?
+- [ ] Should you adjust the wick/body minimum?
+
+### Promotion Check
+
+- [ ] Are you ready to move from Learning → Scaling?
+- [ ] Are you ready to move from Scaling → Withdrawal?
+- [ ] Or should you demote to a previous phase?
+
+### Long-Term
+
+- [ ] Review your 3-month trend
+- [ ] Are you consistent?
+- [ ] Is the account growing?
+- [ ] Are you sleeping well?
+- [ ] Do you still enjoy trading?
+
+### The Golden Rule
+
+> "The monthly review reveals the truth. Weekly reviews fix the small things. Monthly reviews fix the big things."
+
+### The Commitment
+
+**Every month. First weekend of the month.**
+
+Write it down. Keep the history. Compare months.
+
+**This is how a business grows — not by intuition, but by measurement.**
+
+---
+
+*End of the Manual — The Institutional Flow System is complete.*
+    `,
+  },
+
+
 };
 
 
