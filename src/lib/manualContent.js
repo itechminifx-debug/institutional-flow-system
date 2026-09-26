@@ -1494,7 +1494,6 @@ You will start to see compression as a signal — not noise.
 *End of Part 2 — Continue to Part 3 (The System in the App) in Stage 3 →*
     `,
   },
-};
 
   // ==========================================================
   // PART 3 — THE SYSTEM IN THE APP
@@ -3038,6 +3037,10 @@ When you have profit:
 *End of Part 3 — Continue to Part 4 (Chart Identification) in Stage 4 →*
     `,
   },
+
+};
+
+
 
 
 // ============================================================
