@@ -1496,6 +1496,1550 @@ You will start to see compression as a signal — not noise.
   },
 };
 
+  // ==========================================================
+  // PART 3 — THE SYSTEM IN THE APP
+  // ==========================================================
+
+  ch16: {
+    title: "Daily Routine",
+    content: `
+## Daily Routine
+
+The system works best when used in a specific order. This chapter gives you the exact flow from waking up to end of day.
+
+### Morning (Before Market)
+
+1. **Pray / Meditate** — Clear your mind before the chart (see Chapter 17)
+2. **Open the app** → complete the **Mindset Ritual**
+3. **Open MT5** — log into Headway
+4. **Start the bridge** — Terminal 1: \`python mt5_bridge.py\`
+5. **Start the tunnel** — Terminal 2: \`cloudflared.exe tunnel --url http://localhost:5000\`
+6. **Update Render** if the tunnel URL changed
+7. **Walk the Chart Checklist** — 10 phases
+
+### Pre-Market Analysis
+
+8. Open the **Trend Analyzer** — mark D1 bias for your pairs
+9. Open the **Confluence Analyzer** — check D1 + H4 + H1 alignment
+10. Open the **News Protocol** — check for high-impact events
+11. Open the **Liquidity Map** — mark today's liquidity levels
+
+### During Market
+
+12. **Create setups** on the Setup Planner
+13. **Validate** each setup with the RB Validator
+14. **Wait** for price to reach the RB zone
+15. **Watch for the alert** — Telegram + LiveSetupCard
+16. **Walk the Trade Checklist** — 7 gated steps
+17. **Enter** via the Entry Calculator (CE entry)
+18. **Manage** the trade in the Journal
+
+### End of Day
+
+19. **Journal** every trade — emotion + notes + screenshots
+20. **Mark Partial / BE** if applied
+21. **Close trade** as WON / LOST / BE
+22. **Review** the day — did you follow the rules?
+
+### Weekly
+
+23. **Sunday** → complete the Weekly Review
+24. **Check Stats** — RB correlation, rule adherence
+
+### The Rule
+
+> "Do the same thing, in the same order, every day. Repetition builds discipline. Discipline builds profit."
+
+---
+
+*Continue to Chapter 17 — The Mindset Ritual →*
+    `,
+  },
+
+  ch17: {
+    title: "The Mindset Ritual",
+    content: `
+## The Mindset Ritual
+
+The Mindset Ritual is the **first thing you do** before touching the chart. It prepares the mind, heart, and spirit.
+
+**Never skip it.** The day you skip it is the day you break your rules.
+
+### The Six Sections
+
+**1. Spiritual Preparation** (4 items)
+- Have I prayed before this session?
+- Have I asked for wisdom?
+- Have I surrendered the outcome?
+- Have I given thanks?
+
+**2. Emotional Preparation** (5 items — CRITICAL)
+- Am I calm?
+- Am I patient?
+- Am I free from greed?
+- Am I free from fear?
+- Am I free from revenge?
+
+**3. Mental Preparation** (5 items)
+- Have I reviewed my system?
+- Have I marked my zones?
+- Do I know my bias?
+- Do I know my levels?
+- Do I know my risk?
+
+**4. Physical Preparation** (5 items)
+- Am I well-rested?
+- Have I eaten?
+- Am I hydrated?
+- Is my environment quiet?
+- Is my chart clean?
+
+**5. Discipline Commitment** (6 items)
+- I will wait for my setup
+- I will follow my system
+- I will accept losses
+- I will not move my stop loss
+- I will not overtrade
+- I will journal every trade
+
+**6. Trading Rules Commitment** (5 items)
+- I will risk only 1-2% per trade
+- I will trade only high-probability setups
+- I will wait for confirmation
+- I will take partial profits at 1:1
+- I will stop trading after 3 losses
+
+### Total: 30 items
+
+**You must complete ALL 30** before the app unlocks the dashboard.
+
+### The Emotional Section
+
+The **emotional section** is the gatekeeper. If any of the 5 emotional items is unchecked, the app shows a **red warning** before letting you proceed.
+
+**This is not a formality.** If you are anxious, rushed, greedy, fearful, or revenge-driven — **do not trade today.**
+
+Your capital will still be there tomorrow.
+
+### After the Ritual
+
+Once complete, the app redirects you to the **Chart Checklist**. Your mind is prepared. Now prepare your chart.
+
+### The Golden Rule
+
+> "The market will always be there. Your capital may not. Prepare your mind before you prepare your chart."
+
+### Practice
+
+For the next 30 sessions, complete the ritual **every single time**. After 30 days, it becomes automatic — and you will notice the difference on the days you skip it.
+
+---
+
+*Continue to Chapter 18 — The Chart Checklist →*
+    `,
+  },
+
+  ch18: {
+    title: "The Chart Checklist",
+    content: `
+## The Chart Checklist
+
+After the Mindset Ritual, walk the Chart Checklist. **10 phases, ~30 items.**
+
+This is your pre-session chart walkthrough. It prepares you to see the market clearly.
+
+### The 10 Phases
+
+**Phase 1 — Prepare the Chart**
+- Correct pair selected
+- Timeframe set (start on D1)
+- Chart is clean (only EMA 50)
+- MT5 bridge running
+- Cloudflare tunnel active
+
+**Phase 2 — Read the D1 Direction**
+- D1 trend identified
+- EMA 50 position checked
+- D1 + H4 + H1 aligned (Confluence)
+- Market Structure Shift checked
+
+**Phase 3 — Find the Liquidity**
+- Unmitigated highs/lows marked
+- Equal highs/lows noted
+- Round numbers noted
+- Session extremes noted
+- Nearest liquidity pool identified
+
+**Phase 4 — Identify Structure Blocks**
+- Block above current price
+- Block below current price
+- Block Breaker present
+- Twice-blocked level checked
+
+**Phase 5 — Find the Rejection Block**
+- Sweep occurred
+- Current candle made the wick
+- Wick-to-body ratio ≥ 2×
+- Close back inside
+- Displacement ≥ 0.6× ATR
+- Validated with RB Validator
+
+**Phase 6 — Find the FVG**
+- 3-candle imbalance visible
+- Direction identified
+- Mitigation checked
+- Aligns with RB
+
+**Phase 7 — Identify the Order Block**
+- Last opposing candle before strong move
+- Fresh or used checked
+- Aligns with FVG
+
+**Phase 8 — Check the Battlefield**
+- Distance to next key level measured
+- Compression checked
+
+**Phase 9 — Traps & Timing**
+- Not within 30 min of session open
+- No obvious false breakout forming
+- No stop hunt setting up
+
+**Phase 10 — News Check**
+- No high-impact news within 30 min
+- No news within 60 min after release
+- Manual news lock set if needed
+
+### The Rule
+
+**You cannot create a setup until the Chart Checklist is 100% complete.**
+
+The app enforces this. Every checkbox must be ticked.
+
+### After Completion
+
+Once 100%, the app shows:
+> "✅ Chart fully read — you may proceed to the Setup Planner"
+
+Click **Create a Setup →** and move on.
+
+### Why This Matters
+
+- Forces you to **look at the chart** before reacting
+- Prevents **impulse trades**
+- Trains your eye to **see all context**
+- Builds **muscle memory** for reading structure
+
+After 30 sessions, you will see the chart differently. The checklist will become internal.
+
+---
+
+*Continue to Chapter 19 — The Trend Analyzer →*
+    `,
+  },
+
+  ch19: {
+    title: "The Trend Analyzer",
+    content: `
+## The Trend Analyzer
+
+Before you can trade, you must know the direction. The Trend Analyzer tells you exactly that — based on 10 confirmation factors.
+
+### What It Does
+
+You check 10 factors. Each factor is either:
+- 🟢 Bullish
+- 🔴 Bearish
+
+The app tallies them and gives you a verdict.
+
+### The 10 Factors
+
+1. **Structure** — HH + HL (bullish) or LH + LL (bearish)
+2. **EMA 50** — Price above (bullish) or below (bearish)
+3. **Flip Zones** — RFZ broken (bullish) or SFZ broken (bearish)
+4. **Liquidity** — Lows swept (bullish) or highs swept (bearish)
+5. **FVGs** — Bullish FVGs filled (bullish) or bearish filled (bearish)
+6. **Block Breakers** — Breaker up (bullish) or down (bearish)
+7. **Candles** — Large green bodies (bullish) or red (bearish)
+8. **Alignment** — All TFs up (bullish) or down (bearish)
+9. **Momentum** — Strong bullish or strong bearish
+10. **Pullbacks** — Hold at support (bullish) or resistance (bearish)
+
+### The Verdicts
+
+Based on the tally:
+
+| Bullish Count | Verdict |
+|---|---|
+| 9-10 | 🟢🟢 **Strong Uptrend** |
+| 7-8 | 🟢 **Uptrend** |
+| 4-6 | ⚪ **Sideways** |
+| 2-3 | 🔴 **Downtrend** |
+| 0-1 | 🔴🔴 **Strong Downtrend** |
+
+### How to Use It
+
+1. Open **Trend Analyzer** from the navbar
+2. Select pair (Vol 80, XAUUSD, etc.)
+3. Select timeframe (usually D1)
+4. Check each of the 10 factors against your chart
+5. Read the verdict
+6. Save the analysis to Supabase
+
+### When to Run It
+
+- **Every morning** before setting up trades
+- **When in doubt** about direction
+- **After significant news** — the trend may have shifted
+
+### Integration
+
+- The **dashboard widget** shows your latest trend for quick reference
+- **Setup Planner** uses the trend as Step 1 (D1 Bias)
+- **Confluence Analyzer** cross-checks it with H4 and H1
+
+### The Rule
+
+**Do not create a setup that opposes your trend.**
+
+If the Trend Analyzer says downtrend → only build bearish setups.
+
+If it says uptrend → only build bullish setups.
+
+If it says **Sideways** → **do not trade**. Wait for the trend to clarify.
+
+### What to Watch For
+
+- **Conflicting factors** — 5 bullish, 5 bearish → still sideways
+- **New data** — rerun if major price action occurs
+- **Timeframe-specific** — D1 trend is not the same as H4 trend
+
+### The Golden Rule of Trend
+
+> "The trend is not your friend. The trend is your context. Trade with it — or don't trade at all."
+
+---
+
+*Continue to Chapter 20 — The Confluence Analyzer →*
+    `,
+  },
+
+  ch20: {
+    title: "The Confluence Analyzer",
+    content: `
+## The Confluence Analyzer
+
+The Trend Analyzer gives you the D1 direction. The Confluence Analyzer tells you whether **D1, H4, and H1 agree**.
+
+### What It Checks
+
+For each of 3 timeframes (D1, H4, H1), you check:
+
+1. **Direction** — Up / Down / Sideways
+2. **Rejection Block present** — Yes / No
+3. **Zone range** — Price values
+4. **Liquidity present** — Yes / No
+
+### The Confluence Score
+
+Total score = 100 points, from:
+
+- **Direction alignment** (45 pts): 15 per timeframe
+- **Rejection Blocks** (30 pts): 10 per timeframe
+- **Zone overlap** (10 pts): Do the zones overlap?
+- **Liquidity** (15 pts): 5 per timeframe
+
+### The Verdicts
+
+| Score | Verdict |
+|---|---|
+| 85-100 | 🟢🟢 **High Probability** |
+| 65-84 | 🟢 **Medium-High** |
+| 45-64 | 🟡 **Medium** |
+| 25-44 | 🟠 **Low** |
+| 0-24 | 🔴 **Skip** |
+
+### When to Use It
+
+- **Before creating a setup** — to confirm alignment
+- **When you're uncertain** — to see if timeframes agree
+- **After a big move** — to see if the trend has shifted
+
+### How to Run It
+
+1. Open **Confluence** in the navbar
+2. Select pair and bias
+3. Enter current price
+4. Fill in the D1 checks:
+   - Direction, RB present, zone range, liquidity
+5. Fill in the H4 checks
+6. Fill in the H1 checks
+7. **Watch the score build live**
+8. See the verdict
+9. Save to history
+
+### What the Output Shows
+
+- **Confluence Score** (0-100)
+- **Verdict** (High Probability / Medium-High / Medium / Low / Skip)
+- **Overlap Zone** (the price range where all 3 timeframes agree)
+- **Suggested Entry** (the overlap or H4 zone)
+- **Suggested SL / TP** (based on zone)
+- **RR Ratio**
+
+### Integration
+
+- The **dashboard widget** shows your latest analysis
+- **Setup creation** can be cross-checked against this
+- **Sweep Confluence tier** uses TF alignment as a factor
+
+### The Rule
+
+**Do not create a setup if the Confluence Score is below 45.**
+
+The market is telling you the timeframes disagree. Wait for clarity.
+
+### What to Watch For
+
+- **Zones do not overlap** → no confluence, skip
+- **Direction conflicts** → wait for resolution
+- **Only 2 of 3 timeframes** → medium probability
+
+### The Golden Rule of Confluence
+
+> "One timeframe is a signal. Two is a probability. Three is a trade."
+
+---
+
+*Continue to Chapter 21 — The RB Validator →*
+    `,
+  },
+
+  ch21: {
+    title: "The RB Validator",
+    content: `
+## The RB Validator
+
+The RB Validator verifies a **3-candle formation** before you mark a Rejection Block.
+
+It checks all 5 conditions of a valid RB and gives you a confidence score.
+
+### The 5 Conditions
+
+For a valid RB to pass:
+
+1. **Sweep** — The current candle's wick must exceed a previous swing high (RFZ) or low (SFZ)
+2. **Current candle made the wick** — NOT the previous candle
+3. **Close back inside** — The candle must close back within the previous range
+4. **Wick-to-body ratio** ≥ 2.0× (upper wick for RFZ, lower wick for SFZ)
+5. **Displacement** — The next candle must move ≥ 0.6× ATR in the opposite direction
+
+### Inputs You Enter
+
+- **Pair** (Vol 80, XAUUSD, etc.)
+- **Timeframe** (D1, H4, H1, M30, M15, M5)
+- **Direction** (RFZ = bearish, SFZ = bullish)
+- **Swing Price** — The swing high/low that was swept
+- **ATR (14)** — From MT5
+- **Candle 1** (previous) — Open, High, Low, Close
+- **Candle 2** (current — must create the wick) — O/H/L/C
+- **Candle 3** (displacement) — O/H/L/C
+- **Parameters** — Min wick/body ratio (default 2.0), displacement multiplier (default 0.6)
+
+### Where to Find These Values
+
+- **Swing High/Low** — The highest high or lowest low of the last 5 candles before Candle 2
+- **ATR** — Read from MT5 chart (see Chapter 37)
+- **OHLC** — Hover over each candle in MT5 (see Chapter 33-34)
+
+### The Output
+
+**If Valid:**
+- ✅ **VALID RFZ** or **VALID SFZ**
+- Confidence score (0-10)
+- **Zone High, CE (50%), Zone Low**
+- **CE Entry card** with Entry / SL / TP / RR
+- **Shot Candle Check** (auto-detected)
+- Buttons: **Copy Entry** | **Use in New Setup**
+
+**If Invalid:**
+- ❌ **INVALID REJECTION BLOCK**
+- **Specific reason** — e.g., "Wick-to-body ratio 0.67× below minimum 2×"
+- **Condition checks** — every rule, pass or fail
+
+### The CE Entry Card (New)
+
+When valid, the validator shows the **CE Entry** explicitly:
+
+- **Entry** = 50% midpoint (the CE)
+- **SL** = beyond the wick tip
+- **TP** = 2R from entry
+- **RR** = 1:2 minimum
+
+**You can copy these values straight to your broker.**
+
+### The Shot Candle Check
+
+The validator auto-detects the "shot candle" pattern:
+
+- **Direction correct** — bullish or bearish
+- **Body ≥ 1× ATR**
+- **Opposing wick ≤ 10% of body**
+
+If all three pass → **⚡ SHOT CONFIRMED** banner.
+
+### When to Use It
+
+**Every time you find a potential RB on your chart.**
+
+- Before saving the setup
+- Before entering the trade
+- Before validating the zone
+
+**The validator is the gate. No RB passes without it.**
+
+### The "Use in New Setup" Button
+
+When valid, click this button. The app:
+
+- Pre-fills the setup with the zone (High-Low)
+- Pre-fills the CE as the entry
+- Passes the shot flag to the setup
+- Sets the D1 bias from the RB direction
+
+**You just fill in the remaining fields and save.**
+
+### What to Watch For
+
+- **Swing High not sweeping** → invalid
+- **Previous candle made the wick** → invalid
+- **Body bigger than wick** → invalid (this is a reversal pattern, not an RB)
+- **Displacement below 0.6×** → invalid
+
+### The Golden Rule of RB Validation
+
+> "If the validator says invalid, it is invalid. Do not negotiate with the rules."
+
+---
+
+*Continue to Chapter 22 — The Setup Planner →*
+    `,
+  },
+
+  ch22: {
+    title: "The Setup Planner",
+    content: `
+## The Setup Planner
+
+The Setup Planner is where you **build the trade plan** before the trade happens. This is Steps 1-4 of the IFS.
+
+### The Five Sections
+
+**1. Step 1 — D1 Direction**
+- Pair
+- D1 bias (bullish / bearish)
+- EMA 50 position (above / below)
+
+**2. Step 2 — Block Breaker**
+- Block Breaker Level (Flip Zone price)
+
+**3. Step 3 — Aligned Liquidity**
+- Liquidity Level (price being targeted)
+
+**4. Step 4 — Rejection Block**
+- Rejection Block Zone (e.g., "209000-209500")
+- Notes
+
+**5. Sweep Confluence**
+- Swept Price (the swing high/low that was swept)
+- Auto-checks if it's inside the RB zone
+
+**6. Consequent Encroachment (CE)**
+- Auto-computed from the RB zone
+- Toggle: use CE as default entry
+
+**7. Context Layers**
+- Institutional Cycle
+- FVG (present, direction, prices)
+- Order Block (present, type, prices)
+- Twice-Blocked Level
+
+**8. RB Quality Score**
+- 6 factors (sweep, wick/body, displacement, alignment, freshness, battlefield)
+- Total 0-12
+
+### The Workflow
+
+1. **Complete the Mindset Ritual** (Chapter 17)
+2. **Complete the Chart Checklist** (Chapter 18)
+3. **Run the Trend Analyzer** (Chapter 19)
+4. **Run the Confluence Analyzer** (Chapter 20)
+5. **Validate the RB** (Chapter 21) — get the zone
+6. **Open Setup Planner** — click "+ New Setup"
+7. Fill in all fields (or accept pre-fill from validator)
+8. **Save the setup**
+
+### Auto-Fill from RB Validator
+
+When you click **"Use in New Setup"** from the validator:
+
+- ✅ Pair pre-filled
+- ✅ D1 Bias pre-filled (bearish for RFZ, bullish for SFZ)
+- ✅ Rejection Zone pre-filled
+- ✅ CE pre-filled
+- ✅ Notes pre-filled with confidence score
+- ✅ Shot flag passed
+
+**You fill in Step 2, Step 3, and Context Layers.**
+
+### The Badges
+
+Once saved, the setup shows badges:
+
+- **Pair** + **Bias** (bullish / bearish)
+- **RB Score** (X/12)
+- **Scenario** (🎯 Strong Bullish/Bearish RB, ⚠️ Weak, 🟢/🔴 Failed)
+- **Sweep Tier** (🥉 Moderate, 🥈 High, 🥇 Very High, 🏆 Extreme)
+- **Institutional Cycle** (🟦 Accumulation, 🟨 Manipulation, 🟥 Distribution, 🔁 Re-accumulation)
+- **FVG** — if present
+- **OB** — if present
+- **⚡ Twice-Blocked** — if flagged
+- **CE** — if enabled
+
+### After Saving
+
+The setup appears in:
+
+- **Setups list** — filterable by pair, bias, search
+- **Dashboard** — Live Zone Watchdog monitors the zone
+- **Trade page** — click "Convert to Trade" when ready
+
+### The Rule
+
+**One setup = one trade idea.**
+
+Do not combine multiple setups into one. Each setup has:
+- One pair
+- One direction
+- One zone
+- One CE
+
+**Clean data = clean trades = clean stats.**
+
+### The Golden Rule of Setups
+
+> "Plan the trade. Trade the plan. Do not improvise."
+
+---
+
+*Continue to Chapter 23 — The RB Quality Score →*
+    `,
+  },
+
+  ch23: {
+    title: "The RB Quality Score",
+    content: `
+## The RB Quality Score
+
+Every setup gets a **quality score** out of 12. This score determines if you trade it.
+
+**Rule: Only trade rejection blocks scoring ≥ 8/12** (configurable in Settings).
+
+### The Six Factors
+
+**1. Sweep of Key Level** (0-2 pts)
+- 0 = No sweep / minor wick
+- 1 = Swept a minor level
+- 2 = Swept a major high/low ✅
+
+**2. Wick-to-Body Ratio** (0-2 pts)
+- 0 = < 2× body
+- 1 = 3-4× body
+- 2 = 5×+ body ✅
+
+**3. Displacement** (0-3 pts)
+- 0 = Weak (no follow-through)
+- 1 = Moderate (0.3× ATR)
+- 2 = Strong (0.6× ATR)
+- 3 = Exceptional (> 1× ATR) ✅
+
+**4. Timeframe Alignment** (0-2 pts)
+- 0 = Single timeframe only
+- 1 = 2 timeframes aligned
+- 2 = H4 + H1 + D1 aligned ✅
+
+**5. Freshness** (0-1 pt)
+- 0 = Already mitigated
+- 1 = First touch — fresh ✅
+
+**6. Battlefield Size** (0-2 pts)
+- 0 = Wide (indecision)
+- 1 = Narrow (compression)
+- 2 = Very Narrow (explosive) ✅
+
+### Total: 12 points
+
+### The Verdict
+
+| Score | Label |
+|---|---|
+| 11-12 | 🏆 A+ Setup |
+| 9-10 | ✅ A Setup |
+| 7-8 | ⚠️ B Setup |
+| 5-6 | 🟠 C Setup |
+| 0-4 | 🔴 D Setup |
+
+### The Gate
+
+In Settings, you set your **RB Gate Threshold** (default 8). Only setups scoring ≥ this value can be traded.
+
+**Options:**
+- 7 = Lenient
+- 8 = Standard (recommended)
+- 9 = Strict
+- 10 = Very Strict
+- 11 = Elite only
+
+### The Trade Page
+
+When you open the trade page for a setup:
+
+- If score ≥ threshold → **green banner** "✅ Passes the IFS filter"
+- If score < threshold → **red banner** "⚠️ Rejection Block Quality: X/12 — below minimum"
+
+**You can still trade below threshold, but you are warned.**
+
+### The Stats Correlation
+
+After 20+ trades, the Stats page shows:
+
+- Win rate on high-quality trades (9+)
+- Win rate on medium-quality (7-8)
+- Win rate on low-quality (< 7)
+
+**If your system works: high quality > low quality.** This proves the filter is real.
+
+### How to Score
+
+When creating a setup, scroll to the **Quality Score card**:
+
+1. Click "Score each factor ▼"
+2. Answer each of the 6 factors
+3. Total updates live
+4. Save with the setup
+
+**Be honest.** If you rate everything 2, you lose the filter's value.
+
+### The Golden Rule of Quality
+
+> "The quality score is not a judgment of you. It is a judgment of the setup. Be honest — your stats will thank you."
+
+---
+
+*Continue to Chapter 24 — The Sweep Confluence →*
+    `,
+  },
+
+  ch24: {
+    title: "The Sweep Confluence",
+    content: `
+## The Sweep Confluence
+
+The **Sweep Confluence** is the tier system that grades how institutional a setup is.
+
+**A Rejection Block formed INSIDE a liquidity sweep is dramatically stronger than one that forms elsewhere.**
+
+### The Concept
+
+- **Sweep alone** — stops triggered, liquidity collected
+- **RB alone** — a candle rejected a level
+- **RB inside a sweep** — the exact moment institutions completed their orders
+
+**The sweep is the trap. The RB is the evidence. Together they are deadly.**
+
+### The Four Tiers
+
+**🥉 Moderate**
+- RB only, no sweep confirmed
+- Weakest — trade with caution
+
+**🥈 High**
+- RB + Sweep
+- Liquidity collected, orders filled
+
+**🥇 Very High**
+- RB + Sweep + Timeframe alignment
+- Multiple timeframes agree
+
+**🏆 Extreme**
+- RB + Sweep + TF alignment + EMA 50 alignment
+- Full confluence — the highest-probability setup
+
+### How to Enter a Sweep
+
+In the Setup Planner, after Step 4:
+
+1. Find the **Sweep Confluence** section
+2. Enter the **Swept Price** (the swing high/low that was swept)
+3. The app auto-checks:
+   - Is the swept price **inside** the RB zone?
+   - If YES → **Sweep confirmed** ✅
+   - If NO → warning
+
+### The Auto-Computation
+
+The app computes the tier from:
+
+- **sweep_confirmed** = sweep price inside RB zone
+- **tf_aligned** = RB alignment score = 2
+- **ema_aligned** = EMA 50 position matches D1 bias
+
+Result: **Moderate / High / Very High / Extreme**
+
+### Where the Tier Appears
+
+- **Setup card** — badge at the top
+- **Dashboard LiveSetupCard** — badge
+- **Trade page** — large badge
+- **Journal** — next to the trade
+
+### Score Impact
+
+The tier adds points to the RB Quality Score:
+
+- Moderate → +0
+- High → +1
+- Very High → +2
+- Extreme → +3
+
+**This extends the RB Score from 12 → up to 15 for the highest tier.**
+
+### The Dashboard Widget
+
+The **Sweep Confluence** widget shows your best-tier setup right now.
+
+- If none exists → "No tiered setups"
+- If one exists → shows the tier + pair
+
+### The Golden Rule of Sweep Confluence
+
+> "A Rejection Block without a sweep is a guess. A Rejection Block WITH a sweep is a confirmed institutional footprint. Trade the evidence — not the guess."
+
+---
+
+*Continue to Chapter 25 — The Trade Checklist →*
+    `,
+  },
+
+  ch25: {
+    title: "The Trade Checklist",
+    content: `
+## The Trade Checklist
+
+The Trade Checklist is a **7-step gated flow** (Steps 5-11). You **cannot skip** steps.
+
+**This is the discipline engine.**
+
+### The 7 Steps
+
+**Step 5 — Timeframe Flipping**
+- D1 → H4 → H1 confirmed
+- Direction context is clear
+
+**Step 6 — D1 Direction Marked**
+- Overall trend identified
+- Bias locked in from setup
+
+**Step 7 — H4 Rejection Block Aligned**
+- H4 rejection block aligns with D1 direction
+
+**Step 8 — Patience Applied**
+- Waited patiently for price to reach the H4 zone
+- No FOMO
+
+**Step 9 — 30M Shifting Confirmation**
+- 30M shows short-term control change within trend
+
+**Step 10 — H1 Observation Done**
+- Watched how price approaches the H4 zone
+- Ready
+
+**Step 11 — Entry Rules Confirmed**
+- FVG identified
+- Rejection Block marked
+- Body close away from zone
+
+### How It Works
+
+Each step is a **button**. You must tap in order.
+
+- ✅ Tap Step 5 → it's checked, Step 6 unlocks
+- ❌ Step 6 stays locked until Step 5 is checked
+- ✅ Tap Step 6 → Step 7 unlocks
+- ...
+- ✅ Tap Step 11 → Entry Calculator appears
+
+**You cannot skip a step. You cannot check them out of order.**
+
+### Undo
+
+If you tapped a step by mistake, click **"Undo last step"** to uncheck the most recent.
+
+### The Entry Unlock
+
+Once Step 11 is checked → the **Entry Calculator** appears below.
+
+**This is the moment you're allowed to enter.**
+
+### Why It Matters
+
+**Retail traders skip steps.** They enter when they feel like it, breaking their own rules.
+
+**The checklist refuses.** It holds you accountable. It forces you to walk through your own process.
+
+### The Rule
+
+**No step skipped. No shortcut.**
+
+If you find yourself wanting to skip a step → **the trade is not ready.**
+
+### What to Watch For
+
+- **Temptation to skip** → wait
+- **"I'll just enter, it looks good"** → no. Walk the steps.
+- **"I've already done this mentally"** → mental is not the same as confirmed
+
+### The Golden Rule of the Checklist
+
+> "The checklist is not a formality. It is the decision. If you skip it, you have already broken your system."
+
+---
+
+*Continue to Chapter 26 — The Entry Calculator →*
+    `,
+  },
+
+  ch26: {
+    title: "The Entry Calculator",
+    content: `
+## The Entry Calculator
+
+The Entry Calculator takes over once Step 11 is checked. It computes the **entry, SL, TP, lot size, and RR**.
+
+### The Inputs
+
+- **Entry Price** — auto-fills to CE if enabled, else live price
+- **Stop Loss** — auto-suggested beyond the RB zone
+- **Take Profit** — auto-suggested at 2R
+
+You can override any value manually.
+
+### The Auto-Suggestions
+
+**Entry:**
+- If CE enabled → CE price (50% midpoint)
+- Else → live MT5 price
+
+**Stop Loss:**
+- For BUY (bullish SFZ): Below the RB zone low
+- For SELL (bearish RFZ): Above the RB zone high
+- Buffer: 20% of the zone size
+
+**Take Profit:**
+- 2R from entry (default)
+- BUY: Entry + (risk × 2)
+- SELL: Entry − (risk × 2)
+
+### The Display
+
+Below the inputs, a 4-panel grid shows:
+
+- **Lot Size** — auto-calculated from risk
+- **Risk ($)** — dollar amount at risk
+- **SL Distance** — points between entry and SL
+- **RR Ratio** — reward:risk
+
+### The Calculations
+
+**Lot Size:**
+\`\`\`
+Risk Amount = Account Size × Risk %
+SL Distance = |Entry − SL|
+Lot Size = Risk Amount / (SL Distance × pip value)
+\`\`\`
+
+Default pip value = 1 for Vol 80 (synthetic).
+
+**RR Ratio:**
+\`\`\`
+RR = |TP − Entry| / |Entry − SL|
+\`\`\`
+
+### Warnings
+
+The calculator warns if:
+
+- **RR < 1:1** — red warning, ENTER disabled
+- **Direction mismatch** — e.g., BUY with SL above entry → error
+- **Missing fields** — ENTER disabled
+- **News window active** — ENTER blocked
+
+### The Enter Button
+
+**ENTER TRADE** is enabled only when:
+
+- All fields are filled
+- Direction validation passes
+- RR ≥ 1:1
+- No news window active
+
+Once clicked:
+
+1. Trade is created in Supabase
+2. Linked to the original setup
+3. Status = "open"
+4. You're redirected to the Journal
+
+### What Happens After Entry
+
+The trade appears in:
+
+- **Journal** — as an Open Trade
+- **Trade page** — marked as entered
+- **Stats** — as an open position
+
+### The Golden Rule of Entry
+
+> "Every field has a rule. Every rule has a reason. Trust the calculator — it protects your capital."
+
+---
+
+*Continue to Chapter 27 — The CE Entry →*
+    `,
+  },
+
+  ch27: {
+    title: "The CE Entry",
+    content: `
+## The CE Entry
+
+The CE (Consequent Encroachment) is the **50% midpoint of the Rejection Block zone**. It's the precision entry point.
+
+### What CE Is
+
+For an RFZ (bearish):
+- Zone High = Wick tip
+- Zone Low = Body close
+- **CE = (Zone High + Zone Low) / 2**
+
+For an SFZ (bullish):
+- Zone High = Body close
+- Zone Low = Wick tip
+- **CE = (Zone High + Zone Low) / 2**
+
+### Why CE Wins
+
+**Entering at the wick tip (retail):**
+- Wide SL → poor RR
+- Often stopped out by noise
+
+**Entering at the CE (professional):**
+- Tighter SL (just beyond wick) → better RR
+- Institutions entered here — you join them
+- Strong trends often tap CE and reverse without touching the wick
+
+### How It's Computed
+
+When you enter the RB zone (e.g., "209000-209500"):
+
+- The app computes the midpoint
+- CE = (209000 + 209500) / 2 = 209250
+- This value shows in the Consequent Encroachment section
+
+### The "Use CE" Toggle
+
+In the Setup Planner, toggle:
+
+> ☐ **Use CE price as my default entry on checklist**
+
+When enabled:
+
+- **Entry Calculator** auto-fills to the CE
+- The **Entry Price** field shows "(CE)" badge
+- A **blue CE Entry Active** banner appears on the trade page
+
+### The Shot from CE
+
+The highest-probability setup is when a **shot candle launches directly from the CE**.
+
+**Shot candle criteria:**
+- Body ≥ 1× ATR
+- Opposing wick ≤ 10% of body
+- Direction = aligned with D1 bias
+
+**The RB Validator auto-detects this.**
+
+If confirmed → **⚡ CE ENTRY + SHOT CONFIRMED** badge
+
+### The CE Flip (Second Trade)
+
+If price closes beyond the CE line → the CE flips:
+
+- **Bullish CE breaks below** → becomes resistance → SELL setup
+- **Bearish CE breaks above** → becomes support → BUY setup
+
+The **CE Flip Tracker** (Chapter 28) manages this.
+
+### What Not to Do
+
+- Do not enter before the CE
+- Do not chase after the shot
+- Do not widen the SL to "be safe"
+
+### The Golden Rule of CE
+
+> "The CE is where institutions entered. Enter where they entered. Risk what they risk. Win what they win."
+
+---
+
+*Continue to Chapter 28 — The CE Flip Tracker →*
+    `,
+  },
+
+  ch28: {
+    title: "The CE Flip Tracker",
+    content: `
+## The CE Flip Tracker
+
+The CE Flip Tracker monitors every CE line through its **lifecycle**: fresh → tapped → held → flipped → retested.
+
+It gives you a **second trade opportunity** at the same zone.
+
+### The Lifecycle States
+
+**⚪ Fresh** — CE formed, no touch yet
+**🟡 Tapped** — price tapped CE, waiting for reaction
+**🟢 Held** — CE held, original direction confirmed
+**🔴 Flipped** — price closed beyond the CE
+**🟠 Retested** — price returned to the flipped CE
+**⚫ Dead** — no longer relevant
+
+### How It's Created
+
+**Automatically** when you save a setup with a CE price. The tracker entry is created in state **Fresh**.
+
+### How to Update It
+
+Open **CE Tracker** in the navbar. For each line:
+
+- **🟡 Tap** — price touched the CE
+- **🟢 Held** — CE defended, original direction kept
+- **🔴 Flipped** — price closed beyond CE
+- **🟠 Retest** — price returned to the flipped CE
+- **+1 Tap** — increment tap counter
+- **⚫ Mark Dead** — no longer relevant
+
+### The Flip Trade
+
+When a CE flips (state = 🔴 Flipped):
+
+- The original direction **failed**
+- The CE is now the **opposite role**
+- A **second trade** is coming
+
+**Example:**
+- Original: Bullish RB, CE = 209250
+- Price closed below 209250 → CE flipped
+- Now: **SELL at 209250** on the retest
+
+### The Flip Alert
+
+When state = Flipped or Retested:
+
+- The **flip trade hint** appears on the card
+- The dashboard widget turns **orange**
+- "X flip ready" count shows
+
+### The Retest Trade
+
+When state = 🟠 Retested:
+
+- Price has returned to the flipped CE
+- The **second trade is ready**
+- Enter the **opposite direction** of the original
+
+### The Stats
+
+The CE Tracker widget on the dashboard shows:
+
+- **Total CE lines**
+- **Active** (fresh, tapped, held, flipped, retested)
+- **Flip Ready** (flipped + retested)
+
+### The Golden Rule of CE Flips
+
+> "The CE that fails becomes the level that traps. Trade the flip — the second trade is often the cleaner one."
+
+---
+
+*Continue to Chapter 29 — The Journal →*
+    `,
+  },
+
+  ch29: {
+    title: "The Journal",
+    content: `
+## The Journal
+
+The Journal is where every trade is logged, managed, and closed.
+
+### The Journal List
+
+Two sections:
+
+- **Open Trades** — currently running
+- **Closed Trades** — completed
+
+Each trade card shows:
+
+- Pair + direction (buy/sell)
+- Status (open / won / lost / BE)
+- Entry / SL / TP / RR
+- Flags (Partial @ 1:1, SL → BE)
+- Screenshot count
+
+### The Trade Detail Page
+
+Click any trade to open it. The detail page shows:
+
+**1. RB Scenario Banner**
+- From the original setup (Strong/Weak/Failed Bullish/Bearish)
+
+**2. Trade Summary**
+- Entry, SL, TP
+- Lot size, risk %, RR ratio
+
+**3. Trade Management** (if open)
+- ☐ Partial taken at 1:1
+- ☐ SL moved to break-even
+
+**4. Journal Entry**
+- Emotion dropdown (Calm, Confident, Anxious, FOMO, Revenge, Patient, Disciplined)
+- Notes textarea
+
+**5. Screenshots**
+- Upload up to 4 images
+
+**6. Close Trade** (if open)
+- Result (pips) + Result (%)
+- WON / LOST / B/E buttons
+
+**7. Delete Trade**
+- Removes from journal (with confirmation)
+
+### The Workflow
+
+1. **After entering a trade** — the trade is auto-created
+2. **During the trade** — add screenshots, notes
+3. **At 1:1** — check "Partial taken"
+4. **After 1:1** — check "SL moved to BE"
+5. **When done** — enter result, click WON / LOST / BE
+
+### The Emotion Tracker
+
+You tag every trade with your emotion. After 30 trades, Stats shows:
+
+- Win rate by emotion
+- Which emotions correlate with wins
+- Which emotions lead to losses
+
+**This is the most underrated feature.** Most traders don't know they trade worse when anxious. The Journal reveals it.
+
+### The Screenshots
+
+Every trade can have up to 4 images. Use them for:
+
+- Setup screenshot (before entry)
+- Chart at entry
+- Chart at partial
+- Chart at close
+
+**The journal is your visual memory. Future you will thank you.**
+
+### The Golden Rule of the Journal
+
+> "Journal every trade — win or lose. The journal is not for record. It's for review."
+
+---
+
+*Continue to Chapter 30 — The Stats →*
+    `,
+  },
+
+  ch30: {
+    title: "The Stats",
+    content: `
+## The Stats
+
+The Stats page shows every metric that matters. This is where you find your edge.
+
+### The KPIs
+
+- **Win Rate** — % of closed trades won
+- **Avg RR** — average reward:risk on winners
+- **Total Pips** — cumulative result
+- **Total %** — cumulative account %
+
+### The Breakdown Sections
+
+**1. Trades**
+- Total / Won / Lost / BE counts
+
+**2. Rejection Block Quality**
+- High Quality (8+): win rate + count
+- Medium (6-7): win rate + count
+- Low (< 6): win rate + count
+- Average quality score
+
+**This is the proof that your RB filter works.**
+
+**3. Rule Adherence**
+- Partial @ 1:1: how often applied
+- SL moved to BE: how often applied
+- Overall adherence %
+
+**If this number is below 80%, your discipline is the problem.**
+
+**4. By Pair**
+- Wins/losses per instrument
+- Best pair
+- Worst pair
+
+**5. By Emotion**
+- Win rate per emotion
+- Shows which mindsets win
+- Shows which mindsets lose
+
+**6. Trap Correlation**
+- Trap trades: win rate + count
+- Non-trap trades: win rate + count
+- By trap type
+
+### What to Look For
+
+After 20-30 trades:
+
+- **Does RB quality predict success?**
+  - If high-quality wins more → the filter works
+  - If not → adjust your scoring
+
+- **Does discipline matter?**
+  - High adherence trades should win more
+  - If not → your rules might need adjusting
+
+- **Which emotions lose?**
+  - If "Revenge" has a bad win rate → never trade revenge
+  - If "Calm" has a high win rate → only trade calm
+
+- **Which pair is your edge?**
+  - Focus on the best pair
+  - Drop or reduce the worst
+
+### The Golden Rule of Stats
+
+> "The stats don't lie. If the data says your edge is narrow, focus. If the data says your edge is broad, expand."
+
+---
+
+*Continue to Chapter 31 — The Weekly Review →*
+    `,
+  },
+
+  ch31: {
+    title: "The Weekly Review",
+    content: `
+## The Weekly Review
+
+Every Sunday, complete the **Weekly Review**. It closes the loop.
+
+### What It Shows
+
+**1. This Week's KPIs**
+- Trades (total + closed)
+- Win Rate
+- Pips
+- Average Quality Score
+
+**2. Rule Adherence**
+- Partial + BE applied this week
+- % adherence
+
+**3. Reflection Fields**
+- **"What did I do well this week?"**
+- **"What will I change next week?"**
+
+### How to Complete It
+
+1. Open **Review** in the navbar
+2. Review the auto-filled KPIs
+3. Answer both reflection questions
+4. Click **Save Weekly Review**
+
+**Saved reviews are viewable in History.**
+
+### Why It Matters
+
+- **Reflection converts experience into learning**
+- **Writing forces honesty**
+- **Comparing weeks reveals patterns**
+- **The habit compounds**
+
+### The Question Prompts
+
+**"What did I do well?"**
+- Followed the checklist every time?
+- Waited for the CE?
+- Took partials at 1:1?
+- Journaled every trade?
+
+**"What will I change?"**
+- Skipped setups below 8/10?
+- Avoided the news window?
+- Waited 30 min after session open?
+- Journaled within 1 hour of closing?
+
+### The Dashboard Widget
+
+The Review widget shows:
+
+- **✅ Submitted** — you completed this week's review
+- **🔔 Sunday — Time to review** — reminder
+- **This week's review** — not yet done
+
+### The Rule
+
+**Every Sunday. No exceptions.**
+
+Even if the week was bad. Especially if the week was bad. The Sunday review is when you learn.
+
+### The Golden Rule of Review
+
+> "The trader who reflects weekly improves monthly. The trader who doesn't repeats the same mistakes forever."
+
+---
+
+*Continue to Chapter 32 — The Trading Plan →*
+    `,
+  },
+
+  ch32: {
+    title: "The Trading Plan",
+    content: `
+## The Trading Plan
+
+The Trading Plan is the **business layer**. It defines your phases, lot sizing, and withdrawal rules.
+
+### The Three Phases
+
+**📚 Phase 1 — Learning**
+- Trade 0.01 lots
+- Goal: consistency, not profit
+- Focus: following the rules 100%
+- Rule: same lot size until you have 30 trades at 80%+ adherence
+
+**📈 Phase 2 — Scaling**
+- Increase lot by +0.01 every time account grows by 20%
+- Never double up after a win
+- Rule: protect gains, grow slowly
+
+**💰 Phase 3 — Withdrawal**
+- Withdraw 50% of profits monthly
+- Pay yourself
+- Rule: build real income
+
+### How to Set It Up
+
+1. Open **Plan** in the navbar
+2. Click **Create Trading Plan**
+3. Your starting balance pulls from Settings
+4. You begin in **Phase 1 — Learning**
+
+### The Plan Page
+
+**Current Phase Card** — shows your phase with description, focus, lot rule
+
+**KPIs**
+- Starting balance
+- Current balance
+- Suggested lot size
+- Next withdrawal
+
+**Milestone Progress** (in Scaling phase)
+- Progress bar to next +0.01 lot milestone
+
+**Promotion Rules** — when you can move up
+
+**Withdrawal / Deposit Buttons** — log money movement
+
+**Business Summary**
+- Total deposited
+- Total withdrawn
+- Net P&L
+
+**Withdrawal History** — recent withdrawals
+
+### The Promotion Rules
+
+**Phase 1 → Phase 2:**
+- 30+ closed trades
+- AND 80%+ rule adherence
+
+**Phase 2 → Phase 3:**
+- Account has doubled
+- (2× starting balance)
+
+**Manual switch** — always allowed via dropdown
+
+### The Demotion Warning
+
+If you draw down 30% from starting balance:
+
+- Demotion warning appears
+- Suggested: return to Learning phase
+- Rebuild discipline before scaling
+
+### The Suggested Lot Size
+
+- **Learning phase** → fixed 0.01
+- **Scaling phase** → +0.01 per +20% growth
+- **Withdrawal phase** → depends on remaining equity
+
+### The Withdrawal
+
+When you have profit:
+
+- **Suggested withdrawal** = 50% of profit
+- Click **Log Withdrawal** to record
+- History tracks every withdrawal
+
+### What This Gives You
+
+- **Rules for growth** — not guesses
+- **Rules for withdrawal** — you actually take profit
+- **Business dashboard** — see everything at a glance
+- **Phase tracking** — know where you are and where you're going
+
+### The Golden Rule of the Plan
+
+> "Trading is a business. Businesses have plans. Follow the plan and the plan will pay you."
+
+---
+
+*End of Part 3 — Continue to Part 4 (Chart Identification) in Stage 4 →*
+    `,
+  },
+
+
 // ============================================================
 // HELPERS
 // ============================================================
