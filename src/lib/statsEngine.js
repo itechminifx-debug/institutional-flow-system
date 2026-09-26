@@ -40,6 +40,16 @@ export function computeStats(trades) {
     byPair[p].total += 1;
   });
 
+  // Killzone correlation
+  const byKillzone = {};
+  closed.forEach((t) => {
+    const kz = t.killzone || "unknown";
+    if (!byKillzone[kz]) byKillzone[kz] = { won: 0, lost: 0, be: 0, total: 0 };
+    byKillzone[kz][t.status] = (byKillzone[kz][t.status] || 0) + 1;
+    byKillzone[kz].total += 1;
+  });
+
+
   // ---------------- Rule Adherence ----------------
   const partialCount = closed.filter((t) => t.partial_taken).length;
   const beCount = closed.filter((t) => t.sl_moved_to_be).length;
@@ -163,6 +173,7 @@ export function computeStats(trades) {
 
     // By category
     byPair,
+    byKillzone,
     byEmotion,
     bestPair,
     worstPair,

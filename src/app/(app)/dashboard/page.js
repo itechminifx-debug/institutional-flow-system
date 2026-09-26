@@ -16,6 +16,7 @@ import CEFlipWidget from "@/components/CEFlipWidget";
 import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 import LiquidityWidget from "@/components/LiquidityWidget";
+import KillzoneWidget from "@/components/KillzoneWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -65,6 +66,7 @@ export default async function DashboardPage() {
           <TrendWidget />
           <MindsetWidget />
           <ConfluenceWidget />
+          <KillzoneWidget />
           <NewsWidget />
           <ReviewWidget />
           <PlanWidget />

@@ -11,6 +11,7 @@ import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
 import SweepTierBadge from "@/components/SweepTierBadge";
+import { getCurrentKillzone, isJudasWindow } from "@/lib/killzoneHelpers";
 
 function TradeContent() {
   const searchParams = useSearchParams();
@@ -26,7 +27,8 @@ function TradeContent() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-
+const [currentKillzone, setCurrentKillzone] = useState(getCurrentKillzone());
+const [judasNow, setJudasNow] = useState(isJudasWindow());
   const supabase = createClient();
 
   useEffect(() => {
@@ -98,6 +100,14 @@ function TradeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+  const interval = setInterval(() => {
+    setCurrentKillzone(getCurrentKillzone());
+    setJudasNow(isJudasWindow());
+  }, 30000);
+  return () => clearInterval(interval);
+}, []);
+
   async function handleEnter(entryData) {
     setSubmitting(true);
     setError("");
@@ -126,6 +136,7 @@ function TradeContent() {
       .from("trades")
       .insert({
         user_id: user.id,
+        killzone: currentKillzone.key,
         setup_id: setup.id,
         pair: setup.pair,
         direction,
@@ -235,6 +246,30 @@ function TradeContent() {
             </p>
           </div>
         )}
+
+        {/* Killzone context */}
+<div
+  className={`p-3 rounded-lg border ${currentKillzone.color} space-y-1`}
+>
+  <div className="flex items-center justify-between">
+    <span className="text-xs font-semibold">
+      {currentKillzone.emoji} {currentKillzone.label} Killzone
+    </span>
+    <span className="text-xs opacity-70">
+      {currentKillzone.quality} quality
+    </span>
+  </div>
+  {judasNow && (
+    <p className="text-xs text-red-300">
+      ⚠️ Judas window — wait 30 minutes before entering
+    </p>
+  )}
+  {currentKillzone.key === "outside" && (
+    <p className="text-xs text-yellow-300">
+      ⚠️ Outside killzone — consider waiting for London or NY
+    </p>
+  )}
+</div>
 
         <ScenarioBanner setup={setup} />
 
