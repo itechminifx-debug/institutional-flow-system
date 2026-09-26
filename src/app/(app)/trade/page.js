@@ -7,11 +7,11 @@ import { createClient } from "@/lib/supabaseClient";
 import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
 import { isWithinNewsWindow } from "@/lib/newsHelpers";
 import { TRAP_TYPES } from "@/lib/trapHelpers";
+import { getCurrentKillzone, isJudasWindow } from "@/lib/killzoneHelpers";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
 import SweepTierBadge from "@/components/SweepTierBadge";
-import { getCurrentKillzone, isJudasWindow } from "@/lib/killzoneHelpers";
 
 function TradeContent() {
   const searchParams = useSearchParams();
@@ -24,13 +24,16 @@ function TradeContent() {
   const [checklistComplete, setChecklistComplete] = useState(false);
   const [newsWarning, setNewsWarning] = useState(null);
   const [selectedTrap, setSelectedTrap] = useState(null);
+  const [currentKillzone, setCurrentKillzone] = useState(getCurrentKillzone());
+  const [judasNow, setJudasNow] = useState(isJudasWindow());
+  const [mssConfirmed, setMssConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-const [currentKillzone, setCurrentKillzone] = useState(getCurrentKillzone());
-const [judasNow, setJudasNow] = useState(isJudasWindow());
+
   const supabase = createClient();
 
+  // Load setup + profile
   useEffect(() => {
     async function load() {
       if (!setupId) {
@@ -53,7 +56,10 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
       ]);
 
       if (setupRes.error) setError(setupRes.error.message);
-      else setSetup(setupRes.data);
+      else {
+        setSetup(setupRes.data);
+        setMssConfirmed(setupRes.data.mss_confirmed || false);
+      }
 
       setProfile(profileRes.data);
       setLoading(false);
@@ -62,6 +68,7 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setupId]);
 
+  // Poll live MT5 price
   useEffect(() => {
     async function fetchPrice() {
       try {
@@ -82,6 +89,7 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
     return () => clearInterval(interval);
   }, []);
 
+  // Check for active news window
   useEffect(() => {
     async function checkNews() {
       const { data } = await supabase
@@ -100,13 +108,14 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Refresh killzone every 30 seconds
   useEffect(() => {
-  const interval = setInterval(() => {
-    setCurrentKillzone(getCurrentKillzone());
-    setJudasNow(isJudasWindow());
-  }, 30000);
-  return () => clearInterval(interval);
-}, []);
+    const interval = setInterval(() => {
+      setCurrentKillzone(getCurrentKillzone());
+      setJudasNow(isJudasWindow());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   async function handleEnter(entryData) {
     setSubmitting(true);
@@ -136,7 +145,6 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
       .from("trades")
       .insert({
         user_id: user.id,
-        killzone: currentKillzone.key,
         setup_id: setup.id,
         pair: setup.pair,
         direction,
@@ -146,6 +154,8 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
         used_ce_entry: setup.use_ce_entry || false,
         effectiveness_tier: setup.effectiveness_tier || null,
         trap_type: selectedTrap || null,
+        killzone: currentKillzone.key,
+        mss_confirmed: mssConfirmed,
         ...entryData,
       })
       .select()
@@ -235,6 +245,7 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
           </p>
         </div>
 
+        {/* News Warning */}
         {newsWarning && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -248,35 +259,38 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
         )}
 
         {/* Killzone context */}
-<div
-  className={`p-3 rounded-lg border ${currentKillzone.color} space-y-1`}
->
-  <div className="flex items-center justify-between">
-    <span className="text-xs font-semibold">
-      {currentKillzone.emoji} {currentKillzone.label} Killzone
-    </span>
-    <span className="text-xs opacity-70">
-      {currentKillzone.quality} quality
-    </span>
-  </div>
-  {judasNow && (
-    <p className="text-xs text-red-300">
-      ⚠️ Judas window — wait 30 minutes before entering
-    </p>
-  )}
-  {currentKillzone.key === "outside" && (
-    <p className="text-xs text-yellow-300">
-      ⚠️ Outside killzone — consider waiting for London or NY
-    </p>
-  )}
-</div>
+        <div
+          className={`p-3 rounded-lg border ${currentKillzone.color} space-y-1`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold">
+              {currentKillzone.emoji} {currentKillzone.label} Killzone
+            </span>
+            <span className="text-xs opacity-70">
+              {currentKillzone.quality} quality
+            </span>
+          </div>
+          {judasNow && (
+            <p className="text-xs text-red-300">
+              ⚠️ Judas window — wait 30 minutes before entering
+            </p>
+          )}
+          {currentKillzone.key === "outside" && (
+            <p className="text-xs text-yellow-300">
+              ⚠️ Outside killzone — consider waiting for London or NY
+            </p>
+          )}
+        </div>
 
+        {/* RB Scenario */}
         <ScenarioBanner setup={setup} />
 
+        {/* Sweep Tier */}
         <div className="flex items-center gap-2 flex-wrap">
           <SweepTierBadge setup={setup} size="lg" />
         </div>
 
+        {/* RB Quality Warning */}
         {qualityFails && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -297,6 +311,7 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
           </div>
         )}
 
+        {/* Setup Context */}
         <div className={`p-4 rounded-lg border ${colors.bg} ${colors.border}`}>
           <div className="flex items-start justify-between mb-3">
             <div>
@@ -377,6 +392,7 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
           )}
         </div>
 
+        {/* Trap Tag */}
         <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
           <label className="block text-xs text-gray-400">
             Was this setup triggered by a retail trap? (optional)
@@ -410,8 +426,28 @@ const [judasNow, setJudasNow] = useState(isJudasWindow());
           </div>
         </div>
 
+        {/* MSS Confirmation */}
+        <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={mssConfirmed}
+              onChange={(e) => setMssConfirmed(e.target.checked)}
+              className="w-5 h-5 accent-blue-500"
+            />
+            <span className="text-sm">
+              📊 Market Structure Shift confirmed on chart
+            </span>
+          </label>
+          <p className="text-xs text-gray-500 ml-8">
+            Check this if the recent structure has shifted in your direction
+          </p>
+        </div>
+
+        {/* Gated Checklist */}
         <TradeChecklist onComplete={setChecklistComplete} />
 
+        {/* Entry Calculator */}
         {checklistComplete && (
           <EntryCalculator
             setup={setup}

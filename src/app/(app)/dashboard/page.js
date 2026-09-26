@@ -17,6 +17,8 @@ import GoldenBanner from "@/components/GoldenBanner";
 import PinnedNotesWidget from "@/components/PinnedNotesWidget";
 import LiquidityWidget from "@/components/LiquidityWidget";
 import KillzoneWidget from "@/components/KillzoneWidget";
+import MSSWidget from "@/components/MSSWidget";
+
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -67,6 +69,7 @@ export default async function DashboardPage() {
           <MindsetWidget />
           <ConfluenceWidget />
           <KillzoneWidget />
+          <MSSWidget />
           <NewsWidget />
           <ReviewWidget />
           <PlanWidget />
