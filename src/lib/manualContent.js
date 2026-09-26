@@ -3716,7 +3716,714 @@ In the Setup Planner's **Sweep Confluence** section:
     `,
   },
 
-  
+    // ==========================================================
+  // PART 5 — WORKED EXAMPLES
+  // ==========================================================
+
+  ch41: {
+    title: "Valid RFZ — Bearish Rejection",
+    content: `
+## Valid RFZ — Bearish Rejection
+
+A complete walkthrough of a valid Bearish Rejection Block.
+
+### The Scenario
+
+**Pair:** Volatility 80
+**Timeframe:** H4
+**ATR(14):** 400
+**Swing High:** 210,463 (from an earlier candle — NOT Candle 1)
+
+### Candle 1 (Previous)
+
+- Open: 210,200
+- High: 210,350
+- Low: 209,800
+- Close: 210,050
+
+**Note:** Candle 1's high (210,350) is BELOW the swing high (210,463). Good — Candle 1 did not make the swing.
+
+### Candle 2 (RB Candle)
+
+- Open: 210,100
+- High: **210,600** ← sweeps swing high ✅
+- Low: 210,080
+- Close: **210,150** ← closes below swing high ✅
+
+**Checks:**
+- Sweep: 210,600 > 210,463 ✅
+- Current candle made the wick: Candle 2's high > Candle 1's high ✅
+- Close back inside: 210,150 < 210,463 ✅
+- Upper Wick: 210,600 − max(210,100, 210,150) = **450**
+- Body: |210,150 − 210,100| = **50**
+- Ratio: 450 ÷ 50 = **9.0×** ✅ (way above 2.0×)
+
+### Candle 3 (Displacement)
+
+- Open: 210,150
+- High: 210,200
+- Low: 209,300
+- Close: **209,350**
+
+**Check:**
+- Displacement: 210,150 − 209,350 = **800**
+- Threshold: 400 × 0.6 = **240**
+- 800 ≥ 240 ✅
+
+### The Zone
+
+- Zone High = Wick tip = **210,600**
+- Zone Low = Body close = **210,150**
+- **CE = (210,600 + 210,150) / 2 = 210,375**
+
+### The Verdict
+
+✅ **VALID RFZ**
+- Confidence: 10/10
+- Sweep tier: **Extreme** (if TF + EMA align)
+
+### The Trade
+
+- **Direction:** SELL
+- **Entry (CE):** 210,375
+- **Stop Loss:** 210,700 (beyond the wick + buffer)
+- **Take Profit:** 209,725 (2R from entry)
+- **Risk:** 325 points
+- **RR:** 1:2
+
+### What Makes This Valid
+
+- ✅ Clean sweep of a previous swing high
+- ✅ Current candle made the high
+- ✅ Closed back inside
+- ✅ 9× wick-to-body ratio (exceptional)
+- ✅ 2× ATR displacement (strong)
+- ✅ Zone is fresh (first touch)
+
+### 📸 Upload a chart screenshot showing this exact RFZ pattern
+
+---
+
+*Continue to Chapter 42 →*
+    `,
+  },
+
+  ch42: {
+    title: "Valid SFZ — Bullish Rejection",
+    content: `
+## Valid SFZ — Bullish Rejection
+
+A complete walkthrough of a valid Bullish Rejection Block.
+
+### The Scenario
+
+**Pair:** XAUUSD
+**Timeframe:** H1
+**ATR(14):** 6.50
+**Swing Low:** 2045.30
+
+### Candle 1 (Previous)
+
+- Open: 2047.20
+- High: 2048.00
+- Low: 2046.00
+- Close: 2046.80
+
+**Note:** Candle 1's low (2046.00) is above the swing low (2045.30). Candle 1 did NOT make the swing.
+
+### Candle 2 (RB Candle)
+
+- Open: 2046.80
+- High: 2047.10
+- Low: **2044.60** ← sweeps swing low ✅
+- Close: **2046.40** ← closes above swing low ✅
+
+**Checks:**
+- Sweep: 2044.60 < 2045.30 ✅
+- Current candle made the wick: Candle 2's low < Candle 1's low ✅
+- Close back inside: 2046.40 > 2045.30 ✅
+- Lower Wick: min(2046.80, 2046.40) − 2044.60 = 1.80
+- Body: |2046.40 − 2046.80| = 0.40
+- Ratio: 1.80 ÷ 0.40 = **4.5×** ✅
+
+### Candle 3 (Displacement)
+
+- Open: 2046.40
+- High: 2047.80
+- Low: 2046.30
+- Close: **2047.60**
+
+**Check:**
+- Displacement: 2047.60 − 2046.40 = **1.20**
+- Threshold: 6.50 × 0.6 = **3.90**
+- 1.20 < 3.90 ❌ **Displacement fails**
+
+**But wait** — let's say Candle 3 closed at **2051.00**:
+
+- Displacement: 2051.00 − 2046.40 = **4.60**
+- 4.60 ≥ 3.90 ✅
+
+### The Zone
+
+- Zone High = Body close = **2046.40**
+- Zone Low = Wick tip = **2044.60**
+- **CE = (2046.40 + 2044.60) / 2 = 2045.50**
+
+### The Verdict
+
+✅ **VALID SFZ** (with the improved Candle 3)
+- Confidence: 9/10
+
+### The Trade
+
+- **Direction:** BUY
+- **Entry (CE):** 2045.50
+- **Stop Loss:** 2044.30 (below the wick)
+- **Take Profit:** 2047.90 (2R from entry)
+- **Risk:** 1.20
+- **RR:** 1:2
+
+### What Makes This Valid
+
+- ✅ Clean sweep of previous swing low
+- ✅ Current candle made the low
+- ✅ Closed back above
+- ✅ 4.5× wick-to-body ratio
+- ✅ Sufficient displacement
+
+### 📸 Upload a chart screenshot showing this SFZ pattern
+
+---
+
+*Continue to Chapter 43 →*
+    `,
+  },
+
+  ch43: {
+    title: "Invalid RB — Reversal Pattern",
+    content: `
+## Invalid RB — Reversal Pattern
+
+A walkthrough of a formation that LOOKS like an RB but isn't.
+
+### The Scenario
+
+**Pair:** Volatility 80
+**Timeframe:** H4
+**ATR(14):** 4,572
+**Swing High:** 210,463
+
+### Candle 2 (RB Candle)
+
+- Open: 210,463
+- High: 211,651
+- Low: 207,564
+- Close: 208,690
+
+**Checks:**
+- Sweep: 211,651 > 210,463 ✅
+- Current candle made the wick: ✅
+- Close back inside: 208,690 < 210,463 ✅
+- Upper Wick: 211,651 − max(210,463, 208,690) = **1,188**
+- Body: |208,690 − 210,463| = **1,773**
+- **Ratio: 1,188 ÷ 1,773 = 0.67×** ❌ **(below 2.0×)**
+
+### Candle 3 (Displacement)
+
+- Open: 208,773
+- High: 210,233
+- Low: 206,021
+- Close: 206,480
+
+**Check:**
+- Displacement: 208,690 − 206,480 = **2,210**
+- Threshold: 4,572 × 0.6 = **2,743.2**
+- 2,210 < 2,743.2 ❌ **(below 0.6× ATR)**
+
+### The Verdict
+
+❌ **INVALID REJECTION BLOCK**
+- Confidence: 7/10
+- Reason: Wick-to-body ratio 0.67× (needs 2×)
+- Reason: Displacement 0.48× ATR (needs 0.6×)
+
+### What This Actually Is
+
+**A bearish reversal pattern** — big bullish candle followed by big bearish candle.
+
+**Not a rejection.** The body dominates the wick. Institutions didn't reject a level — they moved price with conviction.
+
+### Why It Still Matters
+
+This formation IS tradeable — just **as a different pattern:**
+
+- **Setup type:** Bearish reversal
+- **Entry:** On the break of the previous candle's low
+- **SL:** Above the current candle's high
+- **TP:** Next structure below
+
+**But it's NOT an RB.** Do not log it as one.
+
+### The Lesson
+
+**The wick is the fingerprint of rejection. Without a dominant wick, there was no rejection — just movement.**
+
+### The Rule
+
+> "If the body is bigger than the wick, it's not a Rejection Block. No exceptions."
+
+### 📸 Upload a chart screenshot of a similar reversal pattern to illustrate
+
+---
+
+*Continue to Chapter 44 →*
+    `,
+  },
+
+  ch44: {
+    title: "RB + Sweep Confluence",
+    content: `
+## RB + Sweep Confluence
+
+When a valid RB forms INSIDE a liquidity sweep, the tier jumps.
+
+### The Scenario
+
+**Pair:** Volatility 80
+**Timeframe:** H4
+**Bias:** Bearish
+
+### The Setup
+
+- **Swing High (swept):** 209,500
+- **Rejection Block Zone:** 209,300 − 209,700
+
+### The Sweep Confluence Check
+
+**Swept Price:** 209,500
+**RB Zone:** 209,300 − 209,700
+
+**Is 209,500 inside the zone?**
+- 209,500 ≥ 209,300 ✅
+- 209,500 ≤ 209,700 ✅
+
+**YES → Sweep confirmed ✅**
+
+### The Tier Calculation
+
+- **Sweep confirmed:** ✅ (swept price inside zone)
+- **TF aligned:** ✅ (RB alignment score = 2)
+- **EMA aligned:** ✅ (bearish bias + price above EMA 50)
+
+**Result: 🏆 EXTREME TIER**
+
+### The Score Impact
+
+RB Quality Score:
+- Sweep factor: 2 pts
+- Wick/body: 2 pts
+- Displacement: 3 pts
+- Alignment: 2 pts
+- Freshness: 1 pt
+- Battlefield: 2 pts
+
+**Total: 12/12**
+
+Plus Sweep Confluence adds +3 → **Effectiveness = maximum**
+
+### The Trade
+
+- **Direction:** SELL
+- **Entry (CE):** 209,500 (the swept price, exactly)
+- **Stop Loss:** 209,800 (beyond the wick)
+- **Take Profit:** 208,900 (2R)
+- **RR:** 1:2
+
+### Why This Is Extreme
+
+- Liquidity was swept (stops triggered)
+- Orders were filled (institutions acted)
+- Rejection confirmed (wick formed)
+- Multi-timeframe alignment
+- EMA 50 confluence
+
+**All four layers stacked.**
+
+### The Lesson
+
+**The sweep is the fuel. The rejection is the trigger. Together, they're the strongest setup the system finds.**
+
+### The Golden Rule
+
+> "A Rejection Block inside a sweep is not a signal. It is a completed institutional order. Trade with them, not against them."
+
+### 📸 Upload a chart showing a valid RB inside a sweep zone
+
+---
+
+*Continue to Chapter 45 →*
+    `,
+  },
+
+  ch45: {
+    title: "CE Shot Entry",
+    content: `
+## CE Shot Entry
+
+The highest-probability entry: a **shot candle launching from the CE**.
+
+### The Scenario
+
+**Pair:** Volatility 80
+**Timeframe:** H4
+**ATR(14):** 400
+
+### The Setup
+
+- Rejection Block Zone: 209,200 − 209,800
+- **CE = (209,200 + 209,800) / 2 = 209,500**
+
+### The Shot Candle
+
+Price returns to the CE:
+
+**The Shot Candle:**
+- Open: **209,500** (exactly at CE)
+- High: 210,000
+- Low: 209,400
+- Close: 210,000
+
+**Checks:**
+- Direction: Bullish (close > open) ✅
+- Body: 210,000 − 209,500 = **500**
+- Body vs ATR: 500 ÷ 400 = **1.25× ATR** ✅ (≥ 1×)
+- Lower Wick: min(209,500, 210,000) − 209,400 = 100
+- Wick % of body: 100 ÷ 500 = 20%... 
+
+**Hmm, 20% is above 10%.** Let me adjust:
+
+**Adjusted Shot Candle:**
+- Open: 209,500
+- High: 210,000
+- Low: 209,480
+- Close: 210,000
+
+**Checks:**
+- Direction: ✅
+- Body: 500 ≥ 1× ATR ✅
+- Lower Wick: 20
+- Wick % of body: 20 ÷ 500 = **4%** ✅ (≤ 10%)
+
+**⚡ SHOT CONFIRMED**
+
+### The Trade
+
+- **Direction:** BUY
+- **Entry:** 209,500 (CE — where the shot launched)
+- **Stop Loss:** 209,300 (below the RB low + buffer)
+- **Take Profit:** 209,900 (2R)
+- **Risk:** 200 points
+- **RR:** 1:2
+
+### Why This Is Optimal
+
+- Entry at CE = institutions' entry
+- Shot candle = institutional conviction
+- Tight stop = below the RB low
+- Full confluence
+
+### The Validation
+
+The RB Validator auto-detects this:
+- Auto-computes shot candle checks
+- Confirms direction, body size, wick ratio
+- Shows **⚡ CE ENTRY + SHOT CONFIRMED** banner
+
+### The Lesson
+
+**A shot from CE is not just an entry — it's a signature.** It tells you institutions just moved price. You're entering with them, at the exact level they chose.
+
+### The Golden Rule
+
+> "When the shot launches from CE, enter. Do not wait for confirmation of confirmation."
+
+### 📸 Upload a chart showing a shot candle launching from the CE
+
+---
+
+*Continue to Chapter 46 →*
+    `,
+  },
+
+  ch46: {
+    title: "CE Flip — Second Trade",
+    content: `
+## CE Flip — Second Trade
+
+A CE that fails becomes the level that traps. Here's the second trade.
+
+### The Scenario
+
+**Original Setup:**
+- Pair: Volatility 80
+- Direction: Bullish (SFZ)
+- CE: 209,500
+- Original trade: BUY at CE
+
+### What Happened
+
+- Price tapped CE at 209,500
+- Shot launched UP ✅
+- Original BUY trade worked
+
+**Then:**
+- Price came back to 209,500
+- **Closed below** the CE (e.g., closed at 209,300)
+- **CE flipped to resistance**
+
+### The CE Flip Tracker
+
+**State progression:**
+- Fresh → Tapped → Held (original trade)
+- Then: Held → **Flipped** (price closed below)
+
+**Lifecycle:**
+1. CE formed at 209,500
+2. First touch at CE — held, shot up
+3. Price returned to CE — closed below → **FLIPPED**
+4. Price returns again — **RETESTED**
+
+### The Second Trade
+
+Once the CE has flipped and is retested:
+
+- **Direction:** SELL (opposite of the original)
+- **Entry:** 209,500 (the flipped CE)
+- **Stop Loss:** 209,700 (above the flipped level)
+- **Take Profit:** 209,100 (2R)
+- **RR:** 1:2
+
+### Why This Works
+
+- The original buyers failed to hold the level
+- Their stops are now below 209,500
+- When price returns to 209,500, sellers step in
+- The old support becomes new resistance
+
+### The CE Tracker Card
+
+The CE Tracker shows:
+- **🔴 Flipped** state
+- **"🔴 Flip Trade — SELL at flipped resistance"**
+- Entry hint: "Watch for return to CE at 209,500 — enter SELL on rejection"
+
+### The Stats Impact
+
+The original trade and the flip trade are **separate trades** in the journal.
+
+**After 10+ flips, Stats will show:**
+- Win rate on original RBs
+- Win rate on flips
+- Which one is more profitable
+
+### The Lesson
+
+**Every CE has two lives.** The first trade (original direction). The second trade (flip). Both are opportunities.
+
+### The Golden Rule
+
+> "The CE that fails becomes the level that traps. Trade the flip — often it's the cleaner trade."
+
+### 📸 Upload a chart showing a CE that flipped and was retested for the second trade
+
+---
+
+*Continue to Chapter 47 →*
+    `,
+  },
+
+  ch47: {
+    title: "News Avoidance",
+    content: `
+## News Avoidance
+
+How to protect your capital around high-impact news events.
+
+### The Rule
+
+**Do not open new positions:**
+
+- **30 minutes before** any high-impact news release
+- **60 minutes after** the release
+
+### Why
+
+The initial move after news is almost always a trap — a liquidity sweep. Retail chases it, then institutions reverse.
+
+**Trade the reaction — not the initial spike.**
+
+### The Setup
+
+- Open the app
+- Go to **News** in the navbar
+- Filter by **High Only**
+- Look at the upcoming events
+
+**Events to watch:**
+- FOMC (Federal Funds Rate)
+- NFP (Non-Farm Payrolls)
+- CPI (Consumer Price Index)
+- ECB Rate Decision
+- BOE Rate Decision
+
+### The Manual Lock
+
+If you want a hard gate:
+
+1. Click **Lock 60 min** (or 30/120)
+2. The app shows red banner: "News Lock Active"
+3. All trade entries are **blocked** until the lock expires
+
+### The Automatic Gate
+
+Even without a manual lock, the **Trade Checklist** checks for news:
+
+- If within 30 min before → red warning
+- ENTER TRADE button is **disabled**
+- Text reads: "TRADE BLOCKED — News Window"
+
+### The Approved Approach
+
+1. **Before news** — no new trades
+2. **During news** — no trades
+3. **30-60 min after** — wait for the reaction
+4. **After the trap** — trade the confirmed move at your pre-marked zones
+
+### What Actually Happens After News
+
+**Pattern:**
+1. News drops
+2. Price spikes in one direction (trap)
+3. Retail chases the spike
+4. Price reverses sharply
+5. The real move begins
+
+**The trap is the spike. The real move is the reversal.**
+
+### In Your System
+
+- **News page:** shows upcoming events + manual lock
+- **Dashboard widget:** shows next event countdown
+- **Trade page:** hard block if within window
+- **Telegram:** optional alert when news window opens
+
+### The Golden Rule
+
+> "News is not a signal. It's a trap for retail. Wait 60 minutes. Then trade the reaction."
+
+### 📸 Upload a chart showing a news spike followed by reversal
+
+---
+
+*Continue to Chapter 48 →*
+    `,
+  },
+
+  ch48: {
+    title: "Trap Detection",
+    content: `
+## Trap Detection
+
+Four types of retail traps — how to spot them and stay out.
+
+### The Four Traps
+
+**1. False Breakout**
+- Price breaks a level
+- Retail enters on the breakout
+- Price reverses immediately
+- **You stay out:** Wait for the close back inside
+
+**2. Stop Hunt**
+- Price pushes into obvious stops
+- Triggers them, collects liquidity
+- Then reverses
+- **You stay out:** Wait for the wick sweep + rejection
+
+**3. Judas Swing**
+- False move at session open
+- Traps early traders
+- Then the real direction begins
+- **You stay out:** Wait 30 min after open
+
+**4. Wick Sweep**
+- Long wick at a key level
+- Sweeps liquidity
+- Trend continues after
+- **You stay in:** Wick sweep confirms trend — not reverses it
+
+### How to Log a Trap
+
+Open the app → **Traps** in navbar.
+
+Click **+ Log New Trap**:
+
+- **Trap Type:** (False Breakout / Stop Hunt / Judas Swing / Wick Sweep)
+- **Pair:** (Vol 80, XAUUSD, etc.)
+- **Level Price:** (e.g., 209,500)
+- **Direction:** (Bullish trap or Bearish trap — which side gets hurt)
+- **Notes**
+
+Save → the trap appears in the list with **Watching** status.
+
+### Confirming the Trap
+
+After price action unfolds:
+
+- **✅ Confirmed** — retail was trapped
+- **✗ Failed** — retail won
+
+**This trains your eye.** After 20 traps logged, you'll spot them in real time.
+
+### The Session Open Alert
+
+The Traps page shows:
+
+> 🌅 London Session Open — Judas Swing Risk
+
+**Wait 30 minutes.** The first move after session open is often a trap.
+
+### The Trap Tag on Trades
+
+When you enter a trade, you can tag it with the trap that triggered it:
+
+- None
+- False Breakout
+- Stop Hunt
+- Judas Swing
+- Wick Sweep
+
+**After 20+ tagged trades, Stats shows:**
+- Win rate on trap-aligned trades
+- Win rate on non-trap trades
+
+### The Traps Dashboard Widget
+
+Shows:
+- Watching count
+- Session open status (Judas Swing alert)
+
+### The Golden Rule
+
+> "Traps are not accidents. They are engineered. Every move that hurts retail was designed to. Recognize the design — and trade the opposite side."
+
+### 📸 Upload a chart of a Judas Swing or False Breakout
+
+---
+
+*End of Part 5 — Continue to Part 6 (Discipline & Mindset) in Stage 6 →*
+    `,
+  },
 
 };
 
