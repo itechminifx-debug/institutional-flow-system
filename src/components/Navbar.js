@@ -10,6 +10,7 @@ const links = [
   { href: "/trend", label: "Trend" },
   { href: "/confluence", label: "Confluence" },
   { href: "/mss", label: "MSS" },
+  { href: "/integrated", label: "Integrated" },
   { href: "/killzones", label: "Killzones" },
   { href: "/liquidity", label: "Liquidity" },
   { href: "/rb-validator", label: "RB Validator" },

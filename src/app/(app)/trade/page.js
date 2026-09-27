@@ -444,6 +444,27 @@ function TradeContent() {
           </p>
         </div>
 
+        {/* Integrated Checklist Link */}
+        <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800 space-y-2">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-300">
+                📋 Final Gate — Integrated Checklist
+              </p>
+              <p className="text-xs text-blue-200/70 mt-1">
+                10-question check: SMC + ICT + CRT combined
+              </p>
+            </div>
+            <Link
+              href={`/integrated?setup=${setup.id}`}
+              target="_blank"
+              className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs whitespace-nowrap"
+            >
+              Open →
+            </Link>
+          </div>
+        </div>
+
         {/* Gated Checklist */}
         <TradeChecklist onComplete={setChecklistComplete} />
 
