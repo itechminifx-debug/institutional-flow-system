@@ -12,6 +12,7 @@ import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
 import SweepTierBadge from "@/components/SweepTierBadge";
+import StopAdvisor from "@/components/StopAdvisor";
 
 function TradeContent() {
   const searchParams = useSearchParams();
@@ -27,6 +28,7 @@ function TradeContent() {
   const [currentKillzone, setCurrentKillzone] = useState(getCurrentKillzone());
   const [judasNow, setJudasNow] = useState(isJudasWindow());
   const [mssConfirmed, setMssConfirmed] = useState(false);
+  const [appliedStop, setAppliedStop] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -465,6 +467,16 @@ function TradeContent() {
           </div>
         </div>
 
+        {/* Stop Advisor */}
+        <StopAdvisor
+          direction={direction}
+          entryPrice={setup.ce_price || livePrice || 0}
+          atr={profile?.default_atr || 400}
+          accountSize={profile?.account_size || 0}
+          riskPercent={profile?.risk_percent || 1}
+          onApplyStop={setAppliedStop}
+        />
+
         {/* Gated Checklist */}
         <TradeChecklist onComplete={setChecklistComplete} />
 
@@ -477,6 +489,7 @@ function TradeContent() {
             onEnter={handleEnter}
             submitting={submitting}
             newsBlocked={!!newsWarning}
+            appliedStop={appliedStop}
           />
         )}
 

@@ -18,6 +18,7 @@ export default function EntryCalculator({
   onEnter,
   submitting,
   newsBlocked = false,
+  appliedStop = null,
 }) {
   const direction = setup.d1_bias === "bullish" ? "buy" : "sell";
   const zone = parseZone(setup.rejection_block_zone);
@@ -54,6 +55,14 @@ export default function EntryCalculator({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryPrice, zone, direction]);
+
+  // Apply stop from Stop Advisor
+  useEffect(() => {
+    if (appliedStop?.stopLoss) {
+      setStopLoss(appliedStop.stopLoss.toFixed(2));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedStop]);
 
   // Auto-suggest TP when SL is set
   useEffect(() => {
@@ -156,6 +165,9 @@ export default function EntryCalculator({
         <div>
           <label className="block text-sm mb-2 text-gray-300">
             Stop Loss
+            {appliedStop && (
+              <span className="ml-2 text-xs text-green-400">(from Advisor)</span>
+            )}
           </label>
           <input
             type="number"
