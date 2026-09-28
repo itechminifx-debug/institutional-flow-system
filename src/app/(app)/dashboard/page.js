@@ -19,6 +19,8 @@ import LiquidityWidget from "@/components/LiquidityWidget";
 import KillzoneWidget from "@/components/KillzoneWidget";
 import MSSWidget from "@/components/MSSWidget";
 import IntegratedWidget from "@/components/IntegratedWidget";
+import SweepWidget from "@/components/SweepWidget";
+
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -78,6 +80,7 @@ export default async function DashboardPage() {
           <SweepConfluenceWidget />
           <CEFlipWidget />
           <LiquidityWidget />
+          <SweepWidget />
         </div>
 
         {safeSetups.length > 0 && (

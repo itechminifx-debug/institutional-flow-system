@@ -13,6 +13,7 @@ const links = [
   { href: "/integrated", label: "Integrated" },
   { href: "/killzones", label: "Killzones" },
   { href: "/liquidity", label: "Liquidity" },
+  { href: "/sweeps", label: "Sweeps" },
   { href: "/rb-validator", label: "RB Validator" },
   { href: "/ce-tracker", label: "CE Tracker" },
   { href: "/setups", label: "Setups" },
