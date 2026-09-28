@@ -112,7 +112,7 @@ export const MANUAL_PARTS = [
       { key: "ch58", number: 58, title: "Monthly Checklist" },
     ],
   },
-  {
+    {
     key: "part8",
     number: 8,
     title: "Framework Integration — SMC + ICT + CRT",
@@ -124,8 +124,20 @@ export const MANUAL_PARTS = [
       { key: "ch63", number: 63, title: "Market Structure Shift (MSS)" },
     ],
   },
+  {
+    key: "part9",
+    number: 9,
+    title: "Advanced Modules — How to Use",
+    chapters: [
+      { key: "ch64", number: 64, title: "The Killzone Tracker" },
+      { key: "ch65", number: 65, title: "The MSS Detector" },
+      { key: "ch66", number: 66, title: "The Integrated Checklist" },
+      { key: "ch67", number: 67, title: "Cluster Strength" },
+      { key: "ch68", number: 68, title: "Sweep Prediction" },
+      { key: "ch69", number: 69, title: "Stop Placement Advisor" },
+    ],
+  },
 ];
-
 // ============================================================
 // CHAPTER CONTENT — STAGE 2 (Parts 1 & 2)
 // ============================================================
@@ -5866,10 +5878,604 @@ If you're betting on a reversal, wait for the MSS. Otherwise, you might be enter
 
 ---
 
-*End of the Manual — The Institutional Flow System now has 63 chapters across 8 Parts.*
     `,
   },
 
+  // ==========================================================
+  // PART 9 — ADVANCED MODULES
+  // ==========================================================
+
+  ch64: {
+    title: "The Killzone Tracker",
+    content: `
+## The Killzone Tracker
+
+The Killzone Tracker tells you **when** to trade — not just where.
+
+Institutions do not trade 24/7. They trade in specific windows called **killzones**. Trading inside these windows = higher probability. Outside = noise.
+
+### How to Open It
+
+Click **Killzones** in the navbar.
+
+### The Page Shows
+
+**Current Window:**
+- Your live killzone (London, New York, Overlap, Asian, or Outside)
+- The current UTC time
+- Quality level (high / extreme / low / avoid)
+
+**Judas Warning** — if you're in the first 30 min of a session open, a red banner appears:
+> ⚠️ Judas Swing Window — wait 30 minutes
+
+**Next Killzone Countdown** — if you're outside a killzone, it tells you when the next one opens.
+
+**Daily Schedule** — the full killzone timetable with a "● NOW" marker on the active one.
+
+**My Killzone Rules** — checkboxes for which windows you allow yourself to trade in:
+- London
+- New York
+- Overlap (L+NY)
+- Asian
+- Outside
+
+**Why This Matters** — a reference card explaining the concept.
+
+### The Two Major Killzones
+
+| Window | UTC Hours | Quality |
+|---|---|---|
+| **London** | 07:00 - 10:00 | High |
+| **New York** | 12:00 - 15:00 | High |
+| **Overlap** (L+NY) | 12:00 - 15:00 | Extreme |
+
+**The overlap is the highest-liquidity window of the day.**
+
+### How to Use It Daily
+
+1. **Open the page every morning** — see which killzone you're in
+2. **If Judas window is active** — wait 30 minutes
+3. **If killzone is active** — you may trade (with all other checks)
+4. **If outside** — no new positions; manage existing trades only
+
+### The Dashboard Widget
+
+The **Killzone widget** shows your current window at a glance:
+- The current killzone (or next one)
+- Judas warning if applicable
+- Quality level
+
+### How It Integrates
+
+Every trade you enter is tagged with the killzone it occurred in. After 20+ trades, **Stats** will show you which killzones produce your best win rate.
+
+**Most traders will find:**
+- Overlap trades → best win rate
+- London/NY trades → consistent
+- Asian trades → lower win rate
+- Outside killzone → worst win rate
+
+**If your outside-killzone trades lose money, stop taking them.**
+
+### The Golden Rule
+
+> "Trade when the institutions trade. Sit out when they sleep."
+
+### 📸 Upload a screenshot of your killzone page
+
+---
+
+*Continue to Chapter 65 →*
+    `,
+  },
+
+  ch65: {
+    title: "The MSS Detector",
+    content: `
+## The MSS Detector
+
+The MSS Detector tracks every **Market Structure Shift** — the moment the trend reverses.
+
+A valid MSS is a **close** beyond the last opposing swing (not just a wick).
+
+### How to Open It
+
+Click **MSS** in the navbar.
+
+### The Page Shows
+
+**Stats:** Total / Bullish / Bearish counts.
+
+**Log Button:** "+ Log MSS Event"
+
+**Event List:** Every MSS you've logged with:
+- Direction (Bullish / Bearish)
+- Pair
+- Timeframe
+- Broken level
+- Close price
+- Notes
+- Timestamp
+
+**Info Card:** A reference explaining what MSS is.
+
+### How to Log an MSS
+
+1. Click **+ Log MSS Event**
+2. **Direction** — Bullish (break above swing high) or Bearish (break below swing low)
+3. **Pair** — Vol 80, XAUUSD, etc.
+4. **Timeframe** — H4, H1, etc.
+5. **Broken Level** — the exact swing price that was broken
+6. **Close Price** — where the candle actually closed (must be beyond the level)
+7. **Notes** — any context
+
+Save.
+
+### The Direction Validation
+
+The app enforces the rule:
+- **Bullish MSS** — close must be **ABOVE** the broken level
+- **Bearish MSS** — close must be **BELOW** the broken level
+
+If the close doesn't satisfy this, the app will reject the entry.
+
+**A wick is not enough. You need a close.**
+
+### Where It Fits
+
+- **Before a reversal trade** — did MSS confirm?
+- **Trend Analyzer** — cross-checks structure shift
+- **Integrated Checklist Q6** — "Has MSS occurred?"
+
+### How to Use It Daily
+
+**Whenever the market shifts direction:**
+
+1. Identify the last swing high (for bullish MSS) or swing low (for bearish MSS)
+2. Watch for a candle to **close beyond it**
+3. Log the MSS immediately with exact values
+4. Check the MSS page regularly to see the current dominant direction
+
+**Over time:** Your MSS log becomes a map of reversals. You'll see patterns in how often reversals happen and where.
+
+### The Dashboard Widget
+
+The **MSS widget** shows your latest MSS event — direction, pair, timeframe.
+
+### The Golden Rule
+
+> "MSS is the confirmation. Before MSS, it's a guess. After MSS, it's a trade."
+
+### 📸 Upload a chart showing a clean MSS break
+
+---
+
+*Continue to Chapter 66 →*
+    `,
+  },
+
+  ch66: {
+    title: "The Integrated Checklist",
+    content: `
+## The Integrated Checklist
+
+The Integrated Checklist is the **final gate** before any trade. 10 questions. 7+ pass = trade.
+
+It combines SMC + ICT + CRT into a single sanity check.
+
+### How to Open It
+
+**Two ways:**
+1. Click **Integrated** in the navbar — standalone page
+2. From the trade page — click **"Open →"** on the blue banner
+
+### The 10 Questions
+
+| # | Question | Module |
+|---|---|---|
+| 1 | Is there a liquidity sweep? | Sweep Confluence |
+| 2 | Did price close back inside the range? | RB Validator |
+| 3 | Is there an Order Block or FVG? | Context Layers |
+| 4 | Is there a Rejection Block? | RB Validator |
+| 5 | Is the CE (50%) marked? | Setup Planner |
+| 6 | Has a Market Structure Shift occurred? | MSS / Trend |
+| 7 | Is the EMA 50 aligned? | Setup Step 1 |
+| 8 | Is the timeframe aligned? | Confluence Analyzer |
+| 9 | Is the RR at least 1:2? | Entry Calculator |
+| 10 | Am I calm and disciplined? | Mindset Ritual |
+
+### How It Works
+
+1. **Tap each question** — tick if the answer is YES
+2. **Watch the score** — 0/10 → 10/10 live
+3. **See the verdict** — based on your score
+
+### The Verdict Tiers
+
+| Score | Verdict |
+|---|---|
+| 9-10 | 🏆 **Extreme Confluence** |
+| 7-8 | ✅ **High Probability** |
+| 5-6 | ⚠️ **Medium — Wait** |
+| 0-4 | 🔴 **Low — Skip** |
+
+**7+ = PASS.** You may enter.
+**Below 7 = FAIL.** Wait for a better setup.
+
+### The Quick Actions
+
+- **✓ Check All** — ticks every box (for testing)
+- **✗ Reset All** — clears everything
+
+### The Notes Field
+
+Add any observations before saving.
+
+### Saving the Check
+
+- **If passed (7+):** Click **"✅ Save & Proceed"**
+- **If failed:** Click **"💾 Save to History"**
+
+Both save to Supabase. History is shown below.
+
+### History
+
+The last 5 checks appear at the bottom:
+- Pair
+- Score
+- Pass/Fail
+- Timestamp
+
+### How to Use It
+
+**Every time you're about to enter a trade:**
+
+1. Open the Integrated Checklist
+2. Answer all 10 questions honestly
+3. If 7+ → proceed to Entry
+4. If < 7 → close the tab. Do not trade.
+
+**Be honest.** If you fudge answers, you defeat the purpose.
+
+### The Dashboard Widget
+
+The **Integrated widget** shows your latest check — score + pass/fail.
+
+### Why It Matters
+
+**You already have 6 other gates:**
+- Mindset Ritual
+- Chart Checklist
+- RB Quality Score
+- Trade Checklist (7 steps)
+- Killzone
+- MSS
+
+**This is the 7th gate.** It's a fast cross-check that catches mistakes the others might miss.
+
+**If you score 7+ on all 7 gates — you're trading a system, not a hunch.**
+
+### The Golden Rule
+
+> "Seven out of ten. That's the line. Cross it — trade. Don't — wait."
+
+### 📸 Upload a screenshot of a passed checklist
+
+---
+
+*Continue to Chapter 67 →*
+    `,
+  },
+
+  ch67: {
+    title: "Cluster Strength",
+    content: `
+## Cluster Strength
+
+Cluster Strength scores every liquidity level by **how many times price has touched it**.
+
+**More touches = stronger pool = bigger institutional magnet.**
+
+### How to Open It
+
+Click **Liquidity** in the navbar.
+
+### The Concept
+
+When you mark a liquidity level (Unmitigated High, Equal Low, etc.), the app tracks **how many times price approaches that level**.
+
+- **1 touch** — a level to watch
+- **2-3 touches** — strong liquidity pool
+- **4+ touches** — the strongest magnet
+
+**The more times price tests a level without breaking it, the more orders are stacked there.**
+
+### How to Use It
+
+1. Add a level to your Liquidity Map
+2. It starts at **1 touch** (• Moderate)
+3. Every time price revisits the level, tap **+**
+4. Watch the badge upgrade:
+   - • **Moderate** (1×)
+   - ⚡ **High** (2-3×)
+   - 🔥 **Extreme** (4+)
+
+### The Touch Counter
+
+Each level shows:
+- **−** (decrement) button
+- Current touch count
+- **+** (increment) button
+- Cluster strength label
+
+**Tap + every time price touches the level again.**
+
+### The Strength Badges
+
+| Badge | Meaning |
+|---|---|
+| • Moderate | 1 touch — fresh level |
+| ⚡ High | 2-3 touches — proven magnet |
+| 🔥 Extreme | 4+ touches — the biggest pool |
+
+### The Sort Options
+
+- **🔥 By Strength** — strongest pools first
+- **💰 By Price** — highest to lowest
+
+**Use "By Strength"** to see where the biggest moves are likely.
+
+### The Strong-Count Display
+
+On the pair selector, you'll see:
+> **🔥2 ⚡5**
+
+Meaning: 2 extreme clusters, 5 high clusters currently unswept.
+
+**If you have 3+ extreme clusters, watch out — big moves are coming.**
+
+### How It Integrates
+
+- **Sweep Prediction** uses cluster strength in the alerts
+- **Stats** correlates which cluster strength produced the best trades
+- **Setup Planner** can reference the nearest strong cluster
+
+### Why It Matters
+
+**Not all liquidity levels are equal.**
+
+A level touched 4 times is a MUCH bigger target than one touched once. Institutions know this — the more stops stacked at a level, the more fuel for the sweep.
+
+**By scoring every level, you know which ones to prioritize.**
+
+### The Golden Rule
+
+> "A level tested once is a line. A level tested four times is a magnet."
+
+### 📸 Upload a screenshot of your Liquidity Map with 🔥 badges
+
+---
+
+*Continue to Chapter 68 →*
+    `,
+  },
+
+  ch68: {
+    title: "Sweep Prediction",
+    content: `
+## Sweep Prediction
+
+Sweep Prediction tells you **when** a liquidity pool is about to be swept — before it happens.
+
+**It's the proactive layer of the Liquidity Map.**
+
+### How to Open It
+
+Click **Sweeps** in the navbar.
+
+### The Concept
+
+Every liquidity pool has a **distance from the current price**. When that distance shrinks, a sweep becomes likely.
+
+The app measures distance in **ATR multiples**:
+
+| Status | Distance | Meaning |
+|---|---|---|
+| ⚡ **Likely** | within 2× ATR | Watch closely |
+| 🔥 **Imminent** | within 1× ATR | Sweep in minutes |
+| ✓ **Occurred** | within 0.1× ATR | Sweep has happened |
+
+### The Page Shows
+
+**Pair + ATR Input:**
+- Select pair
+- Enter ATR (default 400)
+
+**Live Stats:**
+- Live price
+- 🔥 Imminent count
+- ⚡ Likely count
+- ✓ Occurred count
+
+**Active Sweep Signals:**
+Every pool in Likely/Imminent/Occurred status, sorted by proximity.
+
+Each card shows:
+- Status (⚡/🔥/✓)
+- Level type + cluster strength
+- Price, distance, ATR multiple
+- Action buttons (after occurrence): "Create Setup" and "Validate RB"
+
+**Recent Sweep Events:**
+Your last 6 sweep alerts with timestamps.
+
+### The Telegram Alerts
+
+**Automatic alerts fire when a level changes status:**
+
+1. **⚡ Sweep Likely** — pool within 2× ATR
+2. **🔥 Sweep Imminent** — pool within 1× ATR
+3. **✓ Sweep Occurred** — pool touched
+
+Each alert fires **once per level** — no spam.
+
+### How to Use It Daily
+
+**Every session:**
+
+1. Open **Sweeps** in the navbar
+2. Select your pair
+3. Enter the correct ATR (read it from MT5)
+4. See which pools are approaching
+5. **When a Telegram alert fires** → check the page
+6. Watch the pool — the sweep is coming
+7. **When it occurs** → wait for rejection
+8. Look for a **Rejection Block** at the sweep level
+
+**If the sweep produces an RB → create a setup → walk the checklist → enter.**
+
+### The Dashboard Widget
+
+The **Sweep Watch widget** shows your nearest active sweep at a glance — status, pair, distance.
+
+### Why It Matters
+
+**Retail reacts to sweeps. You anticipate them.**
+
+By the time retail sees "price swept a high" and thinks about entering, you've already been waiting for it.
+
+**You're not chasing moves. You're prepared for them.**
+
+### What to Watch For
+
+- **Multiple Likely/Imminent alerts** — big move forming
+- **Extreme cluster being swept** — the biggest moves happen here
+- **Alerts near session opens** — Judas Swing risk
+- **Sweeps outside killzones** — often fake; wait for London/NY
+
+### The Golden Rule
+
+> "Don't chase the sweep. Anticipate it. Then trade the reaction — not the trap."
+
+### 📸 Upload a screenshot of active sweep signals
+
+---
+
+*Continue to Chapter 69 →*
+    `,
+  },
+
+  ch69: {
+    title: "Stop Placement Advisor",
+    content: `
+## Stop Placement Advisor
+
+The Stop Placement Advisor computes your **recommended stop loss** based on the wick extreme and ATR.
+
+**It removes guesswork from stop placement.**
+
+### Where It Is
+
+On the **trade page** — scroll down past the Integrated Checklist. You'll see the **🎯 Stop Placement Advisor** panel.
+
+### The Formula
+
+\`\`\`
+Stop Loss = Wick Extreme ± (ATR × 0.2 buffer)
+
+For BUY:  SL = Wick Extreme − (ATR × 0.2)
+For SELL: SL = Wick Extreme + (ATR × 0.2)
+\`\`\`
+
+**The buffer accounts for spread, slippage, and minor noise.**
+
+### How to Use It
+
+1. Open a trade setup → **Checklist →**
+2. Walk Steps 5-11
+3. Scroll to the **Stop Placement Advisor** panel
+4. **Enter the Wick Extreme:**
+   - For BUY (SFZ) → the **low** of the rejection wick
+   - For SELL (RFZ) → the **high** of the rejection wick
+5. The app computes the recommended SL
+6. See the validation status
+
+### The ATR Validation
+
+The app checks the stop distance against ATR:
+
+| Status | ATR Multiple | Meaning |
+|---|---|---|
+| ⚠️ **Too Tight** | < 1× ATR | Likely to be swept by noise |
+| ✅ **OK** | 1× - 3× ATR | Healthy range |
+| 🔴 **Too Wide** | > 3× ATR | RR will suffer |
+
+**Only "OK" status is safe to trade.**
+
+### The Lot Size Auto-Calculation
+
+Once the SL is set, the app shows:
+- **Lot Size** — based on your account size and risk %
+- **Risk ($)** — the dollar amount at risk
+
+**Use these values in the Entry Calculator.**
+
+### The Apply Button
+
+When SL status is **OK**, a green button appears:
+> 📥 **Apply this Stop to Entry Calculator**
+
+Click it → the Entry Calculator's **Stop Loss** field is auto-filled with this value.
+
+**One click. No manual typing.**
+
+### The Manual Override
+
+If you want to override the recommendation:
+1. Enter your own SL in the **"Or enter SL manually"** field
+2. The validation updates immediately
+3. You'll see the status for your chosen SL
+
+**Manual override is allowed — but the app will warn you if it's Too Tight or Too Wide.**
+
+### Why It Matters
+
+**Most traders place stops based on feelings.**
+
+- "Let me put it here — feels right"
+- "A few pips below should be fine"
+- "The wick looks strong, I'll trust it"
+
+**The Stop Advisor replaces feelings with math.**
+
+The wick + ATR buffer is a **rule**, not a guess. It ensures your stop is:
+- Far enough to survive noise (≥ 1× ATR)
+- Close enough to keep RR healthy (≤ 3× ATR)
+- Placed at the **correct wick reference**
+
+### How It Fits
+
+The Stop Advisor is the last piece of the **Orders & Stops module**:
+- **Liquidity Map** → where orders are
+- **Cluster Strength** → how strong each pool is
+- **Sweep Prediction** → when pools will be swept
+- **Stop Advisor** → where to place YOUR stop
+
+**The module now covers the entire order flow: institutional orders + your stops.**
+
+### The Golden Rule
+
+> "Stop placement is not a feeling. It is a calculation. Trust the math."
+
+### 📸 Upload a screenshot of the Stop Advisor panel
+
+---
+
+*End of Part 9 — The Institutional Flow System now has 69 chapters across 9 Parts.*
+    `,
+  },
+
+  
 };
 
 
