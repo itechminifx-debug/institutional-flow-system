@@ -10,6 +10,9 @@ import {
   levelInfo,
   distanceLabel,
   liquidityAround,
+  computeClusterStrength,
+  clusterStrengthInfo,
+  sortByStrength,
 } from "@/lib/liquidityHelpers";
 
 export default function LiquidityPage() {
@@ -21,6 +24,7 @@ export default function LiquidityPage() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+  const [sortMode, setSortMode] = useState("strength");
 
   const [form, setForm] = useState({
     level_type: "unmitigated_high",
@@ -103,6 +107,8 @@ export default function LiquidityPage() {
         timeframe: form.timeframe,
         session: form.session || null,
         notes: form.notes || null,
+        touches: 1,
+        cluster_strength: "moderate",
       });
 
     setAdding(false);
@@ -151,6 +157,59 @@ export default function LiquidityPage() {
     );
   }
 
+  async function incrementTouch(level) {
+    const newTouches = (level.touches || 1) + 1;
+    const newStrength = computeClusterStrength(newTouches);
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from("liquidity_maps")
+      .update({
+        touches: newTouches,
+        cluster_strength: newStrength,
+        last_touch_at: now,
+      })
+      .eq("id", level.id);
+
+    if (updateError) return;
+
+    setLevels((prev) =>
+      prev.map((l) =>
+        l.id === level.id
+          ? {
+              ...l,
+              touches: newTouches,
+              cluster_strength: newStrength,
+              last_touch_at: now,
+            }
+          : l
+      )
+    );
+  }
+
+  async function decrementTouch(level) {
+    const newTouches = Math.max(1, (level.touches || 1) - 1);
+    const newStrength = computeClusterStrength(newTouches);
+
+    const { error: updateError } = await supabase
+      .from("liquidity_maps")
+      .update({
+        touches: newTouches,
+        cluster_strength: newStrength,
+      })
+      .eq("id", level.id);
+
+    if (updateError) return;
+
+    setLevels((prev) =>
+      prev.map((l) =>
+        l.id === level.id
+          ? { ...l, touches: newTouches, cluster_strength: newStrength }
+          : l
+      )
+    );
+  }
+
   async function deleteLevel(id) {
     if (!window.confirm("Delete this level?")) return;
     const { error: delError } = await supabase
@@ -164,6 +223,18 @@ export default function LiquidityPage() {
 
   const { above, below } = liquidityAround(levels, livePrice);
 
+  // Sort levels based on mode
+  const sortedLevels =
+    sortMode === "strength" ? sortByStrength(levels) : levels;
+
+  // Stats
+  const extremeCount = levels.filter(
+    (l) => l.cluster_strength === "extreme" && !l.swept
+  ).length;
+  const highCount = levels.filter(
+    (l) => l.cluster_strength === "high" && !l.swept
+  ).length;
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto">
@@ -174,6 +245,7 @@ export default function LiquidityPage() {
           </p>
         </div>
 
+        {/* Pair selector + stats */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
           <label className="block text-sm mb-2 text-gray-300">Pair</label>
           <select
@@ -189,7 +261,7 @@ export default function LiquidityPage() {
           </select>
 
           {livePrice !== null && (
-            <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-gray-800">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-800">
               <div>
                 <p className="text-xs text-gray-500">Live Price</p>
                 <p className="font-bold tabular-nums text-white">
@@ -197,21 +269,28 @@ export default function LiquidityPage() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Liquidity Above</p>
+                <p className="text-xs text-gray-500">Above</p>
                 <p className="font-bold tabular-nums text-red-400">
                   {above}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Liquidity Below</p>
+                <p className="text-xs text-gray-500">Below</p>
                 <p className="font-bold tabular-nums text-green-400">
                   {below}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Strong</p>
+                <p className="font-bold tabular-nums text-orange-400">
+                  🔥{extremeCount} ⚡{highCount}
                 </p>
               </div>
             </div>
           )}
         </div>
 
+        {/* Add level form */}
         <form
           onSubmit={handleAdd}
           className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-6 space-y-3"
@@ -327,6 +406,35 @@ export default function LiquidityPage() {
           </button>
         </form>
 
+        {/* Sort mode */}
+        {levels.length > 1 && (
+          <div className="flex gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => setSortMode("strength")}
+              className={`flex-1 py-2 rounded-lg text-xs transition ${
+                sortMode === "strength"
+                  ? "bg-blue-600 text-white font-medium"
+                  : "bg-gray-900 text-gray-400"
+              }`}
+            >
+              🔥 By Strength
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortMode("price")}
+              className={`flex-1 py-2 rounded-lg text-xs transition ${
+                sortMode === "price"
+                  ? "bg-blue-600 text-white font-medium"
+                  : "bg-gray-900 text-gray-400"
+              }`}
+            >
+              💰 By Price
+            </button>
+          </div>
+        )}
+
+        {/* Levels list */}
         {loading ? (
           <p className="text-gray-500 text-center py-8">Loading...</p>
         ) : levels.length === 0 ? (
@@ -340,12 +448,16 @@ export default function LiquidityPage() {
             <h2 className="text-sm font-semibold text-gray-400 mb-2">
               {levels.length} level{levels.length === 1 ? "" : "s"} for {pair}
             </h2>
-            {levels.map((level) => {
+            {sortedLevels.map((level) => {
               const info = levelInfo(level.level_type);
               if (!info) return null;
 
+              const strengthInfo = clusterStrengthInfo(
+                level.cluster_strength || "moderate"
+              );
               const isAbove = livePrice != null && level.price > livePrice;
               const distance = distanceLabel(level.price, livePrice);
+              const touches = level.touches || 1;
 
               return (
                 <div
@@ -353,7 +465,7 @@ export default function LiquidityPage() {
                   className={`p-3 rounded-lg border transition ${
                     level.swept
                       ? "bg-gray-950 border-gray-900 opacity-50"
-                      : "bg-gray-900 border-gray-800"
+                      : `bg-gray-900 border-gray-800`
                   }`}
                 >
                   <div className="flex items-start justify-between mb-1">
@@ -363,6 +475,15 @@ export default function LiquidityPage() {
                       >
                         {info.emoji} {info.label}
                       </span>
+
+                      {!level.swept && (
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full ${strengthInfo.badge} font-semibold`}
+                        >
+                          {strengthInfo.emoji} {touches}×
+                        </span>
+                      )}
+
                       <span className="text-xs text-gray-500">
                         {level.timeframe}
                       </span>
@@ -425,6 +546,35 @@ export default function LiquidityPage() {
                     </div>
                   </div>
 
+                  {/* Touch counter */}
+                  {!level.swept && (
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-800">
+                      <span className="text-xs text-gray-500">
+                        Touches:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => decrementTouch(level)}
+                        className="w-7 h-7 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs"
+                      >
+                        −
+                      </button>
+                      <span className="text-sm font-bold tabular-nums min-w-[2ch] text-center">
+                        {touches}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => incrementTouch(level)}
+                        className="w-7 h-7 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs font-bold"
+                      >
+                        +
+                      </button>
+                      <span className="text-xs text-gray-500 ml-auto">
+                        {strengthInfo.label}
+                      </span>
+                    </div>
+                  )}
+
                   {level.notes && (
                     <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-800">
                       {level.notes}
@@ -435,6 +585,28 @@ export default function LiquidityPage() {
             })}
           </div>
         )}
+
+        {/* Info card */}
+        <div className="mt-6 p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
+          <h3 className="text-xs font-semibold text-blue-300 mb-2">
+            💡 Cluster Strength
+          </h3>
+          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
+            <li>
+              <strong>• Moderate (1×)</strong> — a level to watch
+            </li>
+            <li>
+              <strong>⚡ High (2-3×)</strong> — strong liquidity pool
+            </li>
+            <li>
+              <strong>🔥 Extreme (4+)</strong> — the strongest magnet
+            </li>
+            <li>
+              Tap <strong>+</strong> every time price touches the level again
+            </li>
+            <li>Stronger clusters = bigger institutional targets</li>
+          </ul>
+        </div>
       </div>
     </main>
   );

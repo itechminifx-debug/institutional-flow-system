@@ -82,3 +82,57 @@ export function liquidityAround(levels, livePrice) {
     below: unswept.filter((l) => l.price < livePrice).length,
   };
 }
+
+// ============================================================
+// CLUSTER STRENGTH
+// ============================================================
+
+// Compute cluster strength from number of touches
+export function computeClusterStrength(touches) {
+  const t = parseInt(touches) || 0;
+  if (t >= 4) return "extreme";
+  if (t >= 2) return "high";
+  return "moderate";
+}
+
+// Get info for a cluster strength level
+export function clusterStrengthInfo(strength) {
+  const map = {
+    extreme: {
+      key: "extreme",
+      label: "Extreme Cluster",
+      emoji: "🔥",
+      color: "bg-red-900/50 text-red-200 border-red-600",
+      badge: "bg-red-900/40 text-red-300",
+      description: "4+ touches — the strongest liquidity pool",
+    },
+    high: {
+      key: "high",
+      label: "High Cluster",
+      emoji: "⚡",
+      color: "bg-orange-900/40 text-orange-200 border-orange-700",
+      badge: "bg-orange-900/40 text-orange-300",
+      description: "2-3 touches — strong liquidity pool",
+    },
+    moderate: {
+      key: "moderate",
+      label: "Moderate Cluster",
+      emoji: "•",
+      color: "bg-gray-800 text-gray-300 border-gray-700",
+      badge: "bg-gray-800 text-gray-300",
+      description: "1 touch — a level to watch",
+    },
+  };
+  return map[strength] || map.moderate;
+}
+
+// Sort levels by cluster strength (strongest first)
+export function sortByStrength(levels) {
+  const rank = { extreme: 3, high: 2, moderate: 1 };
+  return [...levels].sort((a, b) => {
+    const rankA = rank[a.cluster_strength || "moderate"] || 0;
+    const rankB = rank[b.cluster_strength || "moderate"] || 0;
+    if (rankA !== rankB) return rankB - rankA;
+    return b.price - a.price;
+  });
+}
