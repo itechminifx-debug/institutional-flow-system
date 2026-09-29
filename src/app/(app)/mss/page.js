@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
 import { mssInfo, validateMSS } from "@/lib/mssHelpers";
+import { computeMSSZone } from "@/lib/mssHelpers";
 
 export default function MSSPage() {
   const supabase = createClient();
@@ -72,6 +73,25 @@ export default function MSSPage() {
       return;
     }
 
+        const broken = parseFloat(form.brokenLevel);
+    const close = parseFloat(form.closePrice);
+
+    // Compute the MSS zone
+    const zone = computeMSSZone({
+      direction: form.direction,
+      brokenLevel: broken,
+      closePrice: close,
+    });
+
+    // Check for opposite-direction active zones to invalidate
+    const { data: activeZones } = await supabase
+      .from("mss_events")
+      .select("id, direction")
+      .eq("user_id", user.id)
+      .eq("pair", form.pair)
+      .eq("zone_status", "active")
+      .neq("direction", form.direction);
+
     const { data, error: insertError } = await supabase
       .from("mss_events")
       .insert({
@@ -79,14 +99,32 @@ export default function MSSPage() {
         pair: form.pair,
         timeframe: form.timeframe,
         direction: form.direction,
-        broken_level: parseFloat(form.brokenLevel),
+        broken_level: broken,
         broken_swing_type:
           form.direction === "bullish" ? "swing_high" : "swing_low",
-        close_price: parseFloat(form.closePrice),
+        close_price: close,
+        zone_high: zone?.zoneHigh,
+        zone_low: zone?.zoneLow,
+        zone_status: "active",
         notes: form.notes || null,
       })
       .select()
       .single();
+
+    // Invalidate opposite-direction zones
+    if (!insertError && data && activeZones?.length > 0) {
+      await supabase
+        .from("mss_events")
+        .update({
+          zone_status: "invalidated",
+          invalidated_by_mss_id: data.id,
+          invalidated_at: new Date().toISOString(),
+        })
+        .in(
+          "id",
+          activeZones.map((z) => z.id)
+        );
+    }
 
     setSubmitting(false);
 
@@ -362,7 +400,7 @@ export default function MSSPage() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-xs mt-2">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mt-2">
                     <div>
                       <p className="opacity-70">
                         Broken {e.broken_swing_type === "swing_high" ? "High" : "Low"}
@@ -377,7 +415,41 @@ export default function MSSPage() {
                         {formatPrice(e.close_price)}
                       </p>
                     </div>
+                    {e.zone_high && e.zone_low && (
+                      <div>
+                        <p className="opacity-70">Zone</p>
+                        <p className="font-bold tabular-nums text-blue-300">
+                          {formatPrice(e.zone_low)} – {formatPrice(e.zone_high)}
+                        </p>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Zone status badge */}
+                  {e.zone_status && (
+                    <div className="mt-2 pt-2 border-t border-current/20 flex items-center justify-between">
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                          e.zone_status === "active"
+                            ? "bg-green-900/40 text-green-300"
+                            : e.zone_status === "mitigated"
+                            ? "bg-yellow-900/40 text-yellow-300"
+                            : "bg-gray-800 text-gray-400"
+                        }`}
+                      >
+                        {e.zone_status === "active"
+                          ? "🟢 Active Zone"
+                          : e.zone_status === "mitigated"
+                          ? "🟡 Mitigated"
+                          : "⚫ Invalidated"}
+                      </span>
+                      {e.rb_aligned && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300">
+                          🎯 RB Aligned
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {e.notes && (
                     <p className="text-xs opacity-70 mt-2 pt-2 border-t border-current/20">
