@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
@@ -12,6 +12,11 @@ import {
   computeEffectivenessTier,
   effectivenessScore,
 } from "@/lib/sweepConfluence";
+import {
+  mssInfo,
+  compressionInfo,
+  computeCompressionLevel,
+} from "@/lib/mssHelpers";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
 
@@ -53,11 +58,37 @@ export default function EditSetupForm({ setup }) {
     twice_blocked_notes: setup.twice_blocked_notes || "",
   });
 
+  const [mssZones, setMssZones] = useState([]);
+  const [selectedMssZone, setSelectedMssZone] = useState(
+    setup.mss_zone_id || null
+  );
+
   const [useCeEntry, setUseCeEntry] = useState(setup.use_ce_entry || false);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    async function loadMSSZones() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("mss_events")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("zone_status", "active")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      setMssZones(data || []);
+    }
+    loadMSSZones();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -125,6 +156,7 @@ export default function EditSetupForm({ setup }) {
             : null,
         ce_price: cePrice,
         use_ce_entry: useCeEntry,
+        mss_zone_id: selectedMssZone || null,
         institutional_cycle: context.institutional_cycle,
         fvg_present: context.fvg_present,
         fvg_direction: context.fvg_direction,
@@ -366,20 +398,96 @@ export default function EditSetupForm({ setup }) {
                 ? "✅ Sweep inside RB zone — Confluence confirmed"
                 : "⚠️ Sweep price is outside the RB zone"}
             </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {sweepOverlap
-                ? "Liquidity collected. Orders filled. High-probability zone."
-                : "Rejection Block may not be institutional. Verify the zone."}
-            </p>
           </div>
         )}
-
-        {!form.sweep_price && (
-          <p className="text-xs text-gray-500">
-            Enter the swept price to enable confluence detection.
-          </p>
-        )}
       </div>
+
+      {/* MSS Zone Alignment */}
+      {mssZones.length > 0 && (
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-blue-400">
+              MSS Zone Alignment
+            </h2>
+            <p className="text-gray-500 text-xs mt-1">
+              Is this setup aligned with an active MSS zone?
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setSelectedMssZone(null)}
+              className={`w-full text-left p-3 rounded-lg border transition ${
+                selectedMssZone === null
+                  ? "bg-gray-800 border-blue-600"
+                  : "bg-black border-gray-800 hover:border-gray-600"
+              }`}
+            >
+              <p className="text-sm font-medium text-gray-300">None</p>
+              <p className="text-xs text-gray-500">
+                Setup is not aligned with any MSS zone
+              </p>
+            </button>
+
+            {mssZones.map((z) => {
+              const info = mssInfo(z.direction);
+              const compression = compressionInfo(
+                z.compression_level ||
+                  computeCompressionLevel(z.nested_rrb_count || 0)
+              );
+              const isSelected = selectedMssZone === z.id;
+              const ce =
+                Math.round(((z.zone_high + z.zone_low) / 2) * 100) / 100;
+
+              return (
+                <button
+                  key={z.id}
+                  type="button"
+                  onClick={() => setSelectedMssZone(z.id)}
+                  className={`w-full text-left p-3 rounded-lg border transition ${
+                    isSelected
+                      ? `${info.color} border-2`
+                      : "bg-black border-gray-800 hover:border-gray-600"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${info.badge} font-semibold`}
+                    >
+                      {info.emoji} {info.label}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {z.timeframe}
+                    </span>
+                    {(z.nested_rrb_count || 0) > 0 && (
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${compression.badge}`}
+                      >
+                        {compression.emoji} {z.nested_rrb_count}×
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {z.zone_low.toFixed(2)} – {z.zone_high.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-yellow-400">
+                    ⭐ CE: {ce.toFixed(2)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedMssZone && (
+            <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800">
+              <p className="text-xs text-blue-300 font-semibold">
+                ✅ Aligned with MSS zone
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CE */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">

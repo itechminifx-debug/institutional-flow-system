@@ -101,7 +101,7 @@ export default async function StatsPage() {
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
                     <p className="text-green-400 text-xs mb-1">
-                      High Quality (8+)
+                      High Quality (9+)
                     </p>
                     <p className="text-xl font-bold text-green-300">
                       {stats.highQualityCount > 0
@@ -116,7 +116,7 @@ export default async function StatsPage() {
 
                   <div className="p-3 rounded-lg bg-yellow-950/40 border border-yellow-800">
                     <p className="text-yellow-400 text-xs mb-1">
-                      Medium (6-7)
+                      Medium (7-8)
                     </p>
                     <p className="text-xl font-bold text-yellow-300">
                       {stats.mediumQualityCount > 0
@@ -131,7 +131,7 @@ export default async function StatsPage() {
 
                   <div className="p-3 rounded-lg bg-red-950/40 border border-red-800">
                     <p className="text-red-400 text-xs mb-1">
-                      Low (&lt; 6)
+                      Low (&lt; 7)
                     </p>
                     <p className="text-xl font-bold text-red-300">
                       {stats.lowQualityCount > 0
@@ -150,38 +150,90 @@ export default async function StatsPage() {
                     Average Quality Score
                   </span>
                   <span className="text-sm font-bold tabular-nums text-white">
-                    {stats.avgQualityScore.toFixed(1)}/10
+                    {stats.avgQualityScore.toFixed(1)}/12
                   </span>
                 </div>
+              </Section>
+            )}
 
-                {stats.highQualityCount > 0 &&
-                  stats.lowQualityCount > 0 &&
-                  stats.highQualityWinRate > stats.lowQualityWinRate && (
-                    <div className="mt-3 p-3 rounded-lg bg-green-950/40 border border-green-800">
-                      <p className="text-green-300 text-xs">
-                        ✅ Your high-quality setups outperform low-quality by{" "}
-                        <strong>
-                          {(
-                            stats.highQualityWinRate - stats.lowQualityWinRate
-                          ).toFixed(0)}
-                          %
-                        </strong>{" "}
-                        — the filter works. Keep enforcing it.
-                      </p>
-                    </div>
+            {/* MSS Zone Alignment */}
+            {stats.mssAlignedCount + stats.nonMssCount > 0 && (
+              <Section title="MSS Zone Alignment">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-green-950/40 border border-green-800">
+                    <p className="text-green-400 text-xs mb-1">
+                      MSS-Aligned
+                    </p>
+                    <p className="text-xl font-bold text-green-300">
+                      {stats.mssAlignedCount > 0
+                        ? `${stats.mssWinRate.toFixed(0)}%`
+                        : "—"}
+                    </p>
+                    <p className="text-xs text-green-500/70 mt-1">
+                      {stats.mssAlignedCount} trade
+                      {stats.mssAlignedCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-gray-900 border border-gray-800">
+                    <p className="text-gray-400 text-xs mb-1">Non-MSS</p>
+                    <p className="text-xl font-bold text-gray-300">
+                      {stats.nonMssCount > 0
+                        ? `${stats.nonMssWinRate.toFixed(0)}%`
+                        : "—"}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {stats.nonMssCount} trade
+                      {stats.nonMssCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </div>
+                {stats.mssAlignedCount > 0 &&
+                  stats.nonMssCount > 0 &&
+                  stats.mssWinRate > stats.nonMssWinRate && (
+                    <p className="text-xs text-gray-400 mt-3">
+                      ✅ MSS-aligned trades outperform by{" "}
+                      {(stats.mssWinRate - stats.nonMssWinRate).toFixed(0)}%
+                    </p>
                   )}
+              </Section>
+            )}
 
-                {stats.highQualityCount > 0 &&
-                  stats.lowQualityCount > 0 &&
-                  stats.highQualityWinRate <= stats.lowQualityWinRate && (
-                    <div className="mt-3 p-3 rounded-lg bg-yellow-950/40 border border-yellow-800">
-                      <p className="text-yellow-300 text-xs">
-                        ⚠️ Low-quality setups are performing as well as your
-                        high-quality ones. Review your scoring criteria, or
-                        collect more data.
-                      </p>
-                    </div>
+            {/* MSS Compression Level */}
+            {Object.keys(stats.byCompression || {}).length > 0 && (
+              <Section title="MSS Compression Level">
+                <div className="space-y-2">
+                  {Object.entries(stats.byCompression).map(
+                    ([level, data]) => {
+                      const rate =
+                        data.total > 0
+                          ? Math.round((data.won / data.total) * 100)
+                          : 0;
+                      return (
+                        <div
+                          key={level}
+                          className="flex items-center justify-between p-2 rounded-lg bg-black border border-gray-800"
+                        >
+                          <span className="text-sm capitalize">{level}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-gray-500">
+                              {data.total} trade
+                              {data.total === 1 ? "" : "s"}
+                            </span>
+                            <span
+                              className={`text-sm font-bold ${
+                                rate >= 50
+                                  ? "text-green-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {rate}%
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
                   )}
+                </div>
               </Section>
             )}
 
@@ -258,7 +310,9 @@ export default async function StatsPage() {
                 {stats.bestPair && (
                   <div className="p-4 rounded-lg bg-green-900/30 border border-green-800">
                     <p className="text-green-400 text-xs mb-1">Best Pair</p>
-                    <p className="font-bold text-sm">{stats.bestPair.pair}</p>
+                    <p className="font-bold text-sm">
+                      {stats.bestPair.pair}
+                    </p>
                     <p className="text-green-300 text-xs mt-1">
                       {stats.bestPair.rate}% win
                     </p>

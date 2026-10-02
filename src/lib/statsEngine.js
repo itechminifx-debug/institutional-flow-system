@@ -1,7 +1,7 @@
 // ============================================================
 // STATS ENGINE — Institutional Flow System
 // Aggregates all trade performance metrics including
-// Rejection Block Quality and Trap correlation
+// Rejection Block Quality, Trap, and MSS correlations
 // ============================================================
 
 export function computeStats(trades) {
@@ -40,15 +40,33 @@ export function computeStats(trades) {
     byPair[p].total += 1;
   });
 
-  // Killzone correlation
-  const byKillzone = {};
-  closed.forEach((t) => {
-    const kz = t.killzone || "unknown";
-    if (!byKillzone[kz]) byKillzone[kz] = { won: 0, lost: 0, be: 0, total: 0 };
-    byKillzone[kz][t.status] = (byKillzone[kz][t.status] || 0) + 1;
-    byKillzone[kz].total += 1;
-  });
+  // ---------------- MSS Zone Correlation ----------------
+  const mssAlignedTrades = closed.filter((t) => t.mss_zone_id);
+  const nonMssTrades = closed.filter((t) => !t.mss_zone_id);
 
+  const mssWinRate =
+    mssAlignedTrades.length > 0
+      ? (mssAlignedTrades.filter((t) => t.status === "won").length /
+          mssAlignedTrades.length) *
+        100
+      : 0;
+
+  const nonMssWinRate =
+    nonMssTrades.length > 0
+      ? (nonMssTrades.filter((t) => t.status === "won").length /
+          nonMssTrades.length) *
+        100
+      : 0;
+
+  // Compression correlation
+  const byCompression = {};
+  closed.filter((t) => t.mss_compression).forEach((t) => {
+    const c = t.mss_compression;
+    if (!byCompression[c]) byCompression[c] = { won: 0, lost: 0, total: 0 };
+    if (t.status === "won") byCompression[c].won++;
+    if (t.status === "lost") byCompression[c].lost++;
+    byCompression[c].total++;
+  });
 
   // ---------------- Rule Adherence ----------------
   const partialCount = closed.filter((t) => t.partial_taken).length;
@@ -173,7 +191,6 @@ export function computeStats(trades) {
 
     // By category
     byPair,
-    byKillzone,
     byEmotion,
     bestPair,
     worstPair,
@@ -194,5 +211,12 @@ export function computeStats(trades) {
     trapWinRate,
     nonTrapWinRate,
     byTrap,
+
+    // MSS Zone correlation
+    mssAlignedCount: mssAlignedTrades.length,
+    nonMssCount: nonMssTrades.length,
+    mssWinRate,
+    nonMssWinRate,
+    byCompression,
   };
 }

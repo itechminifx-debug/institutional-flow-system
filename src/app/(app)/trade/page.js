@@ -8,6 +8,11 @@ import { parseZone, getZoneStatus, statusColors } from "@/lib/zoneHelpers";
 import { isWithinNewsWindow } from "@/lib/newsHelpers";
 import { TRAP_TYPES } from "@/lib/trapHelpers";
 import { getCurrentKillzone, isJudasWindow } from "@/lib/killzoneHelpers";
+import {
+  mssInfo,
+  compressionInfo,
+  computeCompressionLevel,
+} from "@/lib/mssHelpers";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
@@ -28,6 +33,7 @@ function TradeContent() {
   const [currentKillzone, setCurrentKillzone] = useState(getCurrentKillzone());
   const [judasNow, setJudasNow] = useState(isJudasWindow());
   const [mssConfirmed, setMssConfirmed] = useState(false);
+  const [linkedMssZone, setLinkedMssZone] = useState(null);
   const [appliedStop, setAppliedStop] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -69,6 +75,26 @@ function TradeContent() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setupId]);
+
+  // Load linked MSS zone
+  useEffect(() => {
+    async function loadLinkedMss() {
+      if (!setup?.mss_zone_id) {
+        setLinkedMssZone(null);
+        return;
+      }
+
+      const { data } = await supabase
+        .from("mss_events")
+        .select("*")
+        .eq("id", setup.mss_zone_id)
+        .single();
+
+      setLinkedMssZone(data || null);
+    }
+    loadLinkedMss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setup?.mss_zone_id]);
 
   // Poll live MT5 price
   useEffect(() => {
@@ -158,6 +184,9 @@ function TradeContent() {
         trap_type: selectedTrap || null,
         killzone: currentKillzone.key,
         mss_confirmed: mssConfirmed,
+        mss_zone_id: setup.mss_zone_id || null,
+        mss_compression: linkedMssZone?.compression_level || null,
+        nested_rrb_count_at_entry: linkedMssZone?.nested_rrb_count || 0,
         ...entryData,
       })
       .select()
@@ -291,6 +320,74 @@ function TradeContent() {
         <div className="flex items-center gap-2 flex-wrap">
           <SweepTierBadge setup={setup} size="lg" />
         </div>
+
+        {/* MSS Zone Alignment */}
+        {linkedMssZone && (
+          <div
+            className={`p-4 rounded-lg border-2 ${
+              mssInfo(linkedMssZone.direction).color
+            } space-y-2`}
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold uppercase tracking-wider opacity-70">
+                MSS Zone Alignment
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  mssInfo(linkedMssZone.direction).badge
+                } font-semibold`}
+              >
+                {mssInfo(linkedMssZone.direction).emoji}{" "}
+                {mssInfo(linkedMssZone.direction).label}
+              </span>
+              {(linkedMssZone.nested_rrb_count || 0) > 0 && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    compressionInfo(
+                      linkedMssZone.compression_level ||
+                        computeCompressionLevel(
+                          linkedMssZone.nested_rrb_count || 0
+                        )
+                    ).badge
+                  }`}
+                >
+                  {
+                    compressionInfo(
+                      linkedMssZone.compression_level ||
+                        computeCompressionLevel(
+                          linkedMssZone.nested_rrb_count || 0
+                        )
+                    ).emoji
+                  }{" "}
+                  {linkedMssZone.nested_rrb_count}× defense
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div>
+                <p className="opacity-70">Zone High</p>
+                <p className="font-bold tabular-nums">
+                  {linkedMssZone.zone_high.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="opacity-70 text-yellow-300">⭐ CE</p>
+                <p className="font-bold tabular-nums text-yellow-300">
+                  {(
+                    (linkedMssZone.zone_high + linkedMssZone.zone_low) /
+                    2
+                  ).toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="opacity-70">Zone Low</p>
+                <p className="font-bold tabular-nums">
+                  {linkedMssZone.zone_low.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* RB Quality Warning */}
         {qualityFails && (
