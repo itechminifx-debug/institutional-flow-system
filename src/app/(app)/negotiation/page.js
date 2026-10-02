@@ -1,20 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
-import { parseZone } from "@/lib/zoneHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
-import { verdictInfo } from "@/lib/rbVerdict";
-import { computeAttemptVerdict } from "@/lib/rbVerdict";
+import { verdictInfo, computeAttemptVerdict } from "@/lib/rbVerdict";
 import {
   CONFIGURATIONS,
   configurationInfo,
   detectConfiguration,
   computeNegotiation,
   computeNegotiationTrade,
+  computeNextRBAlignment,
   strengthInfo,
 } from "@/lib/negotiationEngine";
 
@@ -36,6 +34,8 @@ export default function NegotiationPage() {
     nestedRbCount: 0,
     nestedMssInRb: false,
     rbFlipped: false,
+    nextRbHigh: "",
+    nextRbLow: "",
     notes: "",
   });
 
@@ -68,9 +68,13 @@ export default function NegotiationPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // Auto-detect configuration
   useEffect(() => {
-    if (form.mssZoneHigh && form.mssZoneLow && form.rbZoneHigh && form.rbZoneLow) {
+    if (
+      form.mssZoneHigh &&
+      form.mssZoneLow &&
+      form.rbZoneHigh &&
+      form.rbZoneLow
+    ) {
       const result = detectConfiguration({
         mssZoneHigh: form.mssZoneHigh,
         mssZoneLow: form.mssZoneLow,
@@ -95,7 +99,6 @@ export default function NegotiationPage() {
     form.rbFlipped,
   ]);
 
-  // Compute negotiation
   const negotiation = computeNegotiation({
     mssDirection: form.mssDirection,
     rbZoneHigh: form.rbZoneHigh,
@@ -105,7 +108,6 @@ export default function NegotiationPage() {
     verdictFlipped: form.rbFlipped,
   });
 
-  // Compute trade
   const trade = computeNegotiationTrade({
     mssDirection: form.mssDirection,
     rbZoneHigh: form.rbZoneHigh,
@@ -113,6 +115,15 @@ export default function NegotiationPage() {
     accountSize: profile?.account_size || 0,
     riskPercent: profile?.risk_percent || 1,
   });
+
+  const nextRbAlignment = trade
+    ? computeNextRBAlignment({
+        direction: trade.direction,
+        takeProfit: trade.tp,
+        nextRbHigh: form.nextRbHigh,
+        nextRbLow: form.nextRbLow,
+      })
+    : null;
 
   const configInfo = configurationInfo(form.configuration);
   const strengthData = configInfo ? strengthInfo(configInfo.strength) : null;
@@ -130,7 +141,6 @@ export default function NegotiationPage() {
       return;
     }
 
-    // Create setup record
     const { data: setup, error: setupError } = await supabase
       .from("setups")
       .insert({
@@ -142,13 +152,18 @@ export default function NegotiationPage() {
         ce_price: negotiation.ce,
         use_ce_entry: true,
         rb_verdict: negotiation.verdict,
-        rb_verdict_price: form.verdictClose ? parseFloat(form.verdictClose) : null,
+        rb_verdict_price: form.verdictClose
+          ? parseFloat(form.verdictClose)
+          : null,
         rb_verdict_at: form.verdictClose ? new Date().toISOString() : null,
         rb_attempts: negotiation.attempts,
         rb_verdict_flipped: negotiation.flipped,
         rb_verdict_flipped_at: negotiation.flipped
           ? new Date().toISOString()
           : null,
+        next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
+        next_rb_low: form.nextRbLow ? parseFloat(form.nextRbLow) : null,
+        next_rb_alignment: nextRbAlignment?.state || null,
         notes:
           form.notes ||
           `Negotiation: ${configInfo?.label || form.configuration}`,
@@ -162,7 +177,6 @@ export default function NegotiationPage() {
       return;
     }
 
-    // Save negotiation record
     const { error: negError } = await supabase.from("negotiations").insert({
       user_id: user.id,
       setup_id: setup.id,
@@ -175,11 +189,16 @@ export default function NegotiationPage() {
       rb_zone_high: parseFloat(form.rbZoneHigh),
       rb_zone_low: parseFloat(form.rbZoneLow),
       ce_price: negotiation.ce,
-      verdict_close: form.verdictClose ? parseFloat(form.verdictClose) : null,
+      verdict_close: form.verdictClose
+        ? parseFloat(form.verdictClose)
+        : null,
       verdict: negotiation.verdict,
       attempts: negotiation.attempts,
       verdict_flipped: negotiation.flipped,
       strength: configInfo?.strength || null,
+      next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
+      next_rb_low: form.nextRbLow ? parseFloat(form.nextRbLow) : null,
+      next_rb_alignment: nextRbAlignment?.state || null,
       notes: form.notes,
     });
 
@@ -395,7 +414,6 @@ export default function NegotiationPage() {
             </div>
           </div>
 
-          {/* Nested flags */}
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -482,7 +500,9 @@ export default function NegotiationPage() {
                 {verdictInfo(negotiation.verdict)?.emoji}{" "}
                 {verdictInfo(negotiation.verdict)?.label}
               </p>
-              <p className="text-xs opacity-90 mt-1">{negotiation.reason}</p>
+              <p className="text-xs opacity-90 mt-1">
+                {negotiation.reason}
+              </p>
             </div>
           )}
 
@@ -584,6 +604,128 @@ export default function NegotiationPage() {
           </div>
         )}
 
+        {/* Next RB Alignment */}
+        {trade && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-blue-400">
+                Next RB Target
+              </h2>
+              <p className="text-gray-500 text-xs mt-1">
+                The next rejection block below (for SELL) or above (for BUY) —
+                the natural target of the trade. Does 2R align with it?
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs mb-1 text-gray-400">
+                  Next RB Low
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.nextRbLow}
+                  onChange={(e) => update("nextRbLow", e.target.value)}
+                  placeholder="e.g. 194000"
+                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1 text-gray-400">
+                  Next RB High
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.nextRbHigh}
+                  onChange={(e) => update("nextRbHigh", e.target.value)}
+                  placeholder="e.g. 194500"
+                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                />
+              </div>
+            </div>
+
+            {nextRbAlignment && nextRbAlignment.state !== "none" && (
+              <div
+                className={`p-3 rounded-lg border-2 ${nextRbAlignment.color}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-bold">
+                    {nextRbAlignment.emoji} {nextRbAlignment.label}
+                  </span>
+                  {nextRbAlignment.badge && (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${nextRbAlignment.badge}`}
+                    >
+                      {nextRbAlignment.state}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs opacity-90">
+                  {nextRbAlignment.description}
+                </p>
+
+                {nextRbAlignment.rbMid && (
+                  <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-current/20 text-xs">
+                    <div>
+                      <p className="opacity-70">Next RB Low</p>
+                      <p className="font-bold tabular-nums">
+                        {nextRbAlignment.rbBottom.toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="opacity-70">Midpoint</p>
+                      <p className="font-bold tabular-nums text-yellow-300">
+                        {nextRbAlignment.rbMid.toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="opacity-70">Next RB High</p>
+                      <p className="font-bold tabular-nums">
+                        {nextRbAlignment.rbTop.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {nextRbAlignment.state === "aligns" && (
+                  <div className="mt-2 p-2 rounded bg-green-950/60 border border-green-700 text-center">
+                    <p className="text-xs font-semibold text-green-300">
+                      ✅ 2R TP aligns with the next RB — the target is
+                      realistic
+                    </p>
+                  </div>
+                )}
+
+                {nextRbAlignment.state === "before" && (
+                  <div className="mt-2 p-2 rounded bg-yellow-950/60 border border-yellow-700 text-center">
+                    <p className="text-xs font-semibold text-yellow-300">
+                      ⚠️ 2R TP may not reach the next RB — consider a smaller
+                      RR
+                    </p>
+                  </div>
+                )}
+
+                {nextRbAlignment.state === "past" && (
+                  <div className="mt-2 p-2 rounded bg-red-950/60 border border-red-700 text-center">
+                    <p className="text-xs font-semibold text-red-300">
+                      🔴 2R TP goes past the next RB — the RB may block the
+                      trade
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!form.nextRbHigh && !form.nextRbLow && (
+              <p className="text-xs text-gray-500">
+                Optional — enter the next RB to check if 2R is realistic.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           <label className="block text-xs mb-1 text-gray-400">Notes</label>
@@ -630,7 +772,8 @@ export default function NegotiationPage() {
               <strong>RB</strong> = defense. Where the level is protected.
             </li>
             <li>
-              <strong>CE</strong> = negotiation line. 50% midpoint. Your entry.
+              <strong>CE</strong> = negotiation line. 50% midpoint. Your
+              entry.
             </li>
             <li>
               <strong>Close beyond RB</strong> = verdict reached
@@ -640,6 +783,10 @@ export default function NegotiationPage() {
             </li>
             <li>
               <strong>Flip</strong> = new trade in the opposite direction
+            </li>
+            <li>
+              <strong>Next RB</strong> = where the 2R TP lands. If it aligns,
+              the target is realistic.
             </li>
           </ul>
         </div>

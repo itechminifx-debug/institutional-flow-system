@@ -153,6 +153,11 @@ export const MANUAL_PARTS = [
         number: 71,
         title: "The Two-Attempt Rule",
       },
+            {
+        key: "ch72",
+        number: 72,
+        title: "The Next RB Target — Where 2R Lands",
+      },
     ],
   },
 ];
@@ -6666,7 +6671,84 @@ After the flip, price may consolidate near the zone. This is **re-accumulation**
 *End of Part 10 — The Institutional Flow System now has 71 chapters across 10 Parts.*
     `,
   },
-  
+    ch72: {
+    title: "The Next RB Target — Where 2R Lands",
+    content: `
+## The Next RB Target — Where 2R Lands
+
+Your 2R take profit doesn't land at a random price. **It often lands at the next rejection block — the next structural level.**
+
+### Why This Happens
+
+- **2R** = the natural profit target for the RB trade
+- **Next RB** = the next liquidity pool in the path
+- **Institutions target the next RB** — that's where the money is
+- **So the 2R often lands right at it**
+
+**The math and the market structure align.**
+
+### What This Means for Your Trade
+
+**Before entering, check:**
+
+1. What is the next rejection block below (for SELL) or above (for BUY)?
+2. Where does 2R land relative to it?
+
+### The Three Outcomes
+
+**✅ Perfect Alignment**
+- 2R lands INSIDE the next RB zone
+- The market targets this level
+- The TP is realistic — enter with confidence
+
+**⚠️ TP Before Next RB**
+- 2R is before the next RB
+- The trade may not reach the next level
+- Consider a smaller RR or wait for more confirmation
+
+**🔴 TP Past Next RB**
+- 2R goes past the next RB
+- The RB may block the trade before TP
+- Either take profit at the RB, or expect a rejection
+
+### The Rule
+
+> **"Check where 2R lands. If it lands at the next RB — the trade is aligned with the market. If not — adjust your RR or wait."**
+
+### The Real Example
+
+**Bearish negotiation trade:**
+- Entry CE: 196,022
+- SL: 196,918 (above)
+- Risk: 896
+- 2R TP: 194,230
+
+**Next RB below: 194,230 – 194,500**
+
+**Result:** 2R lands EXACTLY at the next RB low. ✅ Perfect alignment.
+
+**Price was prevented from going lower** because that RB was defended. **The math and the market agreed.**
+
+### How It Works in the App
+
+**In the Negotiation page:**
+- Enter the next RB (high and low)
+- The app checks the alignment
+- Shows one of three states: aligns / before / past
+
+**Use this before every negotiation trade.** It tells you whether the 2R is realistic.
+
+### The Golden Rule
+
+> "The 2R is not a guess. It's the market's next liquidity level. Check where it lands — trade with confidence, or wait."
+
+### 📸 Upload a chart showing 2R landing at the next RB
+
+---
+
+*End of Part 10 — The Institutional Flow System now has 72 chapters across 10 Parts.*
+    `,
+  },
 };
 
 

@@ -89,7 +89,6 @@ export function configurationInfo(key) {
 
 // ============================================================
 // AUTO-DETECT CONFIGURATION
-// Based on MSS + RB positions
 // ============================================================
 export function detectConfiguration({
   mssZoneHigh,
@@ -109,12 +108,10 @@ export function detectConfiguration({
   const rbHigh = parseFloat(rbZoneHigh);
   const rbLow = parseFloat(rbZoneLow);
 
-  // Check if RB is inside the MSS zone
   const rbInsideMSS = rbLow >= mssLow && rbHigh <= mssHigh;
   const rbAboveMSS = rbLow > mssHigh;
   const rbBelowMSS = rbHigh < mssLow;
 
-  // Highest priority first
   if (rbFlipped) {
     return {
       key: "mss_nested_in_rb_flip",
@@ -186,7 +183,6 @@ export function computeNegotiation({
   const rbLow = parseFloat(rbZoneLow);
   const ce = Math.round(((rbHigh + rbLow) / 2) * 100) / 100;
 
-  // Direction: bearish = RFZ (SELL), bullish = SFZ (BUY)
   const isBearish = mssDirection === "bearish";
 
   let verdict = "negotiating";
@@ -195,34 +191,43 @@ export function computeNegotiation({
   if (verdictClose) {
     const close = parseFloat(verdictClose);
 
-    // RFZ: close below zone low = confirmed
-    // SFZ: close above zone high = confirmed
     if (isBearish) {
       if (close < rbLow) {
         verdict = "confirmed";
-        reason = `Closed at ${close.toFixed(2)}, below RB low ${rbLow.toFixed(2)} — bearish confirmed`;
+        reason = `Closed at ${close.toFixed(2)}, below RB low ${rbLow.toFixed(
+          2
+        )} — bearish confirmed`;
       } else if (close > rbHigh) {
         verdict = "failed";
-        reason = `Closed at ${close.toFixed(2)}, above RB high ${rbHigh.toFixed(2)} — RB failed`;
+        reason = `Closed at ${close.toFixed(2)}, above RB high ${rbHigh.toFixed(
+          2
+        )} — RB failed`;
       } else {
         verdict = "negotiating";
-        reason = `Closed at ${close.toFixed(2)}, inside RB (${rbLow.toFixed(2)} – ${rbHigh.toFixed(2)}) — still negotiating`;
+        reason = `Closed at ${close.toFixed(2)}, inside RB (${rbLow.toFixed(
+          2
+        )} – ${rbHigh.toFixed(2)}) — still negotiating`;
       }
     } else {
       if (close > rbHigh) {
         verdict = "confirmed";
-        reason = `Closed at ${close.toFixed(2)}, above RB high ${rbHigh.toFixed(2)} — bullish confirmed`;
+        reason = `Closed at ${close.toFixed(2)}, above RB high ${rbHigh.toFixed(
+          2
+        )} — bullish confirmed`;
       } else if (close < rbLow) {
         verdict = "failed";
-        reason = `Closed at ${close.toFixed(2)}, below RB low ${rbLow.toFixed(2)} — RB failed`;
+        reason = `Closed at ${close.toFixed(2)}, below RB low ${rbLow.toFixed(
+          2
+        )} — RB failed`;
       } else {
         verdict = "negotiating";
-        reason = `Closed at ${close.toFixed(2)}, inside RB (${rbLow.toFixed(2)} – ${rbHigh.toFixed(2)}) — still negotiating`;
+        reason = `Closed at ${close.toFixed(2)}, inside RB (${rbLow.toFixed(
+          2
+        )} – ${rbHigh.toFixed(2)}) — still negotiating`;
       }
     }
   }
 
-  // Two-attempt rule
   const attemptCount = parseInt(attempts) || 0;
   const flipped = verdictFlipped || attemptCount >= 2;
 
@@ -260,17 +265,12 @@ export function computeNegotiationTrade({
 
   const isBearish = mssDirection === "bearish";
 
-  // Entry = CE
-  // SL = beyond the far edge of the RB zone
-  // TP = 2R from entry
   const entry = ce;
   const sl = isBearish ? rbHigh : rbLow;
   const risk = Math.abs(entry - sl);
   const tp = isBearish ? entry - risk * 2 : entry + risk * 2;
+  const rr = 2;
 
-  const rr = 2; // 2R by default
-
-  // Lot size
   const riskAmount = (accountSize * riskPercent) / 100;
   const lotSize =
     risk > 0 ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100) : 0;
@@ -314,4 +314,173 @@ export function strengthInfo(strength) {
     },
   };
   return map[strength] || map.standard;
+}
+
+// ============================================================
+// NEXT RB ALIGNMENT
+// ============================================================
+// After the current RB trade, the next rejection block below
+// (for SELL) or above (for BUY) acts as the natural target.
+// ============================================================
+export function computeNextRBAlignment({
+  direction,
+  takeProfit,
+  nextRbHigh,
+  nextRbLow,
+  tolerancePercent = 5,
+}) {
+  if (!takeProfit || !nextRbHigh || !nextRbLow) {
+    return {
+      state: "none",
+      label: "No Next RB",
+      emoji: "•",
+      color: "bg-gray-900 border-gray-700 text-gray-400",
+      description: "Enter the next rejection block to check alignment",
+      tolerance: null,
+    };
+  }
+
+  const tp = parseFloat(takeProfit);
+  const nHigh = parseFloat(nextRbHigh);
+  const nLow = parseFloat(nextRbLow);
+
+  if (isNaN(tp) || isNaN(nHigh) || isNaN(nLow)) {
+    return {
+      state: "none",
+      label: "Invalid Values",
+      emoji: "•",
+      color: "bg-gray-900 border-gray-700 text-gray-400",
+      description: "Check the RB values",
+      tolerance: null,
+    };
+  }
+
+  const rbTop = Math.max(nHigh, nLow);
+  const rbBottom = Math.min(nHigh, nLow);
+  const rbMid = (rbTop + rbBottom) / 2;
+
+  const tolerance = (Math.abs(rbTop - rbBottom) * tolerancePercent) / 100;
+
+  if (direction === "SELL") {
+    if (tp >= rbBottom && tp <= rbTop) {
+      return {
+        state: "aligns",
+        label: "Perfect Alignment",
+        emoji: "🎯",
+        color: "bg-green-950/40 border-green-700 text-green-200",
+        badge: "bg-green-900/40 text-green-300",
+        description: `2R TP (${tp.toFixed(
+          2
+        )}) lands inside the next RB (${rbBottom.toFixed(
+          2
+        )} – ${rbTop.toFixed(2)}) — the market targets this level`,
+        rbTop,
+        rbBottom,
+        rbMid,
+        tolerance,
+      };
+    }
+
+    if (tp > rbTop) {
+      return {
+        state: "before",
+        label: "TP Before Next RB",
+        emoji: "⚠️",
+        color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+        badge: "bg-yellow-900/40 text-yellow-300",
+        description: `2R TP (${tp.toFixed(
+          2
+        )}) is ABOVE the next RB (${rbTop.toFixed(
+          2
+        )}) — the RB may not be reached. Consider a smaller RR or wait for confirmation`,
+        rbTop,
+        rbBottom,
+        rbMid,
+        tolerance,
+      };
+    }
+
+    return {
+      state: "past",
+      label: "TP Past Next RB",
+      emoji: "🔴",
+      color: "bg-red-950/40 border-red-700 text-red-200",
+      badge: "bg-red-900/40 text-red-300",
+      description: `2R TP (${tp.toFixed(
+        2
+      )}) is BELOW the next RB (${rbBottom.toFixed(
+        2
+      )}) — the RB may block the trade before TP`,
+      rbTop,
+      rbBottom,
+      rbMid,
+      tolerance,
+    };
+  }
+
+  if (direction === "BUY") {
+    if (tp >= rbBottom && tp <= rbTop) {
+      return {
+        state: "aligns",
+        label: "Perfect Alignment",
+        emoji: "🎯",
+        color: "bg-green-950/40 border-green-700 text-green-200",
+        badge: "bg-green-900/40 text-green-300",
+        description: `2R TP (${tp.toFixed(
+          2
+        )}) lands inside the next RB (${rbBottom.toFixed(
+          2
+        )} – ${rbTop.toFixed(2)}) — the market targets this level`,
+        rbTop,
+        rbBottom,
+        rbMid,
+        tolerance,
+      };
+    }
+
+    if (tp < rbBottom) {
+      return {
+        state: "before",
+        label: "TP Before Next RB",
+        emoji: "⚠️",
+        color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+        badge: "bg-yellow-900/40 text-yellow-300",
+        description: `2R TP (${tp.toFixed(
+          2
+        )}) is BELOW the next RB (${rbBottom.toFixed(
+          2
+        )}) — the RB may not be reached. Consider a smaller RR or wait for confirmation`,
+        rbTop,
+        rbBottom,
+        rbMid,
+        tolerance,
+      };
+    }
+
+    return {
+      state: "past",
+      label: "TP Past Next RB",
+      emoji: "🔴",
+      color: "bg-red-950/40 border-red-700 text-red-200",
+      badge: "bg-red-900/40 text-red-300",
+      description: `2R TP (${tp.toFixed(
+        2
+      )}) is ABOVE the next RB (${rbTop.toFixed(
+        2
+      )}) — the RB may block the trade before TP`,
+      rbTop,
+      rbBottom,
+      rbMid,
+      tolerance,
+    };
+  }
+
+  return {
+    state: "none",
+    label: "Invalid Direction",
+    emoji: "•",
+    color: "bg-gray-900 border-gray-700 text-gray-400",
+    description: "Direction must be SELL or BUY",
+    tolerance: null,
+  };
 }
