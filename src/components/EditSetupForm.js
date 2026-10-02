@@ -17,6 +17,7 @@ import {
   compressionInfo,
   computeCompressionLevel,
 } from "@/lib/mssHelpers";
+import { computeRBVerdict, verdictInfo } from "@/lib/rbVerdict";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
 
@@ -61,6 +62,10 @@ export default function EditSetupForm({ setup }) {
   const [mssZones, setMssZones] = useState([]);
   const [selectedMssZone, setSelectedMssZone] = useState(
     setup.mss_zone_id || null
+  );
+
+  const [verdictClose, setVerdictClose] = useState(
+    setup.rb_verdict_price?.toString() || ""
   );
 
   const [useCeEntry, setUseCeEntry] = useState(setup.use_ce_entry || false);
@@ -113,6 +118,17 @@ export default function EditSetupForm({ setup }) {
       (form.d1_bias === "bullish" && form.ema50_position === "below"),
   });
 
+  const computedVerdict = (() => {
+    if (!parsedZone || !verdictClose) return null;
+    const direction = form.d1_bias === "bullish" ? "sfz" : "rfz";
+    return computeRBVerdict({
+      direction,
+      zoneHigh: parsedZone.high,
+      zoneLow: parsedZone.low,
+      closeCandle3: parseFloat(verdictClose),
+    });
+  })();
+
   async function handleSave(e) {
     e.preventDefault();
     setError("");
@@ -157,6 +173,9 @@ export default function EditSetupForm({ setup }) {
         ce_price: cePrice,
         use_ce_entry: useCeEntry,
         mss_zone_id: selectedMssZone || null,
+        rb_verdict: computedVerdict?.verdict || null,
+        rb_verdict_price: computedVerdict?.close || null,
+        rb_verdict_at: computedVerdict ? new Date().toISOString() : null,
         institutional_cycle: context.institutional_cycle,
         fvg_present: context.fvg_present,
         fvg_direction: context.fvg_direction,
@@ -177,7 +196,6 @@ export default function EditSetupForm({ setup }) {
       return;
     }
 
-    // Auto-create CE flip tracker entry if not already exists
     if (cePrice) {
       const { data: existing } = await supabase
         .from("ce_flips")
@@ -355,6 +373,50 @@ export default function EditSetupForm({ setup }) {
           />
         </div>
       </div>
+
+      {/* RB VERDICT — The Negotiation Rule */}
+      {parsedZone && (
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-blue-400">
+              RB Verdict — The Negotiation Rule
+            </h2>
+            <p className="text-gray-500 text-xs mt-1">
+              Did the verdict candle close BEYOND the zone?
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">
+              Verdict Candle Close (Candle 3)
+            </label>
+            <input
+              type="number"
+              step="any"
+              value={verdictClose}
+              onChange={(e) => setVerdictClose(e.target.value)}
+              placeholder="e.g. 208650"
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+            />
+          </div>
+
+          {computedVerdict && (
+            <div
+              className={`p-3 rounded-lg border ${
+                verdictInfo(computedVerdict.verdict).color
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-bold">
+                  {verdictInfo(computedVerdict.verdict).emoji}{" "}
+                  {verdictInfo(computedVerdict.verdict).label}
+                </span>
+              </div>
+              <p className="text-xs opacity-90">{computedVerdict.reason}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sweep Confluence */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">

@@ -12,6 +12,7 @@ import {
   DEFAULT_PARAMS,
   TIMEFRAME_PRESETS,
 } from "@/lib/rbValidator";
+import { computeRBVerdict, verdictInfo } from "@/lib/rbVerdict";
 
 export default function RBValidatorPage() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function RBValidatorPage() {
   });
 
   const [result, setResult] = useState(null);
+  const [verdictResult, setVerdictResult] = useState(null);
   const [shotConfirmed, setShotConfirmed] = useState(false);
   const [shotAutoDetected, setShotAutoDetected] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -77,16 +79,10 @@ export default function RBValidatorPage() {
     const upperWick = c3High - Math.max(c3Open, c3Close);
     const lowerWick = Math.min(c3Open, c3Close) - c3Low;
 
-    // For RFZ (sell): shot is a bearish candle moving down
-    // For SFZ (buy): shot is a bullish candle moving up
-    const directionCorrect = isRFZ
-      ? c3Close < c3Open
-      : c3Close > c3Open;
-
-    const bodySize = body >= atr; // Body must be ≥ 1× ATR
+    const directionCorrect = isRFZ ? c3Close < c3Open : c3Close > c3Open;
+    const bodySize = body >= atr;
     const opposingWick = isRFZ ? upperWick : lowerWick;
-    const wickSmall = opposingWick <= body * 0.1; // ≤ 10% of body
-
+    const wickSmall = opposingWick <= body * 0.1;
     const isShot = directionCorrect && bodySize && wickSmall;
 
     return {
@@ -98,9 +94,7 @@ export default function RBValidatorPage() {
       bodyVsATR: atr > 0 ? Math.round((body / atr) * 100) / 100 : 0,
       opposingWick: Math.round(opposingWick * 100) / 100,
       wickPercent:
-        body > 0
-          ? Math.round((opposingWick / body) * 10000) / 100
-          : 100,
+        body > 0 ? Math.round((opposingWick / body) * 10000) / 100 : 100,
     };
   }
 
@@ -141,6 +135,15 @@ export default function RBValidatorPage() {
     });
 
     setResult(res);
+
+    // Compute the verdict — Candle 3's close vs the RB zone
+    const verdict = computeRBVerdict({
+      direction: form.direction,
+      zoneHigh: res.zoneHigh,
+      zoneLow: res.zoneLow,
+      closeCandle3: parseFloat(form.c3_close),
+    });
+    setVerdictResult(verdict);
 
     const shot = detectShotCandle();
     setShotAutoDetected(shot);
@@ -201,6 +204,9 @@ export default function RBValidatorPage() {
         zone_low: result.zoneLow,
         ce_price: result.cePrice,
         invalid_reason: result.invalidReason,
+        verdict: verdictResult?.verdict || null,
+        verdict_close: verdictResult?.close || null,
+        verdict_reason: verdictResult?.reason || null,
         notes: form.notes,
       })
       .select()
@@ -232,6 +238,7 @@ Stop Loss:  ${fullPrice(sl)}
 Take Profit: ${fullPrice(tp)}
 RR Ratio:  1:2.00
 Zone: ${fullPrice(result.zoneLow)} - ${fullPrice(result.zoneHigh)}
+Verdict: ${verdictResult?.verdict || "unknown"}
 Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
 
     navigator.clipboard.writeText(text).then(() => {
@@ -251,6 +258,8 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
       rb_direction: form.direction,
       rb_confidence: result.confidenceScore,
       rb_shot: shotConfirmed ? "1" : "0",
+      rb_verdict: verdictResult?.verdict || "",
+      rb_verdict_close: verdictResult?.close || "",
     });
 
     router.push(`/setups/new?${params.toString()}`);
@@ -259,23 +268,23 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
   const label = result ? confidenceLabel(result.confidenceScore) : null;
   const isRFZ = form.direction === "rfz";
 
-  // Compute entry/SL/TP for display
-  const entryData = result && result.isValid
-    ? (() => {
-        const ce = result.cePrice;
-        const sl = isRFZ ? result.zoneHigh : result.zoneLow;
-        const risk = Math.abs(ce - sl);
-        const tp = isRFZ ? ce - risk * 2 : ce + risk * 2;
-        return {
-          ce,
-          sl,
-          tp,
-          risk,
-          rr: risk > 0 ? 2 : 0,
-          direction: isRFZ ? "SELL" : "BUY",
-        };
-      })()
-    : null;
+  const entryData =
+    result && result.isValid
+      ? (() => {
+          const ce = result.cePrice;
+          const sl = isRFZ ? result.zoneHigh : result.zoneLow;
+          const risk = Math.abs(ce - sl);
+          const tp = isRFZ ? ce - risk * 2 : ce + risk * 2;
+          return {
+            ce,
+            sl,
+            tp,
+            risk,
+            rr: risk > 0 ? 2 : 0,
+            direction: isRFZ ? "SELL" : "BUY",
+          };
+        })()
+      : null;
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -404,7 +413,7 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                 Candle {i + 1}
                 {i === 0 && " (previous)"}
                 {i === 1 && " (current — must create the wick)"}
-                {i === 2 && " (displacement / shot)"}
+                {i === 2 && " (displacement / shot / verdict candle)"}
               </h2>
               <div className="grid grid-cols-4 gap-2">
                 {["open", "high", "low", "close"].map((field) => (
@@ -470,9 +479,7 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
           </button>
         </form>
 
-        {/* ============================================================ */}
         {/* RESULT */}
-        {/* ============================================================ */}
         {result && (
           <div className="space-y-4">
             {/* Verdict banner */}
@@ -504,9 +511,7 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
               </p>
             </div>
 
-            {/* ============================================================ */}
-            {/* CE ENTRY CARD — the key addition */}
-            {/* ============================================================ */}
+            {/* CE ENTRY CARD */}
             {result.isValid && entryData && (
               <div className="p-4 rounded-lg bg-gradient-to-br from-blue-950/60 via-blue-900/40 to-yellow-950/40 border-2 border-yellow-700 space-y-4">
                 <div className="flex items-center justify-between">
@@ -524,30 +529,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                   </span>
                 </div>
 
-                {/* Visual Zone Bar */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Zone High</span>
-                    <span className="tabular-nums font-bold text-white">
-                      {formatPrice(result.zoneHigh)}
-                    </span>
-                  </div>
-                  <div className="w-full h-3 rounded-full overflow-hidden bg-gradient-to-r from-red-900/60 via-yellow-700/60 to-green-900/60 relative">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-xs font-bold text-white drop-shadow">
-                        ⭐ CE
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Zone Low</span>
-                    <span className="tabular-nums font-bold text-white">
-                      {formatPrice(result.zoneLow)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Entry details */}
                 <div className="grid grid-cols-2 gap-3 pt-3 border-t border-yellow-800/40">
                   <div className="p-3 rounded-lg bg-black/40 border border-yellow-700/40">
                     <p className="text-xs text-yellow-400/80 mb-1">
@@ -555,9 +536,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                     </p>
                     <p className="text-lg font-bold tabular-nums text-yellow-300">
                       {formatPrice(entryData.ce)}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {fullPrice(entryData.ce)}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/40 border border-red-800/40">
@@ -567,9 +545,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                     <p className="text-lg font-bold tabular-nums text-red-300">
                       {formatPrice(entryData.sl)}
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {fullPrice(entryData.sl)}
-                    </p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/40 border border-green-800/40">
                     <p className="text-xs text-green-400/80 mb-1">
@@ -578,24 +553,16 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                     <p className="text-lg font-bold tabular-nums text-green-300">
                       {formatPrice(entryData.tp)}
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {fullPrice(entryData.tp)}
-                    </p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/40 border border-blue-800/40">
                     <p className="text-xs text-blue-400/80 mb-1">RR RATIO</p>
                     <p className="text-lg font-bold tabular-nums text-blue-300">
                       1:2.00
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Risk: {formatPrice(entryData.risk)}
-                    </p>
                   </div>
                 </div>
 
-                {/* ============================================================ */}
-                {/* SHOT CANDLE CHECK */}
-                {/* ============================================================ */}
+                {/* Shot candle check */}
                 <div className="pt-3 border-t border-yellow-800/40 space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-yellow-300">
@@ -680,9 +647,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                       <p className="text-sm font-bold text-green-300">
                         ⚡ CE ENTRY + SHOT CONFIRMED
                       </p>
-                      <p className="text-xs text-green-400/80 mt-1">
-                        Highest-probability setup. Enter at CE on next tap.
-                      </p>
                     </div>
                   )}
                 </div>
@@ -704,6 +668,33 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                     📋 Use in New Setup →
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* THE NEGOTIATION RULE — Verdict */}
+            {verdictResult && (
+              <div
+                className={`p-4 rounded-lg border-2 ${
+                  verdictInfo(verdictResult.verdict).color
+                } space-y-2`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider opacity-70">
+                    The Negotiation Rule — Verdict
+                  </span>
+                  <span
+                    className={`text-sm px-3 py-1 rounded-full font-bold ${
+                      verdictInfo(verdictResult.verdict).badge
+                    }`}
+                  >
+                    {verdictInfo(verdictResult.verdict).emoji}{" "}
+                    {verdictInfo(verdictResult.verdict).label}
+                  </span>
+                </div>
+                <p className="text-sm opacity-90">{verdictResult.reason}</p>
+                <p className="text-xs opacity-70">
+                  {verdictInfo(verdictResult.verdict).description}
+                </p>
               </div>
             )}
 
@@ -771,7 +762,11 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
               disabled={saving || !!savedId}
               className="w-full py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-medium disabled:opacity-50 text-sm"
             >
-              {saving ? "Saving..." : savedId ? "✓ Saved" : "💾 Save to History"}
+              {saving
+                ? "Saving..."
+                : savedId
+                ? "✓ Saved"
+                : "💾 Save to History"}
             </button>
           </div>
         )}

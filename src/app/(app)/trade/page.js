@@ -13,6 +13,7 @@ import {
   compressionInfo,
   computeCompressionLevel,
 } from "@/lib/mssHelpers";
+import { verdictInfo } from "@/lib/rbVerdict";
 import TradeChecklist from "@/components/TradeChecklist";
 import EntryCalculator from "@/components/EntryCalculator";
 import ScenarioBanner from "@/components/ScenarioBanner";
@@ -41,7 +42,6 @@ function TradeContent() {
 
   const supabase = createClient();
 
-  // Load setup + profile
   useEffect(() => {
     async function load() {
       if (!setupId) {
@@ -76,7 +76,6 @@ function TradeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setupId]);
 
-  // Load linked MSS zone
   useEffect(() => {
     async function loadLinkedMss() {
       if (!setup?.mss_zone_id) {
@@ -96,7 +95,6 @@ function TradeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setup?.mss_zone_id]);
 
-  // Poll live MT5 price
   useEffect(() => {
     async function fetchPrice() {
       try {
@@ -117,7 +115,6 @@ function TradeContent() {
     return () => clearInterval(interval);
   }, []);
 
-  // Check for active news window
   useEffect(() => {
     async function checkNews() {
       const { data } = await supabase
@@ -136,7 +133,6 @@ function TradeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh killzone every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentKillzone(getCurrentKillzone());
@@ -187,6 +183,8 @@ function TradeContent() {
         mss_zone_id: setup.mss_zone_id || null,
         mss_compression: linkedMssZone?.compression_level || null,
         nested_rrb_count_at_entry: linkedMssZone?.nested_rrb_count || 0,
+        rb_verdict: setup.rb_verdict || null,
+        rb_verdict_price: setup.rb_verdict_price || null,
         ...entryData,
       })
       .select()
@@ -276,7 +274,6 @@ function TradeContent() {
           </p>
         </div>
 
-        {/* News Warning */}
         {newsWarning && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -313,13 +310,47 @@ function TradeContent() {
           )}
         </div>
 
-        {/* RB Scenario */}
         <ScenarioBanner setup={setup} />
 
-        {/* Sweep Tier */}
         <div className="flex items-center gap-2 flex-wrap">
           <SweepTierBadge setup={setup} size="lg" />
         </div>
+
+        {/* RB VERDICT */}
+        {setup.rb_verdict && (
+          <div
+            className={`p-3 rounded-lg border ${
+              verdictInfo(setup.rb_verdict).color
+            } space-y-1`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider opacity-70">
+                RB Verdict
+              </span>
+              <span className="text-sm font-bold">
+                {verdictInfo(setup.rb_verdict).emoji}{" "}
+                {verdictInfo(setup.rb_verdict).label}
+              </span>
+            </div>
+            {setup.rb_verdict === "confirmed" && (
+              <p className="text-xs opacity-80">
+                Verdict candle closed beyond the zone — trade direction is
+                valid
+              </p>
+            )}
+            {setup.rb_verdict === "failed" && (
+              <p className="text-xs opacity-80">
+                Verdict candle closed on the wrong side — consider flipping
+                the setup
+              </p>
+            )}
+            {setup.rb_verdict === "negotiating" && (
+              <p className="text-xs opacity-80">
+                Verdict candle closed inside the zone — no verdict yet
+              </p>
+            )}
+          </div>
+        )}
 
         {/* MSS Zone Alignment */}
         {linkedMssZone && (
@@ -389,7 +420,6 @@ function TradeContent() {
           </div>
         )}
 
-        {/* RB Quality Warning */}
         {qualityFails && (
           <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
             <p className="text-red-200 font-semibold">
@@ -410,7 +440,6 @@ function TradeContent() {
           </div>
         )}
 
-        {/* Setup Context */}
         <div className={`p-4 rounded-lg border ${colors.bg} ${colors.border}`}>
           <div className="flex items-start justify-between mb-3">
             <div>
@@ -491,7 +520,6 @@ function TradeContent() {
           )}
         </div>
 
-        {/* Trap Tag */}
         <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
           <label className="block text-xs text-gray-400">
             Was this setup triggered by a retail trap? (optional)
@@ -525,7 +553,6 @@ function TradeContent() {
           </div>
         </div>
 
-        {/* MSS Confirmation */}
         <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -543,7 +570,6 @@ function TradeContent() {
           </p>
         </div>
 
-        {/* Integrated Checklist Link */}
         <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800 space-y-2">
           <div className="flex items-start justify-between">
             <div>
@@ -564,7 +590,6 @@ function TradeContent() {
           </div>
         </div>
 
-        {/* Stop Advisor */}
         <StopAdvisor
           direction={direction}
           entryPrice={setup.ce_price || livePrice || 0}
@@ -574,10 +599,8 @@ function TradeContent() {
           onApplyStop={setAppliedStop}
         />
 
-        {/* Gated Checklist */}
         <TradeChecklist onComplete={setChecklistComplete} />
 
-        {/* Entry Calculator */}
         {checklistComplete && (
           <EntryCalculator
             setup={setup}

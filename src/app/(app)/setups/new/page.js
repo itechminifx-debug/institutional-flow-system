@@ -18,6 +18,7 @@ import {
   compressionInfo,
   computeCompressionLevel,
 } from "@/lib/mssHelpers";
+import { computeRBVerdict, verdictInfo } from "@/lib/rbVerdict";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
 
@@ -32,6 +33,8 @@ function NewSetupPageContent() {
   const prefillCe = searchParams.get("rb_ce");
   const prefillConfidence = searchParams.get("rb_confidence");
   const prefillDirection = searchParams.get("rb_direction");
+  const prefillVerdict = searchParams.get("rb_verdict");
+  const prefillVerdictClose = searchParams.get("rb_verdict_close");
 
   const [form, setForm] = useState({
     pair: prefillPair || "Volatility 80",
@@ -77,6 +80,8 @@ function NewSetupPageContent() {
 
   const [mssZones, setMssZones] = useState([]);
   const [selectedMssZone, setSelectedMssZone] = useState(null);
+
+  const [verdictClose, setVerdictClose] = useState(prefillVerdictClose || "");
 
   const [useCeEntry, setUseCeEntry] = useState(!!prefillCe);
   const [loading, setLoading] = useState(false);
@@ -130,6 +135,17 @@ function NewSetupPageContent() {
       (form.d1_bias === "bullish" && form.ema50_position === "below"),
   });
 
+  const computedVerdict = (() => {
+    if (!parsedZone || !verdictClose) return null;
+    const direction = form.d1_bias === "bullish" ? "sfz" : "rfz";
+    return computeRBVerdict({
+      direction,
+      zoneHigh: parsedZone.high,
+      zoneLow: parsedZone.low,
+      closeCandle3: parseFloat(verdictClose),
+    });
+  })();
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -147,8 +163,7 @@ function NewSetupPageContent() {
 
     const qualityTotal = computeQualityScore(qualityScores);
 
-    const { data: insertedSetup, error: insertError } = await supabase
-      .from("setups")
+    const { data: insertedSetup, error: insertError } = await supabase      .from("setups")
       .insert({
         user_id: user.id,
         pair: form.pair,
@@ -184,6 +199,9 @@ function NewSetupPageContent() {
         ce_price: cePrice,
         use_ce_entry: useCeEntry,
         mss_zone_id: selectedMssZone || null,
+        rb_verdict: computedVerdict?.verdict || null,
+        rb_verdict_price: computedVerdict?.close || null,
+        rb_verdict_at: computedVerdict ? new Date().toISOString() : null,
         institutional_cycle: context.institutional_cycle,
         fvg_present: context.fvg_present,
         fvg_direction: context.fvg_direction,
@@ -205,7 +223,6 @@ function NewSetupPageContent() {
       return;
     }
 
-    // Auto-create CE flip tracker entry
     if (cePrice && insertedSetup) {
       await supabase.from("ce_flips").insert({
         user_id: user.id,
@@ -248,6 +265,7 @@ function NewSetupPageContent() {
               Confidence: {prefillConfidence}/10 · Zone: {prefillLow}-
               {prefillHigh}
               {prefillCe ? ` · CE: ${prefillCe}` : ""}
+              {prefillVerdict ? ` · Verdict: ${prefillVerdict}` : ""}
             </p>
           </div>
         )}
@@ -385,6 +403,53 @@ function NewSetupPageContent() {
             </div>
           </div>
 
+          {/* RB VERDICT — The Negotiation Rule */}
+          {parsedZone && (
+            <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+              <div>
+                <h2 className="text-lg font-semibold text-blue-400">
+                  RB Verdict — The Negotiation Rule
+                </h2>
+                <p className="text-gray-500 text-xs mt-1">
+                  Did the verdict candle close BEYOND the zone? Close beyond =
+                  confirmed. Close inside = negotiating.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 text-gray-400">
+                  Verdict Candle Close (Candle 3)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={verdictClose}
+                  onChange={(e) => setVerdictClose(e.target.value)}
+                  placeholder="e.g. 208650"
+                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                />
+              </div>
+
+              {computedVerdict && (
+                <div
+                  className={`p-3 rounded-lg border ${
+                    verdictInfo(computedVerdict.verdict).color
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold">
+                      {verdictInfo(computedVerdict.verdict).emoji}{" "}
+                      {verdictInfo(computedVerdict.verdict).label}
+                    </span>
+                  </div>
+                  <p className="text-xs opacity-90">
+                    {computedVerdict.reason}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Sweep Confluence */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <div>
@@ -426,11 +491,6 @@ function NewSetupPageContent() {
                   {sweepOverlap
                     ? "✅ Sweep inside RB zone — Confluence confirmed"
                     : "⚠️ Sweep price is outside the RB zone"}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {sweepOverlap
-                    ? "Liquidity collected. Orders filled. High-probability zone."
-                    : "Rejection Block may not be institutional. Verify the zone."}
                 </p>
               </div>
             )}
@@ -478,9 +538,7 @@ function NewSetupPageContent() {
                   );
                   const isSelected = selectedMssZone === z.id;
                   const ce =
-                    Math.round(
-                      ((z.zone_high + z.zone_low) / 2) * 100
-                    ) / 100;
+                    Math.round(((z.zone_high + z.zone_low) / 2) * 100) / 100;
 
                   return (
                     <button
@@ -525,10 +583,6 @@ function NewSetupPageContent() {
                 <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800">
                   <p className="text-xs text-blue-300 font-semibold">
                     ✅ Aligned with MSS zone
-                  </p>
-                  <p className="text-xs text-blue-200/70 mt-1">
-                    This setup will be tagged as MSS-aligned for stats
-                    tracking.
                   </p>
                 </div>
               )}

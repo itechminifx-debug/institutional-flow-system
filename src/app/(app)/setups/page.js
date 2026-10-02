@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import { formatDate } from "@/lib/setupHelpers";
 import { cycleInfo } from "@/lib/contextLayers";
+import { verdictInfo } from "@/lib/rbVerdict";
 import SetupsFilters from "@/components/SetupsFilters";
 import ScenarioBadge from "@/components/ScenarioBadge";
 import SweepTierBadge from "@/components/SweepTierBadge";
@@ -135,6 +136,18 @@ export default async function SetupsPage({ searchParams }) {
 
                         <ScenarioBadge setup={s} />
                         <SweepTierBadge setup={s} />
+
+                        {/* RB Verdict badge */}
+                        {s.rb_verdict && s.rb_verdict !== "negotiating" && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                              verdictInfo(s.rb_verdict).badge
+                            }`}
+                          >
+                            {verdictInfo(s.rb_verdict).emoji}{" "}
+                            {verdictInfo(s.rb_verdict).label}
+                          </span>
+                        )}
 
                         {cycle && (
                           <span
