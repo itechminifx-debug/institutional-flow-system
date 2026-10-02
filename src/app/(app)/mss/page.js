@@ -5,8 +5,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
-import { mssInfo, validateMSS } from "@/lib/mssHelpers";
-import { computeMSSZone } from "@/lib/mssHelpers";
+import {
+  mssInfo,
+  validateMSS,
+  computeMSSZone,
+  computeCompressionLevel,
+  compressionInfo,
+} from "@/lib/mssHelpers";
 
 export default function MSSPage() {
   const supabase = createClient();
@@ -40,7 +45,29 @@ export default function MSSPage() {
         .order("created_at", { ascending: false })
         .limit(50);
 
-      setEvents(data || []);
+      let eventsWithCounts = data || [];
+
+      // Fetch nested RRB counts
+      if (eventsWithCounts.length > 0) {
+        const eventIds = eventsWithCounts.map((e) => e.id);
+        const { data: nestedData } = await supabase
+          .from("mss_nested_rrbs")
+          .select("mss_id")
+          .eq("user_id", user.id)
+          .in("mss_id", eventIds);
+
+        const countMap = {};
+        (nestedData || []).forEach((n) => {
+          countMap[n.mss_id] = (countMap[n.mss_id] || 0) + 1;
+        });
+
+        eventsWithCounts = eventsWithCounts.map((e) => ({
+          ...e,
+          nested_rrb_count: countMap[e.id] || 0,
+        }));
+      }
+
+      setEvents(eventsWithCounts);
       setLoading(false);
     }
     load();
@@ -73,7 +100,7 @@ export default function MSSPage() {
       return;
     }
 
-        const broken = parseFloat(form.brokenLevel);
+    const broken = parseFloat(form.brokenLevel);
     const close = parseFloat(form.closePrice);
 
     // Compute the MSS zone
@@ -106,6 +133,8 @@ export default function MSSPage() {
         zone_high: zone?.zoneHigh,
         zone_low: zone?.zoneLow,
         zone_status: "active",
+        nested_rrb_count: 0,
+        compression_level: "low",
         notes: form.notes || null,
       })
       .select()
@@ -133,7 +162,7 @@ export default function MSSPage() {
       return;
     }
 
-    setEvents((prev) => [data, ...prev]);
+    setEvents((prev) => [{ ...data, nested_rrb_count: 0 }, ...prev]);
     setForm({
       pair: "Volatility 80",
       timeframe: "H4",
@@ -157,6 +186,9 @@ export default function MSSPage() {
 
   const bullishCount = events.filter((e) => e.direction === "bullish").length;
   const bearishCount = events.filter((e) => e.direction === "bearish").length;
+  const compressedCount = events.filter(
+    (e) => (e.nested_rrb_count || 0) >= 3
+  ).length;
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -169,7 +201,7 @@ export default function MSSPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-4 gap-2 mb-4">
           <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-xs text-gray-500">Total</p>
             <p className="text-lg font-bold">{events.length}</p>
@@ -183,6 +215,12 @@ export default function MSSPage() {
           <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-xs text-red-500">Bearish</p>
             <p className="text-lg font-bold text-red-400">{bearishCount}</p>
+          </div>
+          <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
+            <p className="text-xs text-orange-500">Compressed</p>
+            <p className="text-lg font-bold text-orange-400">
+              🔥{compressedCount}
+            </p>
           </div>
         </div>
 
@@ -374,6 +412,10 @@ export default function MSSPage() {
               const info = mssInfo(e.direction);
               if (!info) return null;
 
+              const compression = e.compression_level
+                ? compressionInfo(e.compression_level)
+                : null;
+
               return (
                 <div
                   key={e.id}
@@ -400,10 +442,13 @@ export default function MSSPage() {
                     </button>
                   </div>
 
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mt-2">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mt-2">
                     <div>
                       <p className="opacity-70">
-                        Broken {e.broken_swing_type === "swing_high" ? "High" : "Low"}
+                        Broken{" "}
+                        {e.broken_swing_type === "swing_high"
+                          ? "High"
+                          : "Low"}
                       </p>
                       <p className="font-bold tabular-nums text-white">
                         {formatPrice(e.broken_level)}
@@ -419,7 +464,8 @@ export default function MSSPage() {
                       <div>
                         <p className="opacity-70">Zone</p>
                         <p className="font-bold tabular-nums text-blue-300">
-                          {formatPrice(e.zone_low)} – {formatPrice(e.zone_high)}
+                          {formatPrice(e.zone_low)} –{" "}
+                          {formatPrice(e.zone_high)}
                         </p>
                       </div>
                     )}
@@ -450,6 +496,35 @@ export default function MSSPage() {
                       )}
                     </div>
                   )}
+
+                  {/* Nested RRB compression */}
+                  {typeof e.nested_rrb_count === "number" &&
+                    e.nested_rrb_count > 0 && (
+                      <div className="mt-2 pt-2 border-t border-current/20 flex items-center justify-between">
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                            compressionInfo(
+                              computeCompressionLevel(e.nested_rrb_count)
+                            ).badge
+                          }`}
+                        >
+                          {
+                            compressionInfo(
+                              computeCompressionLevel(e.nested_rrb_count)
+                            ).emoji
+                          }{" "}
+                          {e.nested_rrb_count} Nested RRB
+                          {e.nested_rrb_count === 1 ? "" : "s"}
+                        </span>
+                        <span className="text-xs opacity-70">
+                          {
+                            compressionInfo(
+                              computeCompressionLevel(e.nested_rrb_count)
+                            ).label
+                          }
+                        </span>
+                      </div>
+                    )}
 
                   {e.notes && (
                     <p className="text-xs opacity-70 mt-2 pt-2 border-t border-current/20">
@@ -492,6 +567,10 @@ export default function MSSPage() {
             <li>
               A wick is not enough — you need a <strong>close</strong> beyond
               the level
+            </li>
+            <li>
+              <strong>Nested RRBs</strong> = doubled defense. The more nested
+              RRBs, the stronger the compression
             </li>
           </ul>
         </div>

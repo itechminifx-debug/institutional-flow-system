@@ -204,3 +204,135 @@ export function shouldInvalidate(oldZone, newMssDirection) {
   if (oldZone.direction !== newMssDirection) return true;
   return false;
 }
+// ============================================================
+// NESTED RRB — COMPRESSION LOGIC
+// ============================================================
+
+// Compute compression level from nested RRB count
+export function computeCompressionLevel(count) {
+  const n = parseInt(count) || 0;
+  if (n >= 4) return "extreme";
+  if (n === 3) return "high";
+  if (n === 2) return "medium";
+  return "low";
+}
+
+// Get info for a compression level
+export function compressionInfo(level) {
+  const map = {
+    extreme: {
+      key: "extreme",
+      label: "Extreme Compression",
+      emoji: "🔥🔥",
+      color: "bg-red-900/50 text-red-100 border-red-600",
+      badge: "bg-red-900/40 text-red-300",
+      description:
+        "4+ nested RRBs — massive institutional defense. The break will be explosive.",
+    },
+    high: {
+      key: "high",
+      label: "High Compression",
+      emoji: "🔥",
+      color: "bg-orange-900/40 text-orange-200 border-orange-700",
+      badge: "bg-orange-900/40 text-orange-300",
+      description:
+        "3 nested RRBs — tripled defense. Strong institutional commitment.",
+    },
+    medium: {
+      key: "medium",
+      label: "Medium Compression",
+      emoji: "⚡",
+      color: "bg-yellow-900/40 text-yellow-200 border-yellow-700",
+      badge: "bg-yellow-900/40 text-yellow-300",
+      description:
+        "2 nested RRBs — doubled defense. Sellers (or buyers) doubling down.",
+    },
+    low: {
+      key: "low",
+      label: "Single Defense",
+      emoji: "•",
+      color: "bg-gray-800 text-gray-300 border-gray-700",
+      badge: "bg-gray-800 text-gray-300",
+      description: "1 RRB — single layer of defense.",
+    },
+  };
+  return map[level] || map.low;
+}
+
+// Check if a new RRB zone overlaps the MSS zone
+export function rrbInsideMSSZone(rbZoneHigh, rbZoneLow, mssZone) {
+  if (!mssZone || !rbZoneHigh || !rbZoneLow) return false;
+
+  const rbHigh = parseFloat(rbZoneHigh);
+  const rbLow = parseFloat(rbZoneLow);
+
+  if (isNaN(rbHigh) || isNaN(rbLow)) return false;
+
+  // Overlap = rbLow <= mssHigh AND rbHigh >= mssLow
+  return rbLow <= mssZone.zoneHigh && rbHigh >= mssZone.zoneLow;
+}
+
+// Check if a new RRB is nested inside a previous RRB
+export function rrbNestedInRRB(newRB, existingRRBs) {
+  if (!newRB || !existingRRBs || existingRRBs.length === 0) return false;
+
+  const nHigh = parseFloat(newRB.rb_zone_high);
+  const nLow = parseFloat(newRB.rb_zone_low);
+
+  return existingRRBs.some((existing) => {
+    const eHigh = parseFloat(existing.rb_zone_high);
+    const eLow = parseFloat(existing.rb_zone_low);
+    // Nested = new RRB is inside OR overlaps the existing RRB
+    return nLow <= eHigh && nHigh >= eLow;
+  });
+}
+
+// Detect if a new RB zone should be logged as a nested RRB
+// Returns: { shouldLog: bool, reason: string, overlappingRRBs: [] }
+export function detectNestedRRB({ rbZoneHigh, rbZoneLow, mssZone, existingRRBs }) {
+  if (!mssZone) {
+    return {
+      shouldLog: false,
+      reason: "No MSS zone to attach to",
+      overlappingRRBs: [],
+    };
+  }
+
+  // Check if RB is inside the MSS zone
+  const insideMSS = rrbInsideMSSZone(rbZoneHigh, rbZoneLow, mssZone);
+  if (!insideMSS) {
+    return {
+      shouldLog: false,
+      reason: "RB zone is not inside the MSS zone",
+      overlappingRRBs: [],
+    };
+  }
+
+  // Find overlapping RRBs
+  const rbHigh = parseFloat(rbZoneHigh);
+  const rbLow = parseFloat(rbZoneLow);
+
+  const overlappingRRBs = (existingRRBs || []).filter((existing) => {
+    const eHigh = parseFloat(existing.rb_zone_high);
+    const eLow = parseFloat(existing.rb_zone_low);
+    return rbLow <= eHigh && rbHigh >= eLow;
+  });
+
+  // Should log if it's inside the MSS zone (always valid)
+  return {
+    shouldLog: true,
+    reason:
+      overlappingRRBs.length > 0
+        ? `Nested inside ${overlappingRRBs.length} existing RRB(s) — double defense`
+        : "First RRB inside the MSS zone",
+    overlappingRRBs,
+  };
+}
+
+// Compute CE from a nested RRB zone
+export function computeNestedRBCE(rbZoneHigh, rbZoneLow) {
+  const high = parseFloat(rbZoneHigh);
+  const low = parseFloat(rbZoneLow);
+  if (isNaN(high) || isNaN(low)) return null;
+  return Math.round(((high + low) / 2) * 100) / 100;
+}
