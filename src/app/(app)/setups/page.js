@@ -149,6 +149,27 @@ export default async function SetupsPage({ searchParams }) {
                           </span>
                         )}
 
+                        {/* Verdict flipped badge */}
+                        {s.rb_verdict_flipped && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 font-semibold">
+                            🔄 Flipped
+                          </span>
+                        )}
+
+                        {/* Attempt count badge */}
+                        {s.rb_attempts > 0 && !s.rb_verdict_flipped && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              s.rb_attempts >= 2
+                                ? "bg-orange-900/40 text-orange-300"
+                                : "bg-yellow-900/40 text-yellow-300"
+                            }`}
+                          >
+                            ⚠️ {s.rb_attempts} attempt
+                            {s.rb_attempts === 1 ? "" : "s"}
+                          </span>
+                        )}
+
                         {cycle && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${cycle.color}`}

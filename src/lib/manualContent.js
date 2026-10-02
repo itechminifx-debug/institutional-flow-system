@@ -137,6 +137,24 @@ export const MANUAL_PARTS = [
       { key: "ch69", number: 69, title: "Stop Placement Advisor" },
     ],
   },
+
+    {
+    key: "part10",
+    number: 10,
+    title: "The Negotiation Rule",
+    chapters: [
+      {
+        key: "ch70",
+        number: 70,
+        title: "The Negotiation Rule — Close Beyond the Zone",
+      },
+      {
+        key: "ch71",
+        number: 71,
+        title: "The Two-Attempt Rule",
+      },
+    ],
+  },
 ];
 // ============================================================
 // CHAPTER CONTENT — STAGE 2 (Parts 1 & 2)
@@ -6475,6 +6493,179 @@ The Stop Advisor is the last piece of the **Orders & Stops module**:
     `,
   },
 
+    ch70: {
+    title: "The Negotiation Rule — Close Beyond the Zone",
+    content: `
+## The Negotiation Rule — Close Beyond the Zone
+
+This is the rule that separates a valid rejection block from a trap.
+
+**An RB is not confirmed by the wick. It is confirmed by the close.**
+
+### The Trap
+
+Most traders see a wick into a level and assume rejection. **That is wrong.**
+
+A wick into a level is **only the beginning of a negotiation** — not the verdict.
+
+### The Three Verdicts
+
+After the RB forms, price returns. Candle 3 decides.
+
+**For a bearish rejection (RFZ):**
+
+| Candle 3 Close | Verdict | Meaning |
+|---|---|---|
+| **Below the zone low** | ✅ **Confirmed** | Bearish — sellers won |
+| **Inside the zone** | ⚠️ **Negotiating** | No verdict — wait |
+| **Above the zone high** | 🔴 **Failed** | Bullish — buyers won |
+
+**For a bullish rejection (SFZ):**
+
+| Candle 3 Close | Verdict | Meaning |
+|---|---|---|
+| **Above the zone high** | ✅ **Confirmed** | Bullish — buyers won |
+| **Inside the zone** | ⚠️ **Negotiating** | No verdict — wait |
+| **Below the zone low** | 🔴 **Failed** | Bearish — sellers won |
+
+### Why This Matters
+
+**The wick is only the proposal. The close is the decision.**
+
+- Close inside the zone = no decision yet → do not enter
+- Close beyond the zone = decision made → enter in that direction
+- Close on the wrong side = the RB failed → flip
+
+**Retail enters on the wick. Professionals wait for the close.**
+
+### What Happens When Negotiation Fails
+
+**Example — XAUUSD 02 Oct 2026:**
+
+- Bearish RB formed at 4,135.65 – 4,142.88
+- RB score: 7/12 (weak)
+- Re-accumulation cycle (not distribution)
+- Candle 3 closed **inside** the zone — not below
+- Second close — still failed to break below
+- Then price closed **above** the zone → **bullish takeover**
+- **The RB collapsed**
+
+**The system flagged this:**
+- Weak RB (7/12)
+- Re-accumulation cycle
+- Negotiation failed
+
+**The lesson:** Trust the verdict, not the setup.
+
+### The Rule
+
+> **"The wick is a proposal. The close is the verdict. Enter only when Candle 3 closes beyond the zone — never before."**
+
+### How It Fits Your System
+
+**Every level of the app now enforces this:**
+
+- **RB Validator** → verdict shown after validation
+- **Setup Planner** → new "RB Verdict" section
+- **Setups list** → verdict badge per setup
+- **Trade page** → verdict banner before entry
+- **MSS Zones** → zone lifecycle tracks the same logic
+
+**Three verdict states:**
+- ✅ **Confirmed** — trade direction valid
+- ⚠️ **Negotiating** — wait for the close
+- 🔴 **Failed** — flip the direction
+
+### The Golden Rule
+
+> "A rejection without a close is a hope. A rejection with a close is a trade."
+
+### 📸 Upload a chart showing a failed negotiation and the flip
+
+---
+
+*End of Part 10 — The Institutional Flow System now has 70 chapters across 10 Parts.*
+    `,
+  },
+
+  ch71: {
+    title: "The Two-Attempt Rule",
+    content: `
+## The Two-Attempt Rule
+
+The defending side gets **two attempts**. Not three.
+
+**If they fail both, the verdict flips.**
+
+### The Rule
+
+**For a bearish RB (sellers defending):**
+
+| Attempt | Event | State |
+|---|---|---|
+| 1 | Sellers close inside the zone | ⚠️ Negotiating |
+| 2 | Sellers close inside the zone again | 🔄 Verdict flips to buyers |
+
+**Two failed attempts = the RB is dead. The verdict flips.**
+
+**For a bullish RB (buyers defending) — mirror image:**
+- Two failed attempts by buyers → verdict flips to sellers
+
+### Why Two Attempts
+
+- **Attempt 1** — the defending side tries. Normal.
+- **Attempt 2** — the defending side tries again. If they still can't break, they've lost conviction.
+- **A third attempt is rare** — the market has usually committed by then.
+
+**Two failed attempts = the defenders are exhausted. The other side takes over.**
+
+### The Real Example — Gold (XAUUSD)
+
+**Setup:** MSS formed. Bearish RB above.
+
+**What happened:**
+1. **Attempt 1** — sellers closed **inside** the zone. No break.
+2. **Attempt 2** — sellers closed **inside** again. Still no break.
+3. **Verdict flipped** — buyers took over.
+4. **Buyers closed above the zone** — confirmed takeover.
+5. **The RB failed.**
+
+**The two-attempt rule flagged this in real time.**
+
+### Post-Flip Consolidation
+
+After the flip, price may consolidate near the zone. This is **re-accumulation**:
+
+- Pending orders are being filled
+- Both sides fighting
+- Watch for the **next close** to determine direction
+
+**Consolidation after a flip is not indecision — it's the market preparing for the real move.**
+
+### How It Works in the App
+
+- **RB Validator** — shows the attempt count
+- **Setup Planner** — tap **+** each time price closes inside the zone
+- **Setups list** — badge appears: ⚠️ 1 attempt / 🔄 Flipped
+- **Trade page** — warning banner when the verdict has flipped
+
+### The Golden Rule
+
+> "The defender gets two tries. Fail both — the verdict flips."
+
+### What This Confirms
+
+- **Close beyond the zone = confirmed (first or second attempt)**
+- **Two closes inside = verdict flips**
+- **Consolidation after = re-accumulation, not indecision**
+
+### 📸 Upload a chart showing a two-attempt flip
+
+---
+
+*End of Part 10 — The Institutional Flow System now has 71 chapters across 10 Parts.*
+    `,
+  },
   
 };
 

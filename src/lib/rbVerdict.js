@@ -168,3 +168,173 @@ export function computeVerdictFromSetup(setup, closeCandle3) {
     closeCandle3,
   });
 }
+
+// ============================================================
+// TWO-ATTEMPT RULE
+// ============================================================
+// If the defending side fails to close beyond the zone after
+// TWO attempts, the verdict flips to the other side.
+// ============================================================
+
+export function computeAttemptVerdict({ attempts, direction }) {
+  const n = parseInt(attempts) || 0;
+
+  if (n === 0) {
+    return {
+      status: "fresh",
+      label: "No Attempts Yet",
+      emoji: "⚪",
+      color: "bg-gray-900 border-gray-700 text-gray-300",
+      description: "Price has not yet tested the zone",
+    };
+  }
+
+  if (n === 1) {
+    return {
+      status: "attempt_1",
+      label: "Attempt 1 — Negotiating",
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description:
+        "First close inside the zone. One more attempt allowed before the verdict flips.",
+    };
+  }
+
+  if (n === 2) {
+    return {
+      status: "attempt_2",
+      label: "Attempt 2 — Verdict Flips",
+      emoji: "🔄",
+      color: "bg-orange-950/40 border-orange-700 text-orange-200",
+      description:
+        "Second close inside the zone. The defending side has failed. Verdict flips to the opposite direction.",
+    };
+  }
+
+  return {
+    status: "over",
+    label: "Verdict Flipped",
+    emoji: "🔴",
+    color: "bg-red-950/40 border-red-700 text-red-200",
+    description:
+      "The defending side failed both attempts. Flip direction.",
+  };
+}
+
+// ============================================================
+// POST-VERDICT CONSOLIDATION
+// ============================================================
+// After the verdict, watch for:
+//   - Consolidation near the zone = re-accumulation (pending orders)
+//   - New close beyond = confirmed
+//   - Close back inside = invalidated
+// ============================================================
+
+export function computePostVerdictState({
+  priceNow,
+  zoneHigh,
+  zoneLow,
+  verdict,
+  direction,
+}) {
+  if (!priceNow || !zoneHigh || !zoneLow) {
+    return {
+      state: "unknown",
+      label: "Unknown",
+      emoji: "•",
+      color: "bg-gray-900 border-gray-700 text-gray-400",
+      description: "Waiting for price data",
+    };
+  }
+
+  const p = parseFloat(priceNow);
+  const zH = parseFloat(zoneHigh);
+  const zL = parseFloat(zoneLow);
+
+  const isInside = p >= zL && p <= zH;
+  const nearZoneBuffer = (zH - zL) * 0.5;
+  const isNear = Math.abs(p - zL) <= nearZoneBuffer || Math.abs(p - zH) <= nearZoneBuffer;
+
+  // Re-accumulation = consolidating near the zone after a verdict
+  if (verdict && isNear && !isInside) {
+    return {
+      state: "re_accumulation",
+      label: "Re-accumulation",
+      emoji: "🔁",
+      color: "bg-purple-950/40 border-purple-700 text-purple-200",
+      description:
+        "Price is consolidating near the zone after the verdict. Pending orders being filled. Watch for the next close.",
+    };
+  }
+
+  // Confirmed = price closed beyond the zone in the verdict direction
+  if (verdict === "confirmed") {
+    if (direction === "rfz" && p < zL) {
+      return {
+        state: "confirmed",
+        label: "Confirmed — Extended",
+        emoji: "✅",
+        color: "bg-green-950/40 border-green-700 text-green-200",
+        description: "Price extended beyond the zone in the verdict direction.",
+      };
+    }
+    if (direction === "sfz" && p > zH) {
+      return {
+        state: "confirmed",
+        label: "Confirmed — Extended",
+        emoji: "✅",
+        color: "bg-green-950/40 border-green-700 text-green-200",
+        description: "Price extended beyond the zone in the verdict direction.",
+      };
+    }
+  }
+
+  // Invalidated = price closed back inside or on the wrong side
+  if (verdict === "failed" || isInside) {
+    return {
+      state: "invalidated",
+      label: "Invalidated",
+      emoji: "🔴",
+      color: "bg-red-950/40 border-red-700 text-red-200",
+      description:
+        "Price returned inside the zone. The verdict is being challenged.",
+    };
+  }
+
+  return {
+    state: "active",
+    label: "Active",
+    emoji: "🟢",
+    color: "bg-gray-900 border-gray-700 text-gray-300",
+    description: "Monitoring post-verdict state",
+  };
+}
+
+// Combine everything into a single verdict status
+export function computeFullVerdict({
+  direction,
+  zoneHigh,
+  zoneLow,
+  closeCandle3,
+  attempts,
+  verdictFlipped,
+}) {
+  const baseVerdict = computeRBVerdict({
+    direction,
+    zoneHigh,
+    zoneLow,
+    closeCandle3,
+  });
+
+  const attemptInfo = computeAttemptVerdict({ attempts, direction });
+
+  const isFlipped = verdictFlipped || attempts >= 2;
+
+  return {
+    ...baseVerdict,
+    attempts: parseInt(attempts) || 0,
+    attemptInfo,
+    flipped: isFlipped,
+    finalVerdict: isFlipped ? "failed" : baseVerdict.verdict,
+  };
+}

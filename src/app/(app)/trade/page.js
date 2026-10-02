@@ -185,6 +185,8 @@ function TradeContent() {
         nested_rrb_count_at_entry: linkedMssZone?.nested_rrb_count || 0,
         rb_verdict: setup.rb_verdict || null,
         rb_verdict_price: setup.rb_verdict_price || null,
+        rb_attempts: setup.rb_attempts || 0,
+        rb_verdict_flipped: setup.rb_verdict_flipped || false,
         ...entryData,
       })
       .select()
@@ -286,7 +288,6 @@ function TradeContent() {
           </div>
         )}
 
-        {/* Killzone context */}
         <div
           className={`p-3 rounded-lg border ${currentKillzone.color} space-y-1`}
         >
@@ -349,6 +350,31 @@ function TradeContent() {
                 Verdict candle closed inside the zone — no verdict yet
               </p>
             )}
+          </div>
+        )}
+
+        {/* Two-Attempt Flip Warning */}
+        {setup.rb_verdict_flipped && (
+          <div className="p-4 rounded-lg bg-red-950/60 border border-red-700 space-y-2">
+            <p className="text-red-200 font-semibold">
+              🔄 VERDICT FLIPPED — {setup.rb_attempts} attempts failed
+            </p>
+            <p className="text-red-300 text-xs">
+              The defending side closed inside the zone twice. The verdict has
+              flipped to the opposite direction. Consider trading the flip.
+            </p>
+          </div>
+        )}
+
+        {/* Attempt warning */}
+        {setup.rb_attempts > 0 && !setup.rb_verdict_flipped && (
+          <div className="p-3 rounded-lg bg-yellow-950/40 border border-yellow-800">
+            <p className="text-yellow-200 text-xs">
+              ⚠️ Attempt {setup.rb_attempts} of 2 — {2 - setup.rb_attempts}{" "}
+              more close
+              {2 - setup.rb_attempts === 1 ? "" : "s"} inside the zone flips
+              the verdict
+            </p>
           </div>
         )}
 
