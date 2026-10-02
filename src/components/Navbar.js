@@ -11,6 +11,7 @@ const links = [
   { href: "/confluence", label: "Confluence" },
   { href: "/mss", label: "MSS" },
   { href: "/mss-zones", label: "MSS Zones" },
+ { href: "/negotiation", label: "Negotiation" },
   { href: "/integrated", label: "Integrated" },
   { href: "/killzones", label: "Killzones" },
   { href: "/liquidity", label: "Liquidity" },
