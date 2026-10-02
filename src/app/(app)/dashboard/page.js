@@ -20,7 +20,7 @@ import KillzoneWidget from "@/components/KillzoneWidget";
 import MSSWidget from "@/components/MSSWidget";
 import IntegratedWidget from "@/components/IntegratedWidget";
 import SweepWidget from "@/components/SweepWidget";
-
+import MSSZonesWidget from "@/components/MSSZonesWidget";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -72,6 +72,7 @@ export default async function DashboardPage() {
           <ConfluenceWidget />
           <KillzoneWidget />
           <MSSWidget />
+          <MSSZonesWidget />
           <IntegratedWidget />
           <NewsWidget />
           <ReviewWidget />
