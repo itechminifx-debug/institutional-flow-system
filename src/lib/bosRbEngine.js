@@ -9,6 +9,15 @@
 //   3. Residual wick (Rejection Block at origin)
 //   4. Retracement to RB
 //   5. Entry at RB or FVG
+//
+// RB POSITION can be:
+//   - inside the BOS zone
+//   - above the BOS zone
+//   - below the BOS zone
+// Position doesn't affect direction — only BOS direction does.
+//
+// The BOS sets the direction. The RB is where price negotiates.
+// Entry = CE (50% of the RB zone).
 // ============================================================
 
 export const BOS_RB_CHECKLIST = [
@@ -45,8 +54,8 @@ export const BOS_RB_CHECKLIST = [
   {
     key: "rb_aligned",
     number: 6,
-    label: "Does the RB align with the BOS direction?",
-    hint: "The RB points the same way as the BOS",
+    label: "Does the RB direction match the BOS direction?",
+    hint: "Bullish BOS → bullish RB. Bearish BOS → bearish RB",
   },
   {
     key: "entry_confirmed",
@@ -77,7 +86,129 @@ export const BOS_RB_CHECKLIST = [
 export const CHECKLIST_PASS_THRESHOLD = 7;
 
 // ============================================================
-// AUTO-CHECKS — some answers can be inferred
+// RB POSITION DETECTION
+// ============================================================
+// Returns: 'inside' | 'above' | 'below' | null
+// Based on comparing RB zone to BOS zone (bosLevel ↔ bosClose)
+// ============================================================
+export function detectRbPosition({
+  bosLevel,
+  bosClose,
+  rbZoneHigh,
+  rbZoneLow,
+}) {
+  if (!bosLevel || !bosClose || !rbZoneHigh || !rbZoneLow) return null;
+
+  const level = parseFloat(bosLevel);
+  const close = parseFloat(bosClose);
+  const rbHigh = parseFloat(rbZoneHigh);
+  const rbLow = parseFloat(rbZoneLow);
+
+  if (isNaN(level) || isNaN(close) || isNaN(rbHigh) || isNaN(rbLow)) {
+    return null;
+  }
+
+  const bosHigh = Math.max(level, close);
+  const bosLow = Math.min(level, close);
+
+  // RB inside BOS zone
+  if (rbLow >= bosLow && rbHigh <= bosHigh) {
+    return "inside";
+  }
+
+  // RB above BOS zone
+  if (rbLow > bosHigh) {
+    return "above";
+  }
+
+  // RB below BOS zone
+  if (rbHigh < bosLow) {
+    return "below";
+  }
+
+  // Overlapping — treat as inside
+  return "inside";
+}
+
+export function rbPositionInfo(position) {
+  const map = {
+    inside: {
+      key: "inside",
+      label: "Inside BOS Zone",
+      emoji: "🎯",
+      color: "bg-blue-900/40 text-blue-300",
+      description: "RB forms inside the BOS zone — same level",
+    },
+    above: {
+      key: "above",
+      label: "Above BOS Zone",
+      emoji: "🔺",
+      color: "bg-purple-900/40 text-purple-300",
+      description: "RB forms above — price pulls up to it after the BOS",
+    },
+    below: {
+      key: "below",
+      label: "Below BOS Zone",
+      emoji: "🔻",
+      color: "bg-orange-900/40 text-orange-300",
+      description: "RB forms below — price pulls down to it after the BOS",
+    },
+  };
+  return map[position] || map.inside;
+}
+
+// ============================================================
+// RB POSITION RULES (NEW — describes all three positions)
+// ============================================================
+// Used to render the "RB Position" card on the page.
+// Position never affects direction. BOS sets direction.
+// ============================================================
+export function rbPositionRules(bosDirection) {
+  const isBull = bosDirection === "bullish";
+  const dir = isBull ? "BUY" : "SELL";
+
+  return [
+    {
+      key: "above",
+      emoji: "🔺",
+      label: "RB Above BOS",
+      color: "bg-purple-900/30 border-purple-800 text-purple-200",
+      arrow: isBull ? "↗" : "↗",
+      approach: isBull
+        ? "Price breaks up, then pulls UP into the RB above"
+        : "Price breaks down, then pulls UP into the RB above",
+      direction: dir,
+      entry: "CE of RB (50%)",
+    },
+    {
+      key: "inside",
+      emoji: "🎯",
+      label: "RB Inside BOS",
+      color: "bg-blue-900/30 border-blue-800 text-blue-200",
+      arrow: "→",
+      approach: isBull
+        ? "Price breaks up and holds at the BOS zone"
+        : "Price breaks down and holds at the BOS zone",
+      direction: dir,
+      entry: "CE of RB (50%)",
+    },
+    {
+      key: "below",
+      emoji: "🔻",
+      label: "RB Below BOS",
+      color: "bg-orange-900/30 border-orange-800 text-orange-200",
+      arrow: isBull ? "↘" : "↘",
+      approach: isBull
+        ? "Price breaks up, then pulls DOWN into the RB below"
+        : "Price breaks down, then pulls DOWN into the RB below",
+      direction: dir,
+      entry: "CE of RB (50%)",
+    },
+  ];
+}
+
+// ============================================================
+// AUTO-CHECKS
 // ============================================================
 export function autoDetectChecklist({
   htfBias,
@@ -95,24 +226,18 @@ export function autoDetectChecklist({
 }) {
   const auto = {};
 
-  // Q1: HTF bias confirmed (only if provided)
   auto.htf_confirmed = !!htfBias;
-
-  // Q2: BOS occurred (level + close present)
   auto.bos_occurred = !!(bosLevel && bosClose);
-
-  // Q3: Liquidity raid
   auto.liquidity_raid = !!liquidityRaid;
-
-  // Q4: Displacement ≥ 1× ATR
   auto.displacement = (parseFloat(displacementAtr) || 0) >= 1.0;
-
-  // Q5: RB present
   auto.rb_present = !!(rbZoneHigh && rbZoneLow);
 
-  // Q6: RB aligned with BOS direction
-  // Bullish BOS = close above level → RB should be below (support)
-  // Bearish BOS = close below level → RB should be above (resistance)
+  // Q6: RB direction must match BOS direction
+  // For a bullish BOS (close > level): RB should be below the level (support)
+  // For a bearish BOS (close < level): RB should be above the level (resistance)
+  //
+  // NOTE: This positional check is kept as-is.
+  // A separate, softer rb_direction_ok flag is also computed below.
   if (bosLevel && bosClose && rbZoneHigh && rbZoneLow) {
     const level = parseFloat(bosLevel);
     const close = parseFloat(bosClose);
@@ -120,29 +245,36 @@ export function autoDetectChecklist({
     const rbLow = parseFloat(rbZoneLow);
 
     if (close > level) {
-      // Bullish BOS → RB should be at or below the BOS level
-      auto.rb_aligned = rbHigh <= level * 1.005; // 0.5% tolerance
+      auto.rb_aligned = rbHigh <= level * 1.005;
     } else if (close < level) {
-      // Bearish BOS → RB should be at or above the BOS level
       auto.rb_aligned = rbLow >= level * 0.995;
     } else {
       auto.rb_aligned = false;
     }
+
+    // NEW: softer directional check — ignores position entirely.
+    // Valid whenever the RB zone exists and is on the correct side of
+    // the wick extreme. Bullish BOS → RB should sit at/below the wick.
+    // Bearish BOS → RB should sit at/above the wick.
+    if (close > level) {
+      auto.rb_direction_ok = rbHigh >= rbLow; // bullish BOS, any RB position OK
+    } else if (close < level) {
+      auto.rb_direction_ok = rbLow <= rbHigh; // bearish BOS, any RB position OK
+    } else {
+      auto.rb_direction_ok = false;
+    }
   } else {
     auto.rb_aligned = false;
+    auto.rb_direction_ok = false;
   }
 
-  // Q7: FVG or lower-TF shift
   auto.entry_confirmed = !!(fvgPresent || lowerTfShift);
 
-  // Q8: SL beyond wick extreme
+  // Q8: SL beyond the wick
   if (stopLoss && rbZoneHigh && rbZoneLow) {
     const sl = parseFloat(stopLoss);
     const rbHigh = parseFloat(rbZoneHigh);
     const rbLow = parseFloat(rbZoneLow);
-    // For a BUY (bullish BOS), SL must be below RB low
-    // For a SELL (bearish BOS), SL must be above RB high
-    // We don't know direction here, so check either extreme
     auto.sl_beyond_wick = sl < rbLow || sl > rbHigh;
   } else {
     auto.sl_beyond_wick = false;
@@ -161,14 +293,13 @@ export function autoDetectChecklist({
     auto.rr_ok = false;
   }
 
-  // Q10: Calm — manual only
   auto.calm = false;
 
   return auto;
 }
 
 // ============================================================
-// COMPUTE CHECKLIST SCORE
+// CHECKLIST SCORE
 // ============================================================
 export function computeChecklistScore(answers) {
   return BOS_RB_CHECKLIST.filter((q) => answers[q.key]).length;
@@ -222,10 +353,15 @@ export function checklistVerdict(score) {
 // ============================================================
 // TRADE PARAMETERS
 // ============================================================
+// Entry = CE (or RB edge) — CE is the default and recommended
+// SL = beyond the wick extreme (based on RB position + direction)
+// TP = 2R
+// ============================================================
 export function computeBosRbTrade({
   htfBias,
   rbZoneHigh,
   rbZoneLow,
+  rbPosition = "inside",
   useCe = true,
   accountSize = 0,
   riskPercent = 1,
@@ -241,9 +377,10 @@ export function computeBosRbTrade({
   const isBullish = htfBias === "bullish";
   const direction = isBullish ? "BUY" : "SELL";
 
+  // Entry = CE (default) or RB edge
   const entry = useCe ? ce : isBullish ? rbLow : rbHigh;
 
-  // SL = beyond the wick extreme (opposite side)
+  // SL = beyond the wick extreme
   const wickExtreme = isBullish ? rbLow : rbHigh;
   const buffer = atr > 0 ? atr * bufferMultiplier : 0;
   const sl = isBullish ? wickExtreme - buffer : wickExtreme + buffer;
@@ -267,6 +404,13 @@ export function computeBosRbTrade({
     lotSize,
     riskAmount,
     buffer,
+    rbPosition,
+
+    // NEW additive fields (do not remove / do not replace originals):
+    cePrice: ce,               // always the RB midpoint, even if entry uses an edge
+    entryIsCe: !!useCe,        // true when entry === CE
+    slSource: buffer > 0 ? "wick+buffer" : "wick",
+    wickExtreme,               // the raw wick extreme before buffer
   };
 }
 

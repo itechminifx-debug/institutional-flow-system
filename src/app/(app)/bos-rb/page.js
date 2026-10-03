@@ -12,6 +12,9 @@ import {
   checklistVerdict,
   computeBosRbTrade,
   detectBosDirection,
+  detectRbPosition,
+  rbPositionInfo,
+  rbPositionRules,
 } from "@/lib/bosRbEngine";
 import PairPicker from "@/components/PairPicker";
 
@@ -67,6 +70,15 @@ export default function BosRbPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  // Detect BOS direction and RB position
+  const bosDirection = detectBosDirection(form.bosLevel, form.bosClose);
+  const rbPosition = detectRbPosition({
+    bosLevel: form.bosLevel,
+    bosClose: form.bosClose,
+    rbZoneHigh: form.rbZoneHigh,
+    rbZoneLow: form.rbZoneLow,
+  });
+
   // Auto-detect checklist answers
   useEffect(() => {
     const auto = autoDetectChecklist({
@@ -94,7 +106,6 @@ export default function BosRbPage() {
     form.lowerTfShift,
   ]);
 
-  // Combined answers
   const combinedAnswers = {};
   BOS_RB_CHECKLIST.forEach((q) => {
     combinedAnswers[q.key] =
@@ -106,12 +117,11 @@ export default function BosRbPage() {
   const score = computeChecklistScore(combinedAnswers);
   const verdict = checklistVerdict(score);
 
-  const bosDirection = detectBosDirection(form.bosLevel, form.bosClose);
-
   const trade = computeBosRbTrade({
     htfBias: form.htfBias,
     rbZoneHigh: form.rbZoneHigh,
     rbZoneLow: form.rbZoneLow,
+    rbPosition,
     useCe: form.useCe,
     accountSize: profile?.account_size || 0,
     riskPercent: profile?.risk_percent || 1,
@@ -138,7 +148,6 @@ export default function BosRbPage() {
       return;
     }
 
-    // Create setup record
     const { data: setup, error: setupError } = await supabase
       .from("setups")
       .insert({
@@ -172,7 +181,6 @@ export default function BosRbPage() {
       return;
     }
 
-    // Save BOS+RB detail record
     const { error: detailError } = await supabase
       .from("bos_rb_setups")
       .insert({
@@ -211,6 +219,9 @@ export default function BosRbPage() {
     setSaved(true);
     setTimeout(() => router.push(`/setups/${setup.id}`), 800);
   }
+
+  const rbInfo = rbPosition ? rbPositionInfo(rbPosition) : null;
+  const positionRules = rbPositionRules(bosDirection || form.htfBias);
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -383,9 +394,23 @@ export default function BosRbPage() {
 
         {/* RB Zone */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">
-            Rejection Block (at BOS origin)
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-blue-400">
+              Rejection Block
+            </h2>
+            {rbInfo && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${rbInfo.color}`}
+              >
+                {rbInfo.emoji} {rbInfo.label}
+              </span>
+            )}
+          </div>
+
+          {rbInfo && (
+            <p className="text-xs text-gray-500">{rbInfo.description}</p>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -463,6 +488,60 @@ export default function BosRbPage() {
           </label>
         </div>
 
+        {/* NEW: RB Position Rules Card */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-blue-400">
+              RB Position — All Three Are Valid
+            </h2>
+            <span className="text-xs text-gray-500">
+              BOS sets direction. RB is only where price negotiates.
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {positionRules.map((rule) => {
+              const isActive = rbPosition === rule.key;
+              return (
+                <div
+                  key={rule.key}
+                  className={`p-3 rounded-lg border ${rule.color} ${
+                    isActive ? "ring-2 ring-white/40" : "opacity-80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-bold">
+                      {rule.emoji} {rule.label}
+                    </p>
+                    {isActive && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-white/20">
+                        current
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs opacity-90 mb-2">{rule.approach}</p>
+                  <div className="text-xs space-y-0.5">
+                    <p>
+                      <span className="opacity-70">Direction:</span>{" "}
+                      <span className="font-bold">{rule.direction}</span>
+                    </p>
+                    <p>
+                      <span className="opacity-70">Entry:</span> {rule.entry}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-xs text-gray-500 pt-1 border-t border-gray-800">
+            The RB can sit above, inside, or below the BOS zone — all
+            three are valid. Price approaches the RB, tests it, and
+            continues in the BOS direction. Entry is always the CE
+            (50%) of the RB.
+          </p>
+        </div>
+
         {/* Trade Parameters */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -484,7 +563,7 @@ export default function BosRbPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">
-                  Entry ({form.useCe ? "CE" : "RB edge"})
+                  Entry ({trade.entryIsCe ? "CE — 50%" : "RB edge"})
                 </p>
                 <p className="font-bold tabular-nums text-yellow-400">
                   {formatPrice(trade.entry)}
@@ -495,6 +574,11 @@ export default function BosRbPage() {
                 <p className="font-bold tabular-nums text-red-400">
                   {formatPrice(trade.sl)}
                 </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {trade.slSource === "wick+buffer"
+                    ? "wick + buffer"
+                    : "wick only"}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Take Profit (2R)</p>
@@ -503,14 +587,16 @@ export default function BosRbPage() {
                 </p>
               </div>
               <div>
+                <p className="text-xs text-gray-500">CE (50%)</p>
+                <p className="font-bold tabular-nums text-blue-300">
+                  {formatPrice(trade.cePrice)}
+                </p>
+              </div>
+              <div>
                 <p className="text-xs text-gray-500">Risk</p>
                 <p className="font-bold tabular-nums text-white">
                   {trade.risk.toFixed(2)}
                 </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">RR</p>
-                <p className="font-bold tabular-nums text-white">1:2</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Lot Size</p>
@@ -540,13 +626,16 @@ export default function BosRbPage() {
               </p>
             </div>
             <div className="text-right">
-              <p className={`text-xl font-bold ${verdict.color.split(" ")[2]}`}>
+              <p
+                className={`text-xl font-bold ${
+                  verdict.passed ? "text-green-400" : "text-yellow-400"
+                }`}
+              >
                 {score}/10
               </p>
             </div>
           </div>
 
-          {/* Progress bar */}
           <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all ${
@@ -556,7 +645,6 @@ export default function BosRbPage() {
             />
           </div>
 
-          {/* Verdict */}
           <div className={`p-3 rounded-lg border ${verdict.color}`}>
             <p className="text-sm font-bold">
               {verdict.emoji} {verdict.label}
@@ -570,12 +658,15 @@ export default function BosRbPage() {
             )}
           </div>
 
-          {/* Questions */}
           <div className="space-y-2 pt-2">
             {BOS_RB_CHECKLIST.map((q) => {
               const isAuto = autoAnswers[q.key];
               const isManual = manualAnswers[q.key] !== undefined;
               const isOn = combinedAnswers[q.key];
+
+              // NEW: show the softer directional flag on Q6 when it differs
+              const showDirectionalBadge =
+                q.key === "rb_aligned" && autoAnswers.rb_direction_ok === true;
 
               return (
                 <button
@@ -601,7 +692,7 @@ export default function BosRbPage() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p
                           className={`text-sm font-medium ${
                             isOn ? "text-green-200" : "text-white"
@@ -612,6 +703,11 @@ export default function BosRbPage() {
                         {isAuto && !isManual && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300">
                             auto
+                          </span>
+                        )}
+                        {showDirectionalBadge && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300">
+                            direction ✓
                           </span>
                         )}
                       </div>
@@ -683,13 +779,17 @@ export default function BosRbPage() {
               <strong>Displacement</strong> — strong move after the BOS
             </li>
             <li>
-              <strong>RB at origin</strong> — where orders were filled
+              <strong>RB</strong> — can be above, inside, or below the BOS
+              zone (all three are valid)
             </li>
             <li>
-              <strong>Entry</strong> — on retracement to the RB (CE)
+              <strong>Entry</strong> — the CE (50%) of the RB zone
             </li>
             <li>
               <strong>SL</strong> — beyond the wick extreme
+            </li>
+            <li>
+              <strong>TP</strong> — 2R from entry
             </li>
             <li>
               <strong>7+ checklist</strong> — pass threshold
