@@ -4,7 +4,6 @@ import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { parseZone } from "@/lib/zoneHelpers";
 import { computeCEPrice } from "@/lib/riskEngine";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
@@ -25,6 +24,7 @@ import {
 } from "@/lib/rbVerdict";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
+import PairPicker from "@/components/PairPicker";
 
 function NewSetupPageContent() {
   const router = useRouter();
@@ -309,20 +309,11 @@ function NewSetupPageContent() {
               Step 1 — D1 Direction
             </h2>
 
-            <div>
-              <label className="block text-sm mb-2 text-gray-300">Pair</label>
-              <select
-                value={form.pair}
-                onChange={(e) => update("pair", e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
-              >
-                {PAIRS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <PairPicker
+              value={form.pair}
+              onChange={(pair) => update("pair", pair)}
+              label="Pair"
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -435,7 +426,7 @@ function NewSetupPageContent() {
             </div>
           </div>
 
-          {/* RB VERDICT — The Negotiation Rule + Two-Attempt Rule */}
+          {/* RB VERDICT */}
           {parsedZone && (
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
               <div>
@@ -480,16 +471,10 @@ function NewSetupPageContent() {
                 </div>
               )}
 
-              {/* Two-Attempt Rule */}
               <div className="pt-3 border-t border-gray-800 space-y-2">
                 <p className="text-xs font-semibold text-blue-400">
                   Two-Attempt Rule
                 </p>
-                <p className="text-xs text-gray-500">
-                  Count how many times the defending side closed inside the
-                  zone. Two failed attempts = verdict flips.
-                </p>
-
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-gray-400">Attempts:</span>
                   <button
@@ -517,26 +502,23 @@ function NewSetupPageContent() {
                       computedVerdict.attemptInfo.color
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-bold">
-                        {computedVerdict.attemptInfo.emoji}{" "}
-                        {computedVerdict.attemptInfo.label}
-                      </span>
-                    </div>
-                    <p className="text-xs opacity-90">
+                    <p className="text-sm font-bold">
+                      {computedVerdict.attemptInfo.emoji}{" "}
+                      {computedVerdict.attemptInfo.label}
+                    </p>
+                    <p className="text-xs opacity-90 mt-1">
                       {computedVerdict.attemptInfo.description}
                     </p>
                   </div>
                 )}
 
                 {computedVerdict?.flipped && (
-                  <div className="p-3 rounded-lg bg-red-950/60 border border-red-700 space-y-1">
+                  <div className="p-3 rounded-lg bg-red-950/60 border border-red-700">
                     <p className="text-sm font-bold text-red-200">
                       🔄 VERDICT FLIPPED
                     </p>
                     <p className="text-xs text-red-300">
-                      The defending side failed both attempts. Flip direction
-                      on the next close.
+                      The defending side failed both attempts. Flip direction.
                     </p>
                   </div>
                 )}
@@ -557,7 +539,7 @@ function NewSetupPageContent() {
 
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                Swept Price (swing high/low that was swept)
+                Swept Price
               </label>
               <input
                 type="number"
@@ -588,12 +570,6 @@ function NewSetupPageContent() {
                 </p>
               </div>
             )}
-
-            {!form.sweep_price && (
-              <p className="text-xs text-gray-500">
-                Enter the swept price to enable confluence detection.
-              </p>
-            )}
           </div>
 
           {/* MSS Zone Alignment */}
@@ -619,9 +595,6 @@ function NewSetupPageContent() {
                   }`}
                 >
                   <p className="text-sm font-medium text-gray-300">None</p>
-                  <p className="text-xs text-gray-500">
-                    Setup is not aligned with any MSS zone
-                  </p>
                 </button>
 
                 {mssZones.map((z) => {
@@ -701,12 +674,6 @@ function NewSetupPageContent() {
                   {cePrice.toFixed(2)}
                 </p>
               </div>
-            )}
-
-            {!parsedZone && (
-              <p className="text-xs text-gray-500">
-                Enter a rejection block zone to compute CE.
-              </p>
             )}
 
             <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-black border border-gray-800">

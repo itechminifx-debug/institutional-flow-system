@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
   mssInfo,
@@ -12,6 +11,7 @@ import {
   computeCompressionLevel,
   compressionInfo,
 } from "@/lib/mssHelpers";
+import PairPicker from "@/components/PairPicker";
 
 export default function MSSPage() {
   const supabase = createClient();
@@ -47,7 +47,6 @@ export default function MSSPage() {
 
       let eventsWithCounts = data || [];
 
-      // Fetch nested RRB counts
       if (eventsWithCounts.length > 0) {
         const eventIds = eventsWithCounts.map((e) => e.id);
         const { data: nestedData } = await supabase
@@ -103,14 +102,12 @@ export default function MSSPage() {
     const broken = parseFloat(form.brokenLevel);
     const close = parseFloat(form.closePrice);
 
-    // Compute the MSS zone
     const zone = computeMSSZone({
       direction: form.direction,
       brokenLevel: broken,
       closePrice: close,
     });
 
-    // Check for opposite-direction active zones to invalidate
     const { data: activeZones } = await supabase
       .from("mss_events")
       .select("id, direction")
@@ -140,7 +137,6 @@ export default function MSSPage() {
       .select()
       .single();
 
-    // Invalidate opposite-direction zones
     if (!insertError && data && activeZones?.length > 0) {
       await supabase
         .from("mss_events")
@@ -200,7 +196,6 @@ export default function MSSPage() {
           </p>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-4 gap-2 mb-4">
           <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-xs text-gray-500">Total</p>
@@ -224,7 +219,6 @@ export default function MSSPage() {
           </div>
         </div>
 
-        {/* Add button */}
         {!showForm && (
           <button
             type="button"
@@ -235,7 +229,6 @@ export default function MSSPage() {
           </button>
         )}
 
-        {/* Form */}
         {showForm && (
           <form
             onSubmit={handleSubmit}
@@ -245,7 +238,6 @@ export default function MSSPage() {
               Log a Market Structure Shift
             </h2>
 
-            {/* Direction */}
             <div>
               <label className="block text-xs mb-2 text-gray-400">
                 Direction
@@ -281,24 +273,11 @@ export default function MSSPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs mb-1 text-gray-400">
-                  Pair
-                </label>
-                <select
-                  value={form.pair}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, pair: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-                >
-                  {PAIRS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <PairPicker
+                value={form.pair}
+                onChange={(pair) => setForm((f) => ({ ...f, pair }))}
+                label="Pair"
+              />
               <div>
                 <label className="block text-xs mb-1 text-gray-400">
                   Timeframe
@@ -396,7 +375,6 @@ export default function MSSPage() {
           </form>
         )}
 
-        {/* Events list */}
         {loading ? (
           <p className="text-gray-500 text-center py-8">Loading...</p>
         ) : events.length === 0 ? (
@@ -411,10 +389,6 @@ export default function MSSPage() {
             {events.map((e) => {
               const info = mssInfo(e.direction);
               if (!info) return null;
-
-              const compression = e.compression_level
-                ? compressionInfo(e.compression_level)
-                : null;
 
               return (
                 <div
@@ -471,7 +445,6 @@ export default function MSSPage() {
                     )}
                   </div>
 
-                  {/* Zone status badge */}
                   {e.zone_status && (
                     <div className="mt-2 pt-2 border-t border-current/20 flex items-center justify-between">
                       <span
@@ -489,15 +462,9 @@ export default function MSSPage() {
                           ? "🟡 Mitigated"
                           : "⚫ Invalidated"}
                       </span>
-                      {e.rb_aligned && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300">
-                          🎯 RB Aligned
-                        </span>
-                      )}
                     </div>
                   )}
 
-                  {/* Nested RRB compression */}
                   {typeof e.nested_rrb_count === "number" &&
                     e.nested_rrb_count > 0 && (
                       <div className="mt-2 pt-2 border-t border-current/20 flex items-center justify-between">
@@ -515,13 +482,6 @@ export default function MSSPage() {
                           }{" "}
                           {e.nested_rrb_count} Nested RRB
                           {e.nested_rrb_count === 1 ? "" : "s"}
-                        </span>
-                        <span className="text-xs opacity-70">
-                          {
-                            compressionInfo(
-                              computeCompressionLevel(e.nested_rrb_count)
-                            ).label
-                          }
                         </span>
                       </div>
                     )}
@@ -546,7 +506,6 @@ export default function MSSPage() {
           </div>
         )}
 
-        {/* Info card */}
         <div className="mt-6 p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
           <h3 className="text-xs font-semibold text-blue-300 mb-2">
             💡 What is MSS?
@@ -561,16 +520,10 @@ export default function MSSPage() {
               swing low
             </li>
             <li>
-              MSS confirms reversals. BOS (Break of Structure) confirms
-              continuation
+              MSS confirms reversals. BOS confirms continuation
             </li>
             <li>
               A wick is not enough — you need a <strong>close</strong> beyond
-              the level
-            </li>
-            <li>
-              <strong>Nested RRBs</strong> = doubled defense. The more nested
-              RRBs, the stronger the compression
             </li>
           </ul>
         </div>

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { parseZone } from "@/lib/zoneHelpers";
 import { computeCEPrice } from "@/lib/riskEngine";
 import { computeQualityScore } from "@/lib/rejectionBlockScorer";
@@ -24,6 +23,7 @@ import {
 } from "@/lib/rbVerdict";
 import QualityScoreCard from "@/components/QualityScoreCard";
 import ContextLayersCard from "@/components/ContextLayersCard";
+import PairPicker from "@/components/PairPicker";
 
 export default function EditSetupForm({ setup }) {
   const router = useRouter();
@@ -289,26 +289,16 @@ export default function EditSetupForm({ setup }) {
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
-      {/* Step 1 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 1 — D1 Direction
         </h2>
 
-        <div>
-          <label className="block text-sm mb-2 text-gray-300">Pair</label>
-          <select
-            value={form.pair}
-            onChange={(e) => update("pair", e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
-          >
-            {PAIRS.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </div>
+        <PairPicker
+          value={form.pair}
+          onChange={(pair) => update("pair", pair)}
+          label="Pair"
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -341,7 +331,6 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
-      {/* Step 2 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 2 — Block Breaker
@@ -360,7 +349,6 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
-      {/* Step 3 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 3 — Aligned Liquidity
@@ -379,7 +367,6 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
-      {/* Step 4 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-4">
         <h2 className="text-lg font-semibold text-blue-400">
           Step 4 — Rejection Block
@@ -407,7 +394,6 @@ export default function EditSetupForm({ setup }) {
         </div>
       </div>
 
-      {/* RB VERDICT — The Negotiation Rule + Two-Attempt Rule */}
       {parsedZone && (
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div>
@@ -440,28 +426,20 @@ export default function EditSetupForm({ setup }) {
                 verdictInfo(computedVerdict.base.verdict).color
               }`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold">
-                  {verdictInfo(computedVerdict.base.verdict).emoji}{" "}
-                  {verdictInfo(computedVerdict.base.verdict).label}
-                </span>
-              </div>
-              <p className="text-xs opacity-90">
+              <p className="text-sm font-bold">
+                {verdictInfo(computedVerdict.base.verdict).emoji}{" "}
+                {verdictInfo(computedVerdict.base.verdict).label}
+              </p>
+              <p className="text-xs opacity-90 mt-1">
                 {computedVerdict.base.reason}
               </p>
             </div>
           )}
 
-          {/* Two-Attempt Rule */}
           <div className="pt-3 border-t border-gray-800 space-y-2">
             <p className="text-xs font-semibold text-blue-400">
               Two-Attempt Rule
             </p>
-            <p className="text-xs text-gray-500">
-              Count how many times the defending side closed inside the zone.
-              Two failed attempts = verdict flips.
-            </p>
-
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400">Attempts:</span>
               <button
@@ -489,26 +467,20 @@ export default function EditSetupForm({ setup }) {
                   computedVerdict.attemptInfo.color
                 }`}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-bold">
-                    {computedVerdict.attemptInfo.emoji}{" "}
-                    {computedVerdict.attemptInfo.label}
-                  </span>
-                </div>
-                <p className="text-xs opacity-90">
+                <p className="text-sm font-bold">
+                  {computedVerdict.attemptInfo.emoji}{" "}
+                  {computedVerdict.attemptInfo.label}
+                </p>
+                <p className="text-xs opacity-90 mt-1">
                   {computedVerdict.attemptInfo.description}
                 </p>
               </div>
             )}
 
             {computedVerdict?.flipped && (
-              <div className="p-3 rounded-lg bg-red-950/60 border border-red-700 space-y-1">
+              <div className="p-3 rounded-lg bg-red-950/60 border border-red-700">
                 <p className="text-sm font-bold text-red-200">
                   🔄 VERDICT FLIPPED
-                </p>
-                <p className="text-xs text-red-300">
-                  The defending side failed both attempts. Flip direction on
-                  the next close.
                 </p>
               </div>
             )}
@@ -516,20 +488,16 @@ export default function EditSetupForm({ setup }) {
         </div>
       )}
 
-      {/* Sweep Confluence */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-blue-400">
             Sweep Confluence
           </h2>
-          <p className="text-gray-500 text-xs mt-1">
-            Was the Rejection Block formed inside a liquidity sweep?
-          </p>
         </div>
 
         <div>
           <label className="block text-xs mb-1 text-gray-400">
-            Swept Price (swing high/low that was swept)
+            Swept Price
           </label>
           <input
             type="number"
@@ -562,16 +530,12 @@ export default function EditSetupForm({ setup }) {
         )}
       </div>
 
-      {/* MSS Zone Alignment */}
       {mssZones.length > 0 && (
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div>
             <h2 className="text-lg font-semibold text-blue-400">
               MSS Zone Alignment
             </h2>
-            <p className="text-gray-500 text-xs mt-1">
-              Is this setup aligned with an active MSS zone?
-            </p>
           </div>
 
           <div className="space-y-2">
@@ -585,9 +549,6 @@ export default function EditSetupForm({ setup }) {
               }`}
             >
               <p className="text-sm font-medium text-gray-300">None</p>
-              <p className="text-xs text-gray-500">
-                Setup is not aligned with any MSS zone
-              </p>
             </button>
 
             {mssZones.map((z) => {
@@ -638,26 +599,14 @@ export default function EditSetupForm({ setup }) {
               );
             })}
           </div>
-
-          {selectedMssZone && (
-            <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800">
-              <p className="text-xs text-blue-300 font-semibold">
-                ✅ Aligned with MSS zone
-              </p>
-            </div>
-          )}
         </div>
       )}
 
-      {/* CE */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-blue-400">
             Consequent Encroachment (CE)
           </h2>
-          <p className="text-gray-500 text-xs mt-1">
-            50% midpoint of rejection block — precision entry
-          </p>
         </div>
 
         {parsedZone && cePrice && (

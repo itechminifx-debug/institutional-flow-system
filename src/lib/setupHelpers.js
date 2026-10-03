@@ -1,15 +1,10 @@
-export const PAIRS = [
-  "Volatility 80",
-  "Volatility 75",
-  "Volatility 100",
-  "Volatility 50",
-  "Volatility 25",
-  "XAUUSD",
-  "EURUSD",
-  "GBPUSD",
-  "USDJPY",
-  "GBPJPY",
-];
+// ============================================================
+// SETUP HELPERS — Institutional Flow System
+// ============================================================
+
+import { ALL_PAIRS } from "./pairCatalog";
+
+export const PAIRS = ALL_PAIRS;
 
 export function formatDate(dateString) {
   if (!dateString) return "";

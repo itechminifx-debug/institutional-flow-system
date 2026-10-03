@@ -3,9 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
-import { verdictInfo, computeAttemptVerdict } from "@/lib/rbVerdict";
+import { verdictInfo } from "@/lib/rbVerdict";
 import {
   CONFIGURATIONS,
   configurationInfo,
@@ -15,6 +14,7 @@ import {
   computeNextRBAlignment,
   strengthInfo,
 } from "@/lib/negotiationEngine";
+import PairPicker from "@/components/PairPicker";
 
 export default function NegotiationPage() {
   const router = useRouter();
@@ -126,7 +126,6 @@ export default function NegotiationPage() {
     : null;
 
   const configInfo = configurationInfo(form.configuration);
-  const strengthData = configInfo ? strengthInfo(configInfo.strength) : null;
 
   async function handleSave() {
     setSaving(true);
@@ -223,7 +222,6 @@ export default function NegotiationPage() {
           </p>
         </div>
 
-        {/* Configuration Selector */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <label className="block text-xs font-semibold text-blue-400 uppercase tracking-wider">
             Configuration Type
@@ -258,9 +256,6 @@ export default function NegotiationPage() {
               <p className="text-yellow-200 text-xs font-semibold">
                 🔍 Auto-detected: {configurationInfo(detected.key)?.label}
               </p>
-              <p className="text-yellow-300 text-xs mt-1">
-                {detected.reason} — different from your selection
-              </p>
               <button
                 type="button"
                 onClick={() => update("configuration", detected.key)}
@@ -274,29 +269,19 @@ export default function NegotiationPage() {
           {detected?.key && detected.key === form.configuration && (
             <div className="p-2 rounded-lg bg-green-950/40 border border-green-800">
               <p className="text-green-300 text-xs">
-                ✅ Matches auto-detection: {detected.reason}
+                ✅ Matches auto-detection
               </p>
             </div>
           )}
         </div>
 
-        {/* Context */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Pair</label>
-              <select
-                value={form.pair}
-                onChange={(e) => update("pair", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              >
-                {PAIRS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <PairPicker
+              value={form.pair}
+              onChange={(pair) => update("pair", pair)}
+              label="Pair"
+            />
             <div>
               <label className="block text-xs mb-1 text-gray-400">
                 Timeframe
@@ -345,7 +330,6 @@ export default function NegotiationPage() {
           </div>
         </div>
 
-        {/* MSS Zone */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             Structure (MSS Zone)
@@ -380,7 +364,6 @@ export default function NegotiationPage() {
           </div>
         </div>
 
-        {/* RB Zone */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             Defense (RB Zone)
@@ -452,25 +435,17 @@ export default function NegotiationPage() {
           </label>
         </div>
 
-        {/* CE — The Negotiation Line */}
         {negotiation.ce && (
           <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-950/40 to-amber-900/30 border-2 border-yellow-700 space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-yellow-300 uppercase tracking-wider">
-                ⭐ CE — The Negotiation Line
-              </h2>
-            </div>
+            <h2 className="text-sm font-semibold text-yellow-300 uppercase tracking-wider">
+              ⭐ CE — The Negotiation Line
+            </h2>
             <p className="text-3xl font-bold tabular-nums text-yellow-200">
               {formatPrice(negotiation.ce)}
-            </p>
-            <p className="text-xs text-yellow-200/70">
-              The single reference point. Close below CE repeatedly = defending
-              side losing.
             </p>
           </div>
         )}
 
-        {/* Verdict */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             The Verdict
@@ -506,7 +481,6 @@ export default function NegotiationPage() {
             </div>
           )}
 
-          {/* Two-Attempt Rule */}
           <div className="pt-3 border-t border-gray-800 space-y-2">
             <p className="text-xs font-semibold text-blue-400">
               Two-Attempt Rule
@@ -531,9 +505,6 @@ export default function NegotiationPage() {
               >
                 +
               </button>
-              <span className="text-xs text-gray-500">
-                attempts by the defending side
-              </span>
             </div>
 
             {form.attempts >= 2 && (
@@ -541,15 +512,11 @@ export default function NegotiationPage() {
                 <p className="text-sm font-bold text-red-200">
                   🔄 VERDICT FLIPPED
                 </p>
-                <p className="text-xs text-red-300">
-                  Two attempts failed. Flip the direction.
-                </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Trade Output */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <h2 className="text-sm font-semibold text-blue-400">
@@ -604,17 +571,12 @@ export default function NegotiationPage() {
           </div>
         )}
 
-        {/* Next RB Alignment */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <div>
               <h2 className="text-sm font-semibold text-blue-400">
                 Next RB Target
               </h2>
-              <p className="text-gray-500 text-xs mt-1">
-                The next rejection block below (for SELL) or above (for BUY) —
-                the natural target of the trade. Does 2R align with it?
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -650,83 +612,17 @@ export default function NegotiationPage() {
               <div
                 className={`p-3 rounded-lg border-2 ${nextRbAlignment.color}`}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-bold">
-                    {nextRbAlignment.emoji} {nextRbAlignment.label}
-                  </span>
-                  {nextRbAlignment.badge && (
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full ${nextRbAlignment.badge}`}
-                    >
-                      {nextRbAlignment.state}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs opacity-90">
+                <p className="text-sm font-bold">
+                  {nextRbAlignment.emoji} {nextRbAlignment.label}
+                </p>
+                <p className="text-xs opacity-90 mt-1">
                   {nextRbAlignment.description}
                 </p>
-
-                {nextRbAlignment.rbMid && (
-                  <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-current/20 text-xs">
-                    <div>
-                      <p className="opacity-70">Next RB Low</p>
-                      <p className="font-bold tabular-nums">
-                        {nextRbAlignment.rbBottom.toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="opacity-70">Midpoint</p>
-                      <p className="font-bold tabular-nums text-yellow-300">
-                        {nextRbAlignment.rbMid.toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="opacity-70">Next RB High</p>
-                      <p className="font-bold tabular-nums">
-                        {nextRbAlignment.rbTop.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {nextRbAlignment.state === "aligns" && (
-                  <div className="mt-2 p-2 rounded bg-green-950/60 border border-green-700 text-center">
-                    <p className="text-xs font-semibold text-green-300">
-                      ✅ 2R TP aligns with the next RB — the target is
-                      realistic
-                    </p>
-                  </div>
-                )}
-
-                {nextRbAlignment.state === "before" && (
-                  <div className="mt-2 p-2 rounded bg-yellow-950/60 border border-yellow-700 text-center">
-                    <p className="text-xs font-semibold text-yellow-300">
-                      ⚠️ 2R TP may not reach the next RB — consider a smaller
-                      RR
-                    </p>
-                  </div>
-                )}
-
-                {nextRbAlignment.state === "past" && (
-                  <div className="mt-2 p-2 rounded bg-red-950/60 border border-red-700 text-center">
-                    <p className="text-xs font-semibold text-red-300">
-                      🔴 2R TP goes past the next RB — the RB may block the
-                      trade
-                    </p>
-                  </div>
-                )}
               </div>
-            )}
-
-            {!form.nextRbHigh && !form.nextRbLow && (
-              <p className="text-xs text-gray-500">
-                Optional — enter the next RB to check if 2R is realistic.
-              </p>
             )}
           </div>
         )}
 
-        {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           <label className="block text-xs mb-1 text-gray-400">Notes</label>
           <textarea
@@ -758,38 +654,6 @@ export default function NegotiationPage() {
         >
           {saving ? "Saving..." : "💾 Save Negotiation Setup"}
         </button>
-
-        {/* Info card */}
-        <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
-          <h3 className="text-xs font-semibold text-blue-300 mb-2">
-            💡 How the Negotiation Works
-          </h3>
-          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
-            <li>
-              <strong>MSS</strong> = structure. Where control shifted.
-            </li>
-            <li>
-              <strong>RB</strong> = defense. Where the level is protected.
-            </li>
-            <li>
-              <strong>CE</strong> = negotiation line. 50% midpoint. Your
-              entry.
-            </li>
-            <li>
-              <strong>Close beyond RB</strong> = verdict reached
-            </li>
-            <li>
-              <strong>Two failed attempts</strong> = verdict flips
-            </li>
-            <li>
-              <strong>Flip</strong> = new trade in the opposite direction
-            </li>
-            <li>
-              <strong>Next RB</strong> = where the 2R TP lands. If it aligns,
-              the target is realistic.
-            </li>
-          </ul>
-        </div>
       </div>
     </main>
   );

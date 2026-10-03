@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
   LEVEL_TYPES,
@@ -14,6 +13,7 @@ import {
   clusterStrengthInfo,
   sortByStrength,
 } from "@/lib/liquidityHelpers";
+import PairPicker from "@/components/PairPicker";
 
 export default function LiquidityPage() {
   const supabase = createClient();
@@ -223,11 +223,9 @@ export default function LiquidityPage() {
 
   const { above, below } = liquidityAround(levels, livePrice);
 
-  // Sort levels based on mode
   const sortedLevels =
     sortMode === "strength" ? sortByStrength(levels) : levels;
 
-  // Stats
   const extremeCount = levels.filter(
     (l) => l.cluster_strength === "extreme" && !l.swept
   ).length;
@@ -245,20 +243,12 @@ export default function LiquidityPage() {
           </p>
         </div>
 
-        {/* Pair selector + stats */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
-          <label className="block text-sm mb-2 text-gray-300">Pair</label>
-          <select
+          <PairPicker
             value={pair}
-            onChange={(e) => setPair(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none"
-          >
-            {PAIRS.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+            onChange={setPair}
+            label="Pair"
+          />
 
           {livePrice !== null && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-800">
@@ -290,7 +280,6 @@ export default function LiquidityPage() {
           )}
         </div>
 
-        {/* Add level form */}
         <form
           onSubmit={handleAdd}
           className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-6 space-y-3"
@@ -406,7 +395,6 @@ export default function LiquidityPage() {
           </button>
         </form>
 
-        {/* Sort mode */}
         {levels.length > 1 && (
           <div className="flex gap-2 mb-4">
             <button
@@ -434,13 +422,12 @@ export default function LiquidityPage() {
           </div>
         )}
 
-        {/* Levels list */}
         {loading ? (
           <p className="text-gray-500 text-center py-8">Loading...</p>
         ) : levels.length === 0 ? (
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
             <p className="text-gray-400">
-              No levels yet for {pair}. Add your first liquidity level above.
+              No levels yet for {pair}.
             </p>
           </div>
         ) : (
@@ -465,7 +452,7 @@ export default function LiquidityPage() {
                   className={`p-3 rounded-lg border transition ${
                     level.swept
                       ? "bg-gray-950 border-gray-900 opacity-50"
-                      : `bg-gray-900 border-gray-800`
+                      : "bg-gray-900 border-gray-800"
                   }`}
                 >
                   <div className="flex items-start justify-between mb-1">
@@ -503,7 +490,6 @@ export default function LiquidityPage() {
                         type="button"
                         onClick={() => toggleSwept(level)}
                         className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
-                        title={level.swept ? "Mark unswept" : "Mark swept"}
                       >
                         {level.swept ? "↺" : "✓"}
                       </button>
@@ -546,7 +532,6 @@ export default function LiquidityPage() {
                     </div>
                   </div>
 
-                  {/* Touch counter */}
                   {!level.swept && (
                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-800">
                       <span className="text-xs text-gray-500">
@@ -569,9 +554,6 @@ export default function LiquidityPage() {
                       >
                         +
                       </button>
-                      <span className="text-xs text-gray-500 ml-auto">
-                        {strengthInfo.label}
-                      </span>
                     </div>
                   )}
 
@@ -586,7 +568,6 @@ export default function LiquidityPage() {
           </div>
         )}
 
-        {/* Info card */}
         <div className="mt-6 p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
           <h3 className="text-xs font-semibold text-blue-300 mb-2">
             💡 Cluster Strength
@@ -601,10 +582,6 @@ export default function LiquidityPage() {
             <li>
               <strong>🔥 Extreme (4+)</strong> — the strongest magnet
             </li>
-            <li>
-              Tap <strong>+</strong> every time price touches the level again
-            </li>
-            <li>Stronger clusters = bigger institutional targets</li>
           </ul>
         </div>
       </div>

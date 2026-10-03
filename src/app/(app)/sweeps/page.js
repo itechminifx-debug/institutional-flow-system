@@ -3,19 +3,17 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
-  LEVEL_TYPES,
   levelInfo,
   clusterStrengthInfo,
 } from "@/lib/liquidityHelpers";
 import {
-  computeSweepStatus,
   formatAtrMultiple,
   getActiveSweeps,
   shouldAlert,
 } from "@/lib/sweepHelpers";
+import PairPicker from "@/components/PairPicker";
 
 export default function SweepsPage() {
   const supabase = createClient();
@@ -82,7 +80,6 @@ export default function SweepsPage() {
 
   const activeSweeps = getActiveSweeps(levels, livePrice, atr);
 
-  // Fire Telegram alerts when statuses change
   useEffect(() => {
     async function fireAlerts() {
       if (!livePrice || activeSweeps.length === 0) return;
@@ -96,13 +93,11 @@ export default function SweepsPage() {
         const { alert, column } = shouldAlert(s, s.sweep.status);
         if (!alert) continue;
 
-        // Prevent duplicate fires within a session
         const dedupeKey = `${s.id}-${s.sweep.status}`;
         if (alertFiredRef.current[dedupeKey]) continue;
         alertFiredRef.current[dedupeKey] = true;
 
         try {
-          // Fire Telegram alert
           await fetch("/api/alerts/sweep", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -117,13 +112,11 @@ export default function SweepsPage() {
             }),
           });
 
-          // Mark alert flag in DB
           await supabase
             .from("liquidity_maps")
             .update({ [column]: true })
             .eq("id", s.id);
 
-          // Log sweep event
           const { data: newEvent } = await supabase
             .from("sweep_events")
             .insert({
@@ -144,15 +137,12 @@ export default function SweepsPage() {
             setEvents((prev) => [newEvent, ...prev].slice(0, 10));
           }
 
-          // Update local level state so the alert flag reflects
           setLevels((prev) =>
             prev.map((l) =>
               l.id === s.id ? { ...l, [column]: true } : l
             )
           );
-        } catch (err) {
-          // silent
-        }
+        } catch {}
       }
     }
     fireAlerts();
@@ -175,23 +165,13 @@ export default function SweepsPage() {
           </p>
         </div>
 
-        {/* Pair + ATR */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Pair</label>
-              <select
-                value={pair}
-                onChange={(e) => setPair(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              >
-                {PAIRS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <PairPicker
+              value={pair}
+              onChange={setPair}
+              label="Pair"
+            />
             <div>
               <label className="block text-xs mb-1 text-gray-400">
                 ATR(14)
@@ -236,7 +216,6 @@ export default function SweepsPage() {
           )}
         </div>
 
-        {/* Active Sweeps */}
         {loading ? (
           <p className="text-gray-500 text-center py-8">Loading...</p>
         ) : activeSweeps.length === 0 ? (
@@ -244,12 +223,12 @@ export default function SweepsPage() {
             <p className="text-gray-400 mb-3">
               No active sweep signals for {pair}.
             </p>
-            <p className="text-xs text-gray-500">
-              Add more liquidity levels in the{" "}
-              <Link href="/liquidity" className="text-blue-400 hover:underline">
-                Liquidity Map →
-              </Link>
-            </p>
+            <Link
+              href="/liquidity"
+              className="text-xs text-blue-400 hover:underline"
+            >
+              Add levels in the Liquidity Map →
+            </Link>
           </div>
         ) : (
           <div className="space-y-3">
@@ -315,7 +294,6 @@ export default function SweepsPage() {
                     {sweep.description}
                   </p>
 
-                  {/* Action buttons for occurred sweeps */}
                   {sweep.status === "occurred" && (
                     <div className="grid grid-cols-2 gap-2">
                       <Link
@@ -346,7 +324,6 @@ export default function SweepsPage() {
           </div>
         )}
 
-        {/* Recent Sweep Events */}
         {events.length > 0 && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
             <h3 className="text-sm font-semibold text-blue-400 mb-3">
@@ -383,25 +360,19 @@ export default function SweepsPage() {
           </div>
         )}
 
-        {/* Info card */}
         <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
           <h3 className="text-xs font-semibold text-blue-300 mb-2">
             💡 How Sweep Prediction Works
           </h3>
           <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
             <li>
-              <strong>⚡ Likely</strong> — price is within 2× ATR of a pool
+              <strong>⚡ Likely</strong> — within 2× ATR
             </li>
             <li>
-              <strong>🔥 Imminent</strong> — price is within 1× ATR — sweep in
-              minutes
+              <strong>🔥 Imminent</strong> — within 1× ATR
             </li>
             <li>
-              <strong>✓ Occurred</strong> — price has touched the pool
-            </li>
-            <li>
-              Get Telegram alerts when a pool becomes <strong>Likely</strong>{" "}
-              or <strong>Imminent</strong>
+              <strong>✓ Occurred</strong> — price touched the pool
             </li>
             <li>After a sweep, wait for rejection — then look for RB</li>
           </ul>

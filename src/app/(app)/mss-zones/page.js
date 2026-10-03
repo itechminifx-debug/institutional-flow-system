@@ -3,19 +3,18 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
   mssInfo,
   zoneStatusInfo,
   compressionInfo,
   computeCompressionLevel,
-  computeMSSZone,
   distanceToMSSZone,
   priceInMSSZone,
   computeNestedRBCE,
   detectNestedRRB,
 } from "@/lib/mssHelpers";
+import PairPicker from "@/components/PairPicker";
 
 export default function MSSZonesPage() {
   const supabase = createClient();
@@ -36,7 +35,6 @@ export default function MSSZonesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Load zones for the current pair
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -74,7 +72,6 @@ export default function MSSZonesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pair]);
 
-  // Poll live price
   useEffect(() => {
     async function fetchPrice() {
       try {
@@ -114,7 +111,6 @@ export default function MSSZonesPage() {
       return;
     }
 
-    // Validate: nested RB must be inside the MSS zone
     const detection = detectNestedRRB({
       rbZoneHigh: high,
       rbZoneLow: low,
@@ -159,7 +155,6 @@ export default function MSSZonesPage() {
       return;
     }
 
-    // Update the zone's nested count + compression
     const newCount = nestedCountForZone(zone.id) + 1;
     const newLevel = computeCompressionLevel(newCount);
 
@@ -172,7 +167,6 @@ export default function MSSZonesPage() {
       })
       .eq("id", zone.id);
 
-    // Update local state
     setNestedRRBs((prev) => [inserted, ...prev]);
     setZones((prev) =>
       prev.map((z) =>
@@ -226,7 +220,6 @@ export default function MSSZonesPage() {
     );
   }
 
-  // Sort zones by distance to live price
   const sortedZones = [...zones].sort((a, b) => {
     if (livePrice == null) return 0;
     const dA = distanceToMSSZone(livePrice, a) ?? Infinity;
@@ -249,22 +242,12 @@ export default function MSSZonesPage() {
           </p>
         </div>
 
-        {/* Pair selector + stats */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <div>
-            <label className="block text-xs mb-1 text-gray-400">Pair</label>
-            <select
-              value={pair}
-              onChange={(e) => setPair(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-            >
-              {PAIRS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </div>
+          <PairPicker
+            value={pair}
+            onChange={setPair}
+            label="Pair"
+          />
 
           {livePrice !== null && (
             <div className="grid grid-cols-3 gap-3 pt-3 border-t border-gray-800">
@@ -290,12 +273,13 @@ export default function MSSZonesPage() {
           )}
         </div>
 
-        {/* Zones list */}
         {loading ? (
           <p className="text-gray-500 text-center py-8">Loading...</p>
         ) : sortedZones.length === 0 ? (
           <div className="p-8 rounded-lg bg-gray-900 border border-gray-800 text-center">
-            <p className="text-gray-400 mb-3">No active MSS zones for {pair}.</p>
+            <p className="text-gray-400 mb-3">
+              No active MSS zones for {pair}.
+            </p>
             <Link
               href="/mss"
               className="inline-block px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm"
@@ -312,9 +296,10 @@ export default function MSSZonesPage() {
                 zone.compression_level ||
                   computeCompressionLevel(zone.nested_rrb_count || 0)
               );
-              const ce = Math.round(
-                ((zone.zone_high + zone.zone_low) / 2) * 100
-              ) / 100;
+              const ce =
+                Math.round(
+                  ((zone.zone_high + zone.zone_low) / 2) * 100
+                ) / 100;
               const distance =
                 livePrice != null ? distanceToMSSZone(livePrice, zone) : null;
               const isInside =
@@ -329,7 +314,6 @@ export default function MSSZonesPage() {
                   className={`rounded-lg border-2 overflow-hidden ${info.color}`}
                 >
                   <div className="p-4 space-y-3">
-                    {/* Header */}
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
@@ -360,7 +344,6 @@ export default function MSSZonesPage() {
                       )}
                     </div>
 
-                    {/* Zone + CE */}
                     <div className="grid grid-cols-3 gap-3 text-sm">
                       <div>
                         <p className="text-xs opacity-70">Zone High</p>
@@ -384,7 +367,6 @@ export default function MSSZonesPage() {
                       </div>
                     </div>
 
-                    {/* Distance */}
                     {distance != null && (
                       <div className="flex items-center justify-between text-xs pt-2 border-t border-current/20">
                         <span className="opacity-70">Distance</span>
@@ -394,7 +376,6 @@ export default function MSSZonesPage() {
                       </div>
                     )}
 
-                    {/* Buttons */}
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -419,7 +400,6 @@ export default function MSSZonesPage() {
                       </Link>
                     </div>
 
-                    {/* Expanded: Nested RRBs */}
                     {isExpanded && (
                       <div className="pt-3 border-t border-current/20 space-y-2">
                         <div className="flex items-center justify-between">
@@ -437,11 +417,9 @@ export default function MSSZonesPage() {
                           )}
                         </div>
 
-                        {/* Nested RRB list */}
                         {nestedList.length === 0 && !showNestedForm && (
                           <p className="text-xs opacity-70 py-2">
-                            No nested RRBs yet. Add one when you see a new RB
-                            form inside this zone.
+                            No nested RRBs yet.
                           </p>
                         )}
 
@@ -478,7 +456,6 @@ export default function MSSZonesPage() {
                           </div>
                         ))}
 
-                        {/* Nested RRB form */}
                         {showNestedForm && (
                           <div className="p-3 rounded-lg bg-black/60 border border-blue-700 space-y-2">
                             <p className="text-xs font-semibold text-blue-300">
@@ -585,7 +562,6 @@ export default function MSSZonesPage() {
           </div>
         )}
 
-        {/* Info card */}
         <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
           <h3 className="text-xs font-semibold text-blue-300 mb-2">
             💡 How to Use MSS Zones
@@ -599,15 +575,11 @@ export default function MSSZonesPage() {
               <strong>⭐ CE Entry</strong> — 50% midpoint. Your entry on return
             </li>
             <li>
-              <strong>Nested RRBs</strong> — when another RB forms inside the
-              zone, add it. More nested = stronger defense
+              <strong>Nested RRBs</strong> — add every RB that forms inside
             </li>
             <li>
               <strong>Compression</strong> — 1× Low · 2× Medium · 3× High · 4+
               Extreme
-            </li>
-            <li>
-              The stronger the compression — the bigger the break when it comes
             </li>
           </ul>
         </div>

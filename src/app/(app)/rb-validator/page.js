@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { formatPrice, fullPrice } from "@/lib/formatNumbers";
 import {
   validateRejectionBlock,
@@ -13,6 +12,7 @@ import {
   TIMEFRAME_PRESETS,
 } from "@/lib/rbValidator";
 import { computeRBVerdict, verdictInfo } from "@/lib/rbVerdict";
+import PairPicker from "@/components/PairPicker";
 
 export default function RBValidatorPage() {
   const router = useRouter();
@@ -54,9 +54,6 @@ export default function RBValidatorPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // ============================================================
-  // SHOT CANDLE DETECTION
-  // ============================================================
   function detectShotCandle() {
     const c3Open = parseFloat(form.c3_open);
     const c3High = parseFloat(form.c3_high);
@@ -136,7 +133,6 @@ export default function RBValidatorPage() {
 
     setResult(res);
 
-    // Compute the verdict — Candle 3's close vs the RB zone
     const verdict = computeRBVerdict({
       direction: form.direction,
       zoneHigh: res.zoneHigh,
@@ -305,26 +301,14 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
         </div>
 
         <form onSubmit={handleValidate} className="space-y-5">
-          {/* Context */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <h2 className="text-sm font-semibold text-blue-400">Context</h2>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs mb-1 text-gray-400">
-                  Pair
-                </label>
-                <select
-                  value={form.pair}
-                  onChange={(e) => update("pair", e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-                >
-                  {PAIRS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <PairPicker
+                value={form.pair}
+                onChange={(pair) => update("pair", pair)}
+                label="Pair"
+              />
               <div>
                 <label className="block text-xs mb-1 text-gray-400">
                   Timeframe
@@ -403,7 +387,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
             </div>
           </div>
 
-          {/* Candle inputs */}
           {["c1", "c2", "c3"].map((ck, i) => (
             <div
               key={ck}
@@ -436,7 +419,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
             </div>
           ))}
 
-          {/* Advanced params */}
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <h2 className="text-sm font-semibold text-blue-400">
               Parameters
@@ -479,10 +461,8 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
           </button>
         </form>
 
-        {/* RESULT */}
         {result && (
           <div className="space-y-4">
-            {/* Verdict banner */}
             <div
               className={`p-4 rounded-lg border-2 ${
                 result.isValid
@@ -511,7 +491,29 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
               </p>
             </div>
 
-            {/* CE ENTRY CARD */}
+            {verdictResult && (
+              <div
+                className={`p-4 rounded-lg border-2 ${
+                  verdictInfo(verdictResult.verdict).color
+                } space-y-2`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider opacity-70">
+                    The Negotiation Rule — Verdict
+                  </span>
+                  <span
+                    className={`text-sm px-3 py-1 rounded-full font-bold ${
+                      verdictInfo(verdictResult.verdict).badge
+                    }`}
+                  >
+                    {verdictInfo(verdictResult.verdict).emoji}{" "}
+                    {verdictInfo(verdictResult.verdict).label}
+                  </span>
+                </div>
+                <p className="text-sm opacity-90">{verdictResult.reason}</p>
+              </div>
+            )}
+
             {result.isValid && entryData && (
               <div className="p-4 rounded-lg bg-gradient-to-br from-blue-950/60 via-blue-900/40 to-yellow-950/40 border-2 border-yellow-700 space-y-4">
                 <div className="flex items-center justify-between">
@@ -562,96 +564,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
                   </div>
                 </div>
 
-                {/* Shot candle check */}
-                <div className="pt-3 border-t border-yellow-800/40 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-yellow-300">
-                      ⚡ Shot Candle Check
-                    </h4>
-                    {shotAutoDetected && (
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          shotAutoDetected.isShot
-                            ? "bg-green-900/40 text-green-300"
-                            : "bg-gray-800 text-gray-400"
-                        }`}
-                      >
-                        {shotAutoDetected.isShot
-                          ? "Auto-detected ✅"
-                          : "Auto-detected ❌"}
-                      </span>
-                    )}
-                  </div>
-
-                  {shotAutoDetected && (
-                    <div className="space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
-                        <span className="text-gray-400">
-                          Direction correct ({isRFZ ? "bearish" : "bullish"})
-                        </span>
-                        <span
-                          className={
-                            shotAutoDetected.directionCorrect
-                              ? "text-green-400"
-                              : "text-red-400"
-                          }
-                        >
-                          {shotAutoDetected.directionCorrect ? "✅" : "❌"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
-                        <span className="text-gray-400">
-                          Body ≥ 1× ATR ({shotAutoDetected.bodyVsATR}×)
-                        </span>
-                        <span
-                          className={
-                            shotAutoDetected.bodySize
-                              ? "text-green-400"
-                              : "text-red-400"
-                          }
-                        >
-                          {shotAutoDetected.bodySize ? "✅" : "❌"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
-                        <span className="text-gray-400">
-                          Opposing wick ≤ 10% ({shotAutoDetected.wickPercent}%)
-                        </span>
-                        <span
-                          className={
-                            shotAutoDetected.wickSmall
-                              ? "text-green-400"
-                              : "text-red-400"
-                          }
-                        >
-                          {shotAutoDetected.wickSmall ? "✅" : "❌"}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-black/40 border border-yellow-700/40">
-                    <input
-                      type="checkbox"
-                      checked={shotConfirmed}
-                      onChange={(e) => setShotConfirmed(e.target.checked)}
-                      className="w-5 h-5 accent-yellow-500"
-                    />
-                    <span className="text-sm font-medium text-yellow-200">
-                      ⚡ Confirm: shot candle launched from CE
-                    </span>
-                  </label>
-
-                  {shotConfirmed && (
-                    <div className="p-3 rounded-lg bg-green-950/60 border border-green-700 text-center">
-                      <p className="text-sm font-bold text-green-300">
-                        ⚡ CE ENTRY + SHOT CONFIRMED
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action buttons */}
                 <div className="grid grid-cols-2 gap-2 pt-3 border-t border-yellow-800/40">
                   <button
                     type="button"
@@ -671,34 +583,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
               </div>
             )}
 
-            {/* THE NEGOTIATION RULE — Verdict */}
-            {verdictResult && (
-              <div
-                className={`p-4 rounded-lg border-2 ${
-                  verdictInfo(verdictResult.verdict).color
-                } space-y-2`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider opacity-70">
-                    The Negotiation Rule — Verdict
-                  </span>
-                  <span
-                    className={`text-sm px-3 py-1 rounded-full font-bold ${
-                      verdictInfo(verdictResult.verdict).badge
-                    }`}
-                  >
-                    {verdictInfo(verdictResult.verdict).emoji}{" "}
-                    {verdictInfo(verdictResult.verdict).label}
-                  </span>
-                </div>
-                <p className="text-sm opacity-90">{verdictResult.reason}</p>
-                <p className="text-xs opacity-70">
-                  {verdictInfo(verdictResult.verdict).description}
-                </p>
-              </div>
-            )}
-
-            {/* Condition Checks */}
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
               <h3 className="text-sm font-semibold text-blue-400 mb-2">
                 Condition Checks
@@ -730,7 +614,6 @@ Shot from CE: ${shotConfirmed ? "CONFIRMED" : "Not confirmed"}`;
               />
             </div>
 
-            {/* Notes */}
             <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
               <label className="block text-xs mb-1 text-gray-400">
                 Notes

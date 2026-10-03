@@ -4,8 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { PAIRS } from "@/lib/setupHelpers";
 import { computeConfluence, verdictColor } from "@/lib/confluenceEngine";
+import PairPicker from "@/components/PairPicker";
 
 export default function ConfluencePage() {
   const router = useRouter();
@@ -15,19 +15,16 @@ export default function ConfluencePage() {
     pair: "Volatility 80",
     bias: "bearish",
     current_price: "",
-    // D1
     d1_direction: "downtrend",
     d1_rejection_block: false,
     d1_zone_low: "",
     d1_zone_high: "",
     d1_liquidity: false,
-    // H4
     h4_direction: "downtrend",
     h4_rejection_block: false,
     h4_zone_low: "",
     h4_zone_high: "",
     h4_liquidity: false,
-    // H1
     h1_direction: "downtrend",
     h1_rejection_block: false,
     h1_zone_low: "",
@@ -43,7 +40,6 @@ export default function ConfluencePage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // Clean payload for calculation
   const calcPayload = {
     bias: form.bias,
     d1_direction: form.d1_direction,
@@ -145,21 +141,13 @@ export default function ConfluencePage() {
           </Link>
         </div>
 
-        {/* Pair + Bias */}
-        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm mb-2 text-gray-300">Pair</label>
-              <select
-                value={form.pair}
-                onChange={(e) => update("pair", e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              >
-                {PAIRS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
+            <PairPicker
+              value={form.pair}
+              onChange={(pair) => update("pair", pair)}
+              label="Pair"
+            />
             <div>
               <label className="block text-sm mb-2 text-gray-300">Bias</label>
               <select
@@ -172,8 +160,10 @@ export default function ConfluencePage() {
               </select>
             </div>
           </div>
-          <div className="mt-3">
-            <label className="block text-sm mb-2 text-gray-300">Current Price</label>
+          <div>
+            <label className="block text-sm mb-2 text-gray-300">
+              Current Price
+            </label>
             <input
               type="number"
               step="any"
@@ -185,7 +175,6 @@ export default function ConfluencePage() {
           </div>
         </div>
 
-        {/* D1 */}
         <TimeframeSection
           label="D1 (Daily)"
           direction={form.d1_direction}
@@ -200,7 +189,6 @@ export default function ConfluencePage() {
           onLiquidity={(v) => update("d1_liquidity", v)}
         />
 
-        {/* H4 */}
         <TimeframeSection
           label="H4 (4 Hours)"
           direction={form.h4_direction}
@@ -215,7 +203,6 @@ export default function ConfluencePage() {
           onLiquidity={(v) => update("h4_liquidity", v)}
         />
 
-        {/* H1 */}
         <TimeframeSection
           label="H1 (1 Hour)"
           direction={form.h1_direction}
@@ -230,7 +217,6 @@ export default function ConfluencePage() {
           onLiquidity={(v) => update("h1_liquidity", v)}
         />
 
-        {/* Result */}
         <div className={`p-5 rounded-lg border-2 mb-4 ${colors}`}>
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm text-gray-400">Confluence Score</span>
@@ -248,7 +234,6 @@ export default function ConfluencePage() {
           )}
         </div>
 
-        {/* Suggested Trade */}
         {result.score >= 45 && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
             <h3 className="text-sm font-semibold text-blue-400 mb-3">
@@ -284,7 +269,6 @@ export default function ConfluencePage() {
           </div>
         )}
 
-        {/* Breakdown */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
           <h3 className="text-sm font-semibold text-blue-400 mb-3">
             Breakdown
@@ -296,7 +280,6 @@ export default function ConfluencePage() {
           </div>
         </div>
 
-        {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 mb-4">
           <label className="block text-sm mb-2 text-gray-300">Notes</label>
           <textarea
