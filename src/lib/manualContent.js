@@ -138,7 +138,7 @@ export const MANUAL_PARTS = [
     ],
   },
 
-    {
+      {
     key: "part10",
     number: 10,
     title: "The Negotiation Rule",
@@ -153,10 +153,15 @@ export const MANUAL_PARTS = [
         number: 71,
         title: "The Two-Attempt Rule",
       },
-            {
+      {
         key: "ch72",
         number: 72,
         title: "The Next RB Target — Where 2R Lands",
+      },
+      {
+        key: "ch73",
+        number: 73,
+        title: "The Battle Zone — MSS vs RB",
       },
     ],
   },
@@ -6747,6 +6752,95 @@ Your 2R take profit doesn't land at a random price. **It often lands at the next
 ---
 
 *End of Part 10 — The Institutional Flow System now has 72 chapters across 10 Parts.*
+    `,
+  },
+
+    ch73: {
+    title: "The Battle Zone — MSS vs RB",
+    content: `
+## The Battle Zone — MSS vs RB
+
+The Negotiation IS the Battle. There is no difference.
+
+**Two strongholds face each other:**
+- **MSS zone** = the bulls' fortress
+- **RB zone** = the bears' fortress
+
+**Price fights in the space between them. Only two closes decide the winner.**
+
+### The Structure
+
+\`\`\`
+     ─── MSS High ───   ← Bullish target
+     │  MSS Zone    │
+     ─── MSS Low  ───
+            │
+            │ ← Battle Zone
+            │
+     ─── RB High  ───
+     │  RB Zone     │
+     ─── RB Low   ───   ← Bearish target
+\`\`\`
+
+### The Two Verdicts
+
+**Only two closes matter:**
+
+1. **Close above MSS High** → 🟢 **Bullish confirmed** → BUY at CE
+2. **Close below RB Low** → 🔴 **Bearish confirmed** → SELL at CE
+
+**Everything in between = the battle continues. No verdict. Wait.**
+
+### The Rule
+
+> **"The MSS zone and RB zone form a battlefield. The close above the MSS High is the bullish verdict. The close below the RB Low is the bearish verdict. Everything else is war."**
+
+### Why This Works
+
+- The MSS zone = where the trend shifted
+- The RB zone = where the defense sits
+- The battle is fought in the space between
+- **Only a decisive close reveals the winner**
+- The market doesn't draw — it **commits**
+
+### Position Variations
+
+The battle structure works regardless of where the RB sits:
+
+| RB Position | Battle Field |
+|---|---|
+| RB inside MSS | Battle within the MSS zone |
+| RB above MSS | Battle above the MSS (bulls' premium defense) |
+| RB below MSS | Battle below the MSS (bears' discount defense) |
+| Nested RB in MSS | Compressed battlefield — bigger break |
+| Nested MSS in RB | Micro-battle inside the macro-battle |
+| MSS Nested in RB → Flip | The battle flips — trade the second war |
+
+### How It Works in the App
+
+**In the Negotiation page:**
+- Enter MSS zone (high/low)
+- Enter RB zone (high/low)
+- The **Battle Zone visual** shows the two strongholds
+- The **bullish target** and **bearish target** are marked
+- Enter the **verdict close**
+- The app auto-computes the verdict:
+  - Close above MSS High → 🟢 Bullish
+  - Close below RB Low → 🔴 Bearish
+  - Inside either zone → ⚠️ Battle continues
+  - Between zones → ⚔️ Battle zone active
+
+**ENTER is only enabled when the verdict is decisive.**
+
+### The Golden Rule
+
+> "The Negotiation is the Battle. The MSS is one fortress. The RB is the other. The close is the verdict."
+
+### 📸 Upload a chart showing the Battle Zone between MSS and RB
+
+---
+
+*End of Part 10 — The Institutional Flow System now has 73 chapters across 10 Parts.*
     `,
   },
 };

@@ -1,11 +1,13 @@
 // ============================================================
-// NEGOTIATION ENGINE — MSS + RB + CE + Verdict + Flip
+// NEGOTIATION ENGINE — MSS + RB + CE + Battle Zone + Verdict
 // ============================================================
-// The CE is the single reference point for the negotiation.
-//   - Close below CE repeatedly = defending side losing
-//   - Fail to close beyond RB = attacking side winning
-//   - Close beyond RB = verdict reached
-//   - Two failed attempts = verdict flips
+// The Negotiation is the Battle.
+//   - MSS zone = bulls' stronghold
+//   - RB zone = bears' stronghold
+//   - Two decisive closes decide the verdict:
+//       1. Close above MSS High → Bullish confirmed
+//       2. Close below RB Low → Bearish flip
+//   - Everything in between = battle zone, no verdict
 // ============================================================
 
 export const CONFIGURATIONS = [
@@ -17,33 +19,33 @@ export const CONFIGURATIONS = [
     badge: "bg-blue-900/40 text-blue-300",
     strength: "standard",
     description:
-      "RB forms inside the MSS zone. The base configuration — standard negotiation.",
+      "RB forms inside the MSS zone. The base configuration — same battlefield.",
     expectedBehavior: "Bounce or break at the zone",
     tradeDirection: "with_mss",
   },
   {
     key: "rb_above_mss",
-    label: "RB Above MSS (Bearish)",
+    label: "RB Above MSS",
     emoji: "🔺",
     color: "bg-red-950/40 border-red-700 text-red-200",
     badge: "bg-red-900/40 text-red-300",
     strength: "strong",
     description:
-      "RB forms above the MSS zone. Sellers defending a premium level.",
-    expectedBehavior: "Sellers hold premium — bearish continuation",
-    tradeDirection: "sell",
+      "RB forms above the MSS zone. Premium defense — bears' stronghold above.",
+    expectedBehavior: "Battle between MSS and RB above",
+    tradeDirection: "flip_likely",
   },
   {
     key: "rb_below_mss",
-    label: "RB Below MSS (Bullish)",
+    label: "RB Below MSS",
     emoji: "🔻",
     color: "bg-green-950/40 border-green-700 text-green-200",
     badge: "bg-green-900/40 text-green-300",
     strength: "strong",
     description:
-      "RB forms below the MSS zone. Buyers defending a discount level.",
-    expectedBehavior: "Buyers hold discount — bullish continuation",
-    tradeDirection: "buy",
+      "RB forms below the MSS zone. Discount defense — bears' stronghold below.",
+    expectedBehavior: "Battle between MSS and RB below",
+    tradeDirection: "with_mss",
   },
   {
     key: "nested_rb_in_mss",
@@ -53,8 +55,8 @@ export const CONFIGURATIONS = [
     badge: "bg-orange-900/40 text-orange-300",
     strength: "extreme",
     description:
-      "Multiple RBs inside the MSS zone. Compounding defense — compression grows.",
-    expectedBehavior: "Compressed zone — bigger breakout when it comes",
+      "Multiple RBs inside the MSS zone. Compressed battlefield — bigger breakout.",
+    expectedBehavior: "Compression before the verdict",
     tradeDirection: "with_mss",
   },
   {
@@ -65,8 +67,8 @@ export const CONFIGURATIONS = [
     badge: "bg-purple-900/40 text-purple-300",
     strength: "rare",
     description:
-      "An MSS forms inside the RB zone. Micro-structure inside macro-defense.",
-    expectedBehavior: "Rare and powerful — often flips",
+      "An MSS forms inside the RB zone. Micro-battle inside macro-battle.",
+    expectedBehavior: "Rare — often flips",
     tradeDirection: "flip_likely",
   },
   {
@@ -77,8 +79,8 @@ export const CONFIGURATIONS = [
     badge: "bg-yellow-900/40 text-yellow-300",
     strength: "extreme",
     description:
-      "MSS forms inside the RB and flips the zone. The flip is the new trade.",
-    expectedBehavior: "Trade the flip — opposite direction",
+      "MSS inside the RB and flips. Trade the flip — the second battle.",
+    expectedBehavior: "Trade the flip direction",
     tradeDirection: "flip",
   },
 ];
@@ -129,28 +131,28 @@ export function detectConfiguration({
   if (nestedRbCount >= 2) {
     return {
       key: "nested_rb_in_mss",
-      reason: `${nestedRbCount} nested RBs — compounding defense`,
+      reason: `${nestedRbCount} nested RBs — compressed battlefield`,
     };
   }
 
   if (rbInsideMSS) {
     return {
       key: "rb_inside_mss",
-      reason: "RB is inside the MSS zone — base configuration",
+      reason: "RB is inside the MSS zone — same battlefield",
     };
   }
 
   if (rbAboveMSS) {
     return {
       key: "rb_above_mss",
-      reason: "RB is above the MSS zone — premium defense (bearish)",
+      reason: "RB is above the MSS zone — premium defense",
     };
   }
 
   if (rbBelowMSS) {
     return {
       key: "rb_below_mss",
-      reason: "RB is below the MSS zone — discount defense (bullish)",
+      reason: "RB is below the MSS zone — discount defense",
     };
   }
 
@@ -161,129 +163,232 @@ export function detectConfiguration({
 }
 
 // ============================================================
-// COMPUTE NEGOTIATION RESULT
+// BATTLE ZONE — The unified negotiation logic
 // ============================================================
-export function computeNegotiation({
-  mssDirection,
+// The MSS zone and RB zone form a battlefield.
+// Two decisive closes:
+//   1. Close above MSS High → Bullish confirmed
+//   2. Close below RB Low   → Bearish flip
+// Everything else = battle zone, no verdict
+// ============================================================
+export function computeBattleZone({
+  mssZoneHigh,
+  mssZoneLow,
   rbZoneHigh,
   rbZoneLow,
   verdictClose,
   attempts,
-  verdictFlipped,
 }) {
-  if (!rbZoneHigh || !rbZoneLow) {
+  if (!mssZoneHigh || !mssZoneLow || !rbZoneHigh || !rbZoneLow) {
     return {
-      ce: null,
-      verdict: "unknown",
-      reason: "Missing RB zone",
+      state: "incomplete",
+      label: "Battle Zone Incomplete",
+      emoji: "•",
+      color: "bg-gray-900 border-gray-700 text-gray-400",
+      description: "Enter MSS and RB zones to compute the battle",
     };
   }
 
+  const mssHigh = parseFloat(mssZoneHigh);
+  const mssLow = parseFloat(mssZoneLow);
   const rbHigh = parseFloat(rbZoneHigh);
   const rbLow = parseFloat(rbZoneLow);
-  const ce = Math.round(((rbHigh + rbLow) / 2) * 100) / 100;
 
-  const isBearish = mssDirection === "bearish";
+  // Determine which is above which
+  const upperZone = mssHigh >= rbHigh
+    ? { name: "MSS", high: mssHigh, low: mssLow }
+    : { name: "RB", high: rbHigh, low: rbLow };
+  const lowerZone = upperZone.name === "MSS"
+    ? { name: "RB", high: rbHigh, low: rbLow }
+    : { name: "MSS", high: mssHigh, low: mssLow };
 
-  let verdict = "negotiating";
-  let reason = "No verdict yet";
+  // Decisive bullish close
+  const bullishTarget = Math.max(mssHigh, rbHigh);
+  // Decisive bearish close
+  const bearishTarget = Math.min(mssLow, rbLow);
 
-  if (verdictClose) {
-    const close = parseFloat(verdictClose);
-
-    if (isBearish) {
-      if (close < rbLow) {
-        verdict = "confirmed";
-        reason = `Closed at ${close.toFixed(2)}, below RB low ${rbLow.toFixed(
-          2
-        )} — bearish confirmed`;
-      } else if (close > rbHigh) {
-        verdict = "failed";
-        reason = `Closed at ${close.toFixed(2)}, above RB high ${rbHigh.toFixed(
-          2
-        )} — RB failed`;
-      } else {
-        verdict = "negotiating";
-        reason = `Closed at ${close.toFixed(2)}, inside RB (${rbLow.toFixed(
-          2
-        )} – ${rbHigh.toFixed(2)}) — still negotiating`;
-      }
-    } else {
-      if (close > rbHigh) {
-        verdict = "confirmed";
-        reason = `Closed at ${close.toFixed(2)}, above RB high ${rbHigh.toFixed(
-          2
-        )} — bullish confirmed`;
-      } else if (close < rbLow) {
-        verdict = "failed";
-        reason = `Closed at ${close.toFixed(2)}, below RB low ${rbLow.toFixed(
-          2
-        )} — RB failed`;
-      } else {
-        verdict = "negotiating";
-        reason = `Closed at ${close.toFixed(2)}, inside RB (${rbLow.toFixed(
-          2
-        )} – ${rbHigh.toFixed(2)}) — still negotiating`;
-      }
-    }
+  if (!verdictClose) {
+    return {
+      state: "waiting",
+      label: "Awaiting Close",
+      emoji: "⏳",
+      color: "bg-gray-900 border-gray-700 text-gray-300",
+      description: `Enter the verdict close. Watch for close above ${bullishTarget.toFixed(2)} or below ${bearishTarget.toFixed(2)}.`,
+      bullishTarget,
+      bearishTarget,
+      upperZone,
+      lowerZone,
+    };
   }
 
-  const attemptCount = parseInt(attempts) || 0;
-  const flipped = verdictFlipped || attemptCount >= 2;
+  const close = parseFloat(verdictClose);
 
-  if (flipped) {
-    verdict = "failed";
-    reason = `${attemptCount} attempts by the defending side failed. Verdict flipped.`;
+  if (close > bullishTarget) {
+    return {
+      state: "bullish_confirmed",
+      label: "Bullish Confirmed",
+      emoji: "🟢",
+      color: "bg-green-950/40 border-green-700 text-green-200",
+      badge: "bg-green-900/40 text-green-300",
+      description: `Close above ${bullishTarget.toFixed(2)} — bulls won the battle. Trade BUY.`,
+      direction: "BUY",
+      bullishTarget,
+      bearishTarget,
+      upperZone,
+      lowerZone,
+    };
+  }
+
+  if (close < bearishTarget) {
+    return {
+      state: "bearish_confirmed",
+      label: "Bearish Confirmed",
+      emoji: "🔴",
+      color: "bg-red-950/40 border-red-700 text-red-200",
+      badge: "bg-red-900/40 text-red-300",
+      description: `Close below ${bearishTarget.toFixed(2)} — bears won the battle. Trade SELL.`,
+      direction: "SELL",
+      bullishTarget,
+      bearishTarget,
+      upperZone,
+      lowerZone,
+    };
+  }
+
+  // Inside the battle zone
+  const insideUpper = close >= upperZone.low && close <= upperZone.high;
+  const insideLower = close >= lowerZone.low && close <= lowerZone.high;
+  const between = !insideUpper && !insideLower;
+
+  if (insideUpper) {
+    return {
+      state: "inside_upper",
+      label: `Inside ${upperZone.name} Zone`,
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description: `Close is inside the ${upperZone.name} zone. No decisive verdict. Wait for a close above ${bullishTarget.toFixed(2)} or below ${bearishTarget.toFixed(2)}.`,
+      bullishTarget,
+      bearishTarget,
+      upperZone,
+      lowerZone,
+    };
+  }
+
+  if (insideLower) {
+    return {
+      state: "inside_lower",
+      label: `Inside ${lowerZone.name} Zone`,
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description: `Close is inside the ${lowerZone.name} zone. No decisive verdict. Wait for a close above ${bullishTarget.toFixed(2)} or below ${bearishTarget.toFixed(2)}.`,
+      bullishTarget,
+      bearishTarget,
+      upperZone,
+      lowerZone,
+    };
+  }
+
+  if (between) {
+    return {
+      state: "battle_zone",
+      label: "Battle Zone Active",
+      emoji: "⚔️",
+      color: "bg-orange-950/40 border-orange-700 text-orange-200",
+      description: `Close is between ${upperZone.name} and ${lowerZone.name}. The battle continues. Wait for a decisive close.`,
+      bullishTarget,
+      bearishTarget,
+      upperZone,
+      lowerZone,
+    };
   }
 
   return {
-    ce,
-    rbHigh,
-    rbLow,
-    verdict,
-    reason,
-    attempts: attemptCount,
-    flipped,
+    state: "waiting",
+    label: "Awaiting Verdict",
+    emoji: "⏳",
+    color: "bg-gray-900 border-gray-700 text-gray-300",
+    description: "Continue waiting for the decisive close.",
+    bullishTarget,
+    bearishTarget,
+    upperZone,
+    lowerZone,
   };
 }
 
 // ============================================================
-// TRADE PARAMETERS
+// TRADE PARAMETERS — Battle Zone version
 // ============================================================
 export function computeNegotiationTrade({
+  direction,
   mssDirection,
   rbZoneHigh,
   rbZoneLow,
+  mssZoneHigh,
+  mssZoneLow,
   accountSize = 0,
   riskPercent = 1,
+  bufferMultiplier = 0.3,
 }) {
   if (!rbZoneHigh || !rbZoneLow) return null;
 
   const rbHigh = parseFloat(rbZoneHigh);
   const rbLow = parseFloat(rbZoneLow);
+  const mssHigh = mssZoneHigh ? parseFloat(mssZoneHigh) : null;
+  const mssLow = mssZoneLow ? parseFloat(mssZoneLow) : null;
+
   const ce = Math.round(((rbHigh + rbLow) / 2) * 100) / 100;
 
-  const isBearish = mssDirection === "bearish";
+  const tradeDirection =
+    direction || (mssDirection === "bearish" ? "SELL" : "BUY");
+  const isBuy = tradeDirection === "BUY";
 
+  // Entry = CE
+  // SL = beyond the wick extreme (MSS or RB high/low, whichever is safer)
   const entry = ce;
-  const sl = isBearish ? rbHigh : rbLow;
+  let sl;
+  if (isBuy) {
+    // SL below the lower extreme (RB low or MSS low)
+    const lowerExtreme = Math.min(
+      rbLow,
+      mssLow != null ? mssLow : rbLow
+    );
+    sl = lowerExtreme;
+  } else {
+    // SL above the upper extreme (RB high or MSS high)
+    const upperExtreme = Math.max(
+      rbHigh,
+      mssHigh != null ? mssHigh : rbHigh
+    );
+    sl = upperExtreme;
+  }
+
   const risk = Math.abs(entry - sl);
-  const tp = isBearish ? entry - risk * 2 : entry + risk * 2;
+  const buffer = risk * bufferMultiplier;
+  const adjustedSl = isBuy ? sl - buffer : sl + buffer;
+  const adjustedRisk = Math.abs(entry - adjustedSl);
+
+  const tp = isBuy
+    ? entry + adjustedRisk * 2
+    : entry - adjustedRisk * 2;
+
   const rr = 2;
 
   const riskAmount = (accountSize * riskPercent) / 100;
   const lotSize =
-    risk > 0 ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100) : 0;
+    adjustedRisk > 0
+      ? Math.max(0.01, Math.round((riskAmount / adjustedRisk) * 100) / 100)
+      : 0;
 
   return {
-    direction: isBearish ? "SELL" : "BUY",
+    direction: tradeDirection,
     entry,
-    sl,
+    sl: adjustedSl,
     tp,
-    risk,
+    risk: adjustedRisk,
     rr,
     lotSize,
     riskAmount,
+    buffer,
   };
 }
 
@@ -319,9 +424,6 @@ export function strengthInfo(strength) {
 // ============================================================
 // NEXT RB ALIGNMENT
 // ============================================================
-// After the current RB trade, the next rejection block below
-// (for SELL) or above (for BUY) acts as the natural target.
-// ============================================================
 export function computeNextRBAlignment({
   direction,
   takeProfit,
@@ -336,7 +438,6 @@ export function computeNextRBAlignment({
       emoji: "•",
       color: "bg-gray-900 border-gray-700 text-gray-400",
       description: "Enter the next rejection block to check alignment",
-      tolerance: null,
     };
   }
 
@@ -351,15 +452,12 @@ export function computeNextRBAlignment({
       emoji: "•",
       color: "bg-gray-900 border-gray-700 text-gray-400",
       description: "Check the RB values",
-      tolerance: null,
     };
   }
 
   const rbTop = Math.max(nHigh, nLow);
   const rbBottom = Math.min(nHigh, nLow);
   const rbMid = (rbTop + rbBottom) / 2;
-
-  const tolerance = (Math.abs(rbTop - rbBottom) * tolerancePercent) / 100;
 
   if (direction === "SELL") {
     if (tp >= rbBottom && tp <= rbTop) {
@@ -369,118 +467,69 @@ export function computeNextRBAlignment({
         emoji: "🎯",
         color: "bg-green-950/40 border-green-700 text-green-200",
         badge: "bg-green-900/40 text-green-300",
-        description: `2R TP (${tp.toFixed(
-          2
-        )}) lands inside the next RB (${rbBottom.toFixed(
-          2
-        )} – ${rbTop.toFixed(2)}) — the market targets this level`,
+        description: `2R TP lands inside the next RB — realistic target`,
         rbTop,
         rbBottom,
         rbMid,
-        tolerance,
       };
     }
-
     if (tp > rbTop) {
       return {
         state: "before",
         label: "TP Before Next RB",
         emoji: "⚠️",
         color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
-        badge: "bg-yellow-900/40 text-yellow-300",
-        description: `2R TP (${tp.toFixed(
-          2
-        )}) is ABOVE the next RB (${rbTop.toFixed(
-          2
-        )}) — the RB may not be reached. Consider a smaller RR or wait for confirmation`,
+        description: `2R TP is above the next RB — may not reach it`,
         rbTop,
         rbBottom,
         rbMid,
-        tolerance,
       };
     }
-
     return {
       state: "past",
       label: "TP Past Next RB",
       emoji: "🔴",
       color: "bg-red-950/40 border-red-700 text-red-200",
-      badge: "bg-red-900/40 text-red-300",
-      description: `2R TP (${tp.toFixed(
-        2
-      )}) is BELOW the next RB (${rbBottom.toFixed(
-        2
-      )}) — the RB may block the trade before TP`,
+      description: `2R TP is below the next RB — may be blocked`,
       rbTop,
       rbBottom,
       rbMid,
-      tolerance,
     };
   }
 
-  if (direction === "BUY") {
-    if (tp >= rbBottom && tp <= rbTop) {
-      return {
-        state: "aligns",
-        label: "Perfect Alignment",
-        emoji: "🎯",
-        color: "bg-green-950/40 border-green-700 text-green-200",
-        badge: "bg-green-900/40 text-green-300",
-        description: `2R TP (${tp.toFixed(
-          2
-        )}) lands inside the next RB (${rbBottom.toFixed(
-          2
-        )} – ${rbTop.toFixed(2)}) — the market targets this level`,
-        rbTop,
-        rbBottom,
-        rbMid,
-        tolerance,
-      };
-    }
-
-    if (tp < rbBottom) {
-      return {
-        state: "before",
-        label: "TP Before Next RB",
-        emoji: "⚠️",
-        color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
-        badge: "bg-yellow-900/40 text-yellow-300",
-        description: `2R TP (${tp.toFixed(
-          2
-        )}) is BELOW the next RB (${rbBottom.toFixed(
-          2
-        )}) — the RB may not be reached. Consider a smaller RR or wait for confirmation`,
-        rbTop,
-        rbBottom,
-        rbMid,
-        tolerance,
-      };
-    }
-
+  // BUY direction
+  if (tp >= rbBottom && tp <= rbTop) {
     return {
-      state: "past",
-      label: "TP Past Next RB",
-      emoji: "🔴",
-      color: "bg-red-950/40 border-red-700 text-red-200",
-      badge: "bg-red-900/40 text-red-300",
-      description: `2R TP (${tp.toFixed(
-        2
-      )}) is ABOVE the next RB (${rbTop.toFixed(
-        2
-      )}) — the RB may block the trade before TP`,
+      state: "aligns",
+      label: "Perfect Alignment",
+      emoji: "🎯",
+      color: "bg-green-950/40 border-green-700 text-green-200",
+      description: `2R TP lands inside the next RB — realistic target`,
       rbTop,
       rbBottom,
       rbMid,
-      tolerance,
     };
   }
-
+  if (tp < rbBottom) {
+    return {
+      state: "before",
+      label: "TP Before Next RB",
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description: `2R TP is below the next RB — may not reach it`,
+      rbTop,
+      rbBottom,
+      rbMid,
+    };
+  }
   return {
-    state: "none",
-    label: "Invalid Direction",
-    emoji: "•",
-    color: "bg-gray-900 border-gray-700 text-gray-400",
-    description: "Direction must be SELL or BUY",
-    tolerance: null,
+    state: "past",
+    label: "TP Past Next RB",
+    emoji: "🔴",
+    color: "bg-red-950/40 border-red-700 text-red-200",
+    description: `2R TP is above the next RB — may be blocked`,
+    rbTop,
+    rbBottom,
+    rbMid,
   };
 }

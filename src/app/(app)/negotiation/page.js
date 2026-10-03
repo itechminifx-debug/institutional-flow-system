@@ -9,7 +9,7 @@ import {
   CONFIGURATIONS,
   configurationInfo,
   detectConfiguration,
-  computeNegotiation,
+  computeBattleZone,
   computeNegotiationTrade,
   computeNextRBAlignment,
   strengthInfo,
@@ -24,7 +24,7 @@ export default function NegotiationPage() {
     pair: "Volatility 80",
     timeframe: "H4",
     configuration: "rb_inside_mss",
-    mssDirection: "bearish",
+    mssDirection: "bullish",
     mssZoneHigh: "",
     mssZoneLow: "",
     rbZoneHigh: "",
@@ -99,19 +99,31 @@ export default function NegotiationPage() {
     form.rbFlipped,
   ]);
 
-  const negotiation = computeNegotiation({
-    mssDirection: form.mssDirection,
+  // Battle Zone computation
+  const battle = computeBattleZone({
+    mssZoneHigh: form.mssZoneHigh,
+    mssZoneLow: form.mssZoneLow,
     rbZoneHigh: form.rbZoneHigh,
     rbZoneLow: form.rbZoneLow,
     verdictClose: form.verdictClose,
     attempts: form.attempts,
-    verdictFlipped: form.rbFlipped,
   });
 
+  // Trade direction from battle verdict
+  const tradeDirection =
+    battle.state === "bullish_confirmed"
+      ? "BUY"
+      : battle.state === "bearish_confirmed"
+      ? "SELL"
+      : null;
+
   const trade = computeNegotiationTrade({
+    direction: tradeDirection,
     mssDirection: form.mssDirection,
     rbZoneHigh: form.rbZoneHigh,
     rbZoneLow: form.rbZoneLow,
+    mssZoneHigh: form.mssZoneHigh,
+    mssZoneLow: form.mssZoneLow,
     accountSize: profile?.account_size || 0,
     riskPercent: profile?.risk_percent || 1,
   });
@@ -127,6 +139,10 @@ export default function NegotiationPage() {
 
   const configInfo = configurationInfo(form.configuration);
 
+  const canEnter =
+    battle.state === "bullish_confirmed" ||
+    battle.state === "bearish_confirmed";
+
   async function handleSave() {
     setSaving(true);
     setError("");
@@ -140,32 +156,38 @@ export default function NegotiationPage() {
       return;
     }
 
+    const direction =
+      tradeDirection ||
+      (form.mssDirection === "bullish" ? "bullish" : "bearish");
+
     const { data: setup, error: setupError } = await supabase
       .from("setups")
       .insert({
         user_id: user.id,
         pair: form.pair,
-        d1_bias: form.mssDirection === "bullish" ? "bullish" : "bearish",
+        d1_bias: direction === "SELL" ? "bearish" : "bullish",
         ema50_position: "above",
         rejection_block_zone: `${form.rbZoneLow}-${form.rbZoneHigh}`,
-        ce_price: negotiation.ce,
+        ce_price: battle.upperZone && battle.lowerZone
+          ? Math.round(
+              ((parseFloat(form.rbZoneHigh) + parseFloat(form.rbZoneLow)) /
+                2) *
+                100
+            ) / 100
+          : null,
         use_ce_entry: true,
-        rb_verdict: negotiation.verdict,
+        rb_verdict: battle.state,
         rb_verdict_price: form.verdictClose
           ? parseFloat(form.verdictClose)
           : null,
         rb_verdict_at: form.verdictClose ? new Date().toISOString() : null,
-        rb_attempts: negotiation.attempts,
-        rb_verdict_flipped: negotiation.flipped,
-        rb_verdict_flipped_at: negotiation.flipped
-          ? new Date().toISOString()
-          : null,
+        rb_attempts: form.attempts,
         next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
         next_rb_low: form.nextRbLow ? parseFloat(form.nextRbLow) : null,
         next_rb_alignment: nextRbAlignment?.state || null,
         notes:
           form.notes ||
-          `Negotiation: ${configInfo?.label || form.configuration}`,
+          `Battle Zone: ${configInfo?.label || form.configuration}`,
       })
       .select()
       .single();
@@ -187,13 +209,13 @@ export default function NegotiationPage() {
       mss_zone_low: parseFloat(form.mssZoneLow),
       rb_zone_high: parseFloat(form.rbZoneHigh),
       rb_zone_low: parseFloat(form.rbZoneLow),
-      ce_price: negotiation.ce,
+      ce_price: setup.ce_price,
       verdict_close: form.verdictClose
         ? parseFloat(form.verdictClose)
         : null,
-      verdict: negotiation.verdict,
-      attempts: negotiation.attempts,
-      verdict_flipped: negotiation.flipped,
+      verdict: battle.state,
+      attempts: form.attempts,
+      verdict_flipped: battle.state === "bearish_confirmed",
       strength: configInfo?.strength || null,
       next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
       next_rb_low: form.nextRbLow ? parseFloat(form.nextRbLow) : null,
@@ -218,10 +240,11 @@ export default function NegotiationPage() {
         <div>
           <h1 className="text-2xl font-bold">Negotiation Setup</h1>
           <p className="text-gray-400 text-sm">
-            MSS + RB + CE + Verdict + Flip — one page
+            The Battle Zone — MSS vs RB, close decides the verdict
           </p>
         </div>
 
+        {/* Configuration Selector */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <label className="block text-xs font-semibold text-blue-400 uppercase tracking-wider">
             Configuration Type
@@ -275,6 +298,7 @@ export default function NegotiationPage() {
           )}
         </div>
 
+        {/* Context */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <PairPicker
@@ -330,9 +354,10 @@ export default function NegotiationPage() {
           </div>
         </div>
 
+        {/* MSS Zone */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            Structure (MSS Zone)
+            MSS Zone (Bulls' Stronghold)
           </h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -364,9 +389,10 @@ export default function NegotiationPage() {
           </div>
         </div>
 
+        {/* RB Zone */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            Defense (RB Zone)
+            RB Zone (Bears' Stronghold)
           </h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -421,66 +447,115 @@ export default function NegotiationPage() {
               <span className="text-xs">MSS inside RB</span>
             </label>
           </div>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.rbFlipped}
-              onChange={(e) => update("rbFlipped", e.target.checked)}
-              className="w-4 h-4 accent-red-500"
-            />
-            <span className="text-xs text-red-300">
-              🔄 RB has flipped
-            </span>
-          </label>
         </div>
 
-        {negotiation.ce && (
+        {/* BATTLE ZONE VISUAL */}
+        {form.mssZoneHigh &&
+          form.mssZoneLow &&
+          form.rbZoneHigh &&
+          form.rbZoneLow && (
+            <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+              <h2 className="text-sm font-semibold text-blue-400">
+                ⚔️ The Battle Zone
+              </h2>
+              <p className="text-xs text-gray-500">
+                Two strongholds. One close decides the verdict.
+              </p>
+
+              {/* Visual stack */}
+              <div className="relative h-48 bg-black rounded-lg border border-gray-800 overflow-hidden">
+                {/* Bullish target line */}
+                <div
+                  className="absolute left-0 right-0 h-0.5 bg-green-500 z-10"
+                  style={{
+                    top: `${Math.max(
+                      0,
+                      100 -
+                        ((battle.bullishTarget - parseFloat(form.rbZoneLow)) /
+                          (parseFloat(form.mssZoneHigh) -
+                            parseFloat(form.rbZoneLow))) *
+                          100
+                    )}%`,
+                  }}
+                >
+                  <span className="absolute right-2 -top-5 text-xs text-green-400 font-bold">
+                    Bullish Target {formatPrice(battle.bullishTarget)}
+                  </span>
+                </div>
+
+                {/* Bearish target line */}
+                <div
+                  className="absolute left-0 right-0 h-0.5 bg-red-500 z-10"
+                  style={{
+                    top: "95%",
+                  }}
+                >
+                  <span className="absolute right-2 top-1 text-xs text-red-400 font-bold">
+                    Bearish Target {formatPrice(battle.bearishTarget)}
+                  </span>
+                </div>
+
+                {/* Center label */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <p className="text-3xl">⚔️</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Battle Zone
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Verdict state */}
+              <div
+                className={`p-3 rounded-lg border-2 ${battle.color}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-bold">
+                    {battle.emoji} {battle.label}
+                  </span>
+                </div>
+                <p className="text-xs opacity-90">
+                  {battle.description}
+                </p>
+              </div>
+            </div>
+          )}
+
+        {/* CE */}
+        {form.rbZoneHigh && form.rbZoneLow && (
           <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-950/40 to-amber-900/30 border-2 border-yellow-700 space-y-2">
             <h2 className="text-sm font-semibold text-yellow-300 uppercase tracking-wider">
               ⭐ CE — The Negotiation Line
             </h2>
             <p className="text-3xl font-bold tabular-nums text-yellow-200">
-              {formatPrice(negotiation.ce)}
+              {formatPrice(
+                (parseFloat(form.rbZoneHigh) +
+                  parseFloat(form.rbZoneLow)) /
+                  2
+              )}
             </p>
           </div>
         )}
 
+        {/* Verdict Close Input */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            The Verdict
+            The Verdict Close
           </h2>
+          <p className="text-xs text-gray-500">
+            Enter the close of the decisive candle
+          </p>
+          <input
+            type="number"
+            step="any"
+            value={form.verdictClose}
+            onChange={(e) => update("verdictClose", e.target.value)}
+            placeholder="e.g. 209400"
+            className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+          />
 
-          <div>
-            <label className="block text-xs mb-1 text-gray-400">
-              Verdict Candle Close
-            </label>
-            <input
-              type="number"
-              step="any"
-              value={form.verdictClose}
-              onChange={(e) => update("verdictClose", e.target.value)}
-              placeholder="e.g. 209400"
-              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-            />
-          </div>
-
-          {negotiation.verdict !== "unknown" && (
-            <div
-              className={`p-3 rounded-lg border ${
-                verdictInfo(negotiation.verdict)?.color || ""
-              }`}
-            >
-              <p className="text-sm font-bold">
-                {verdictInfo(negotiation.verdict)?.emoji}{" "}
-                {verdictInfo(negotiation.verdict)?.label}
-              </p>
-              <p className="text-xs opacity-90 mt-1">
-                {negotiation.reason}
-              </p>
-            </div>
-          )}
-
+          {/* Attempts */}
           <div className="pt-3 border-t border-gray-800 space-y-2">
             <p className="text-xs font-semibold text-blue-400">
               Two-Attempt Rule
@@ -505,27 +580,51 @@ export default function NegotiationPage() {
               >
                 +
               </button>
+              <span className="text-xs text-gray-500">
+                attempts by the defender
+              </span>
             </div>
 
             {form.attempts >= 2 && (
               <div className="p-3 rounded-lg bg-red-950/60 border border-red-700">
                 <p className="text-sm font-bold text-red-200">
-                  🔄 VERDICT FLIPPED
+                  🔄 TWO ATTEMPTS USED
+                </p>
+                <p className="text-xs text-red-300">
+                  Watch for a decisive close in either direction.
                 </p>
               </div>
             )}
           </div>
         </div>
 
+        {/* Trade Output */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <h2 className="text-sm font-semibold text-blue-400">
               Trade Parameters
             </h2>
+
+            {!canEnter && (
+              <div className="p-3 rounded-lg bg-yellow-950/40 border border-yellow-800">
+                <p className="text-xs text-yellow-300">
+                  ⚠️ No decisive verdict yet. Trade parameters shown for reference only.
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-500">Direction</p>
-                <p className="font-bold text-white">{trade.direction}</p>
+                <p
+                  className={`font-bold ${
+                    trade.direction === "BUY"
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }`}
+                >
+                  {trade.direction}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Entry (CE)</p>
@@ -571,13 +670,12 @@ export default function NegotiationPage() {
           </div>
         )}
 
+        {/* Next RB Alignment */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-            <div>
-              <h2 className="text-sm font-semibold text-blue-400">
-                Next RB Target
-              </h2>
-            </div>
+            <h2 className="text-sm font-semibold text-blue-400">
+              Next RB Target
+            </h2>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -623,6 +721,7 @@ export default function NegotiationPage() {
           </div>
         )}
 
+        {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           <label className="block text-xs mb-1 text-gray-400">Notes</label>
           <textarea
@@ -649,10 +748,18 @@ export default function NegotiationPage() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving || !negotiation.ce}
-          className="w-full py-4 rounded-lg bg-blue-600 hover:bg-blue-700 font-bold disabled:opacity-50"
+          disabled={saving || !trade}
+          className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
+            canEnter
+              ? "bg-green-700 hover:bg-green-600"
+              : "bg-yellow-800 hover:bg-yellow-700"
+          }`}
         >
-          {saving ? "Saving..." : "💾 Save Negotiation Setup"}
+          {saving
+            ? "Saving..."
+            : canEnter
+            ? "✅ Save & Trade"
+            : "💾 Save (Battle In Progress)"}
         </button>
       </div>
     </main>
