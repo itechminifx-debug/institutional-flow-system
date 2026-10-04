@@ -13,6 +13,7 @@ const links = [
   { href: "/mss-zones", label: "MSS Zones" },
  { href: "/negotiation", label: "Negotiation" },
  { href: "/bos-rb", label: "BOS+RB" },
+ { href: "/premium-discount", label: "Premium/Discount" },
  { href: "/integrated", label: "Integrated" },
   { href: "/killzones", label: "Killzones" },
   { href: "/liquidity", label: "Liquidity" },
