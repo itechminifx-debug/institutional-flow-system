@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
@@ -20,7 +20,11 @@ import PairPicker from "@/components/PairPicker";
 
 export default function BosRbPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const editId = searchParams?.get("edit") || null;
+  const isEdit = !!editId;
 
   const [form, setForm] = useState({
     pair: "Volatility 80",
@@ -46,6 +50,8 @@ export default function BosRbPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [existingDetailId, setExistingDetailId] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -54,23 +60,74 @@ export default function BosRbPage() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data } = await supabase
+      const { data: prof } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
+      setProfile(prof);
 
-      setProfile(data);
+      if (!isEdit) return;
+
+      setLoadingEdit(true);
+      const { data: setupData, error: setupErr } = await supabase
+        .from("setups")
+        .select("*")
+        .eq("id", editId)
+        .single();
+
+      if (setupErr || !setupData) {
+        setError(setupErr?.message || "Setup not found.");
+        setLoadingEdit(false);
+        return;
+      }
+
+      const { data: detailData } = await supabase
+        .from("bos_rb_setups")
+        .select("*")
+        .eq("setup_id", editId)
+        .single();
+
+      setForm((f) => ({
+        ...f,
+        pair: setupData.pair || f.pair,
+        timeframe: detailData?.timeframe || f.timeframe,
+        htfBias: detailData?.htf_bias || setupData.htf_bias || f.htfBias,
+        bosLevel: detailData?.bos_level?.toString() || "",
+        bosClose: detailData?.bos_close?.toString() || "",
+        liquidityRaid: detailData?.liquidity_raid || false,
+        liquidityRaidLevel:
+          detailData?.liquidity_raid_level?.toString() || "",
+        displacementAtr: detailData?.displacement_atr?.toString() || "",
+        rbZoneHigh: detailData?.rb_zone_high?.toString() || "",
+        rbZoneLow: detailData?.rb_zone_low?.toString() || "",
+        fvgPresent: detailData?.fvg_present || false,
+        lowerTfShift: detailData?.lower_tf_shift || false,
+        useCe: setupData.use_ce_entry !== undefined ? setupData.use_ce_entry : true,
+        atr: detailData?.atr?.toString() || "",
+        notes: setupData.notes || "",
+      }));
+
+      if (detailData?.checklist_answers) {
+        const savedAns = detailData.checklist_answers;
+        const manual = {};
+        Object.keys(savedAns).forEach((k) => {
+          if (savedAns[k] === true) manual[k] = true;
+        });
+        setManualAnswers(manual);
+      }
+
+      setExistingDetailId(detailData?.id || null);
+      setLoadingEdit(false);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [editId]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // Detect BOS direction and RB position
   const bosDirection = detectBosDirection(form.bosLevel, form.bosClose);
   const rbPosition = detectRbPosition({
     bosLevel: form.bosLevel,
@@ -79,7 +136,6 @@ export default function BosRbPage() {
     rbZoneLow: form.rbZoneLow,
   });
 
-  // Auto-detect checklist answers
   useEffect(() => {
     const auto = autoDetectChecklist({
       htfBias: form.htfBias,
@@ -148,71 +204,106 @@ export default function BosRbPage() {
       return;
     }
 
-    const { data: setup, error: setupError } = await supabase
-      .from("setups")
-      .insert({
-        user_id: user.id,
-        pair: form.pair,
-        setup_type: "bos_rb",
-        d1_bias: form.htfBias,
-        htf_bias: form.htfBias,
-        ema50_position: "above",
-        rejection_block_zone: `${form.rbZoneLow}-${form.rbZoneHigh}`,
-        ce_price: trade?.entry || null,
-        use_ce_entry: form.useCe,
-        bos_level: form.bosLevel ? parseFloat(form.bosLevel) : null,
-        bos_close: form.bosClose ? parseFloat(form.bosClose) : null,
-        bos_displacement_atr: form.displacementAtr
-          ? parseFloat(form.displacementAtr)
-          : null,
-        liquidity_raid_level: form.liquidityRaidLevel
-          ? parseFloat(form.liquidityRaidLevel)
-          : null,
-        checklist_score: score,
-        checklist_passed: verdict.passed,
-        notes: form.notes,
-      })
-      .select()
-      .single();
+    const setupPayload = {
+      user_id: user.id,
+      pair: form.pair,
+      setup_type: "bos_rb",
+      d1_bias: form.htfBias,
+      htf_bias: form.htfBias,
+      ema50_position: "above",
+      rejection_block_zone: `${form.rbZoneLow}-${form.rbZoneHigh}`,
+      ce_price: trade?.entry || null,
+      use_ce_entry: form.useCe,
+      bos_level: form.bosLevel ? parseFloat(form.bosLevel) : null,
+      bos_close: form.bosClose ? parseFloat(form.bosClose) : null,
+      bos_displacement_atr: form.displacementAtr
+        ? parseFloat(form.displacementAtr)
+        : null,
+      liquidity_raid_level: form.liquidityRaidLevel
+        ? parseFloat(form.liquidityRaidLevel)
+        : null,
+      checklist_score: score,
+      checklist_passed: verdict.passed,
+      notes: form.notes,
+    };
 
-    if (setupError) {
-      setError(setupError.message);
-      setSaving(false);
-      return;
+    let setup;
+    if (isEdit) {
+      const { data, error: updErr } = await supabase
+        .from("setups")
+        .update(setupPayload)
+        .eq("id", editId)
+        .select()
+        .single();
+
+      if (updErr) {
+        setError(updErr.message);
+        setSaving(false);
+        return;
+      }
+      setup = data;
+    } else {
+      const { data, error: insErr } = await supabase
+        .from("setups")
+        .insert(setupPayload)
+        .select()
+        .single();
+
+      if (insErr) {
+        setError(insErr.message);
+        setSaving(false);
+        return;
+      }
+      setup = data;
     }
 
-    const { error: detailError } = await supabase
-      .from("bos_rb_setups")
-      .insert({
-        user_id: user.id,
-        setup_id: setup.id,
-        pair: form.pair,
-        timeframe: form.timeframe,
-        htf_bias: form.htfBias,
-        bos_level: form.bosLevel ? parseFloat(form.bosLevel) : null,
-        bos_close: form.bosClose ? parseFloat(form.bosClose) : null,
-        displacement_atr: form.displacementAtr
-          ? parseFloat(form.displacementAtr)
-          : null,
-        liquidity_raid: form.liquidityRaid,
-        liquidity_raid_level: form.liquidityRaidLevel
-          ? parseFloat(form.liquidityRaidLevel)
-          : null,
-        rb_zone_high: form.rbZoneHigh ? parseFloat(form.rbZoneHigh) : null,
-        rb_zone_low: form.rbZoneLow ? parseFloat(form.rbZoneLow) : null,
-        ce_price: trade?.entry || null,
-        fvg_present: form.fvgPresent,
-        lower_tf_shift: form.lowerTfShift,
-        checklist_score: score,
-        checklist_passed: verdict.passed,
-        checklist_answers: combinedAnswers,
-        notes: form.notes,
-      });
+    const detailPayload = {
+      user_id: user.id,
+      setup_id: setup.id,
+      pair: form.pair,
+      timeframe: form.timeframe,
+      htf_bias: form.htfBias,
+      bos_level: form.bosLevel ? parseFloat(form.bosLevel) : null,
+      bos_close: form.bosClose ? parseFloat(form.bosClose) : null,
+      displacement_atr: form.displacementAtr
+        ? parseFloat(form.displacementAtr)
+        : null,
+      liquidity_raid: form.liquidityRaid,
+      liquidity_raid_level: form.liquidityRaidLevel
+        ? parseFloat(form.liquidityRaidLevel)
+        : null,
+      rb_zone_high: form.rbZoneHigh ? parseFloat(form.rbZoneHigh) : null,
+      rb_zone_low: form.rbZoneLow ? parseFloat(form.rbZoneLow) : null,
+      ce_price: trade?.entry || null,
+      fvg_present: form.fvgPresent,
+      lower_tf_shift: form.lowerTfShift,
+      checklist_score: score,
+      checklist_passed: verdict.passed,
+      checklist_answers: combinedAnswers,
+      notes: form.notes,
+    };
 
-    if (detailError) {
-      setError(detailError.message);
-      setSaving(false);
-      return;
+    if (isEdit && existingDetailId) {
+      const { error: updErr } = await supabase
+        .from("bos_rb_setups")
+        .update(detailPayload)
+        .eq("id", existingDetailId);
+
+      if (updErr) {
+        setError(updErr.message);
+        setSaving(false);
+        return;
+      }
+    } else {
+      const { error: insErr } = await supabase
+        .from("bos_rb_setups")
+        .insert(detailPayload);
+
+      if (insErr) {
+        setError(insErr.message);
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);
@@ -223,11 +314,23 @@ export default function BosRbPage() {
   const rbInfo = rbPosition ? rbPositionInfo(rbPosition) : null;
   const positionRules = rbPositionRules(bosDirection || form.htfBias);
 
+  if (loadingEdit) {
+    return (
+      <main className="min-h-screen p-6 bg-black text-white">
+        <div className="max-w-3xl mx-auto text-gray-400">
+          Loading setup...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
-          <h1 className="text-2xl font-bold">BOS + RB Confluence</h1>
+          <h1 className="text-2xl font-bold">
+            {isEdit ? "Edit BOS + RB Setup" : "BOS + RB Confluence"}
+          </h1>
           <p className="text-gray-400 text-sm">
             Continuation setup — Break of Structure + Rejection Block
           </p>
@@ -488,7 +591,7 @@ export default function BosRbPage() {
           </label>
         </div>
 
-        {/* NEW: RB Position Rules Card */}
+        {/* RB Position Rules Card */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-blue-400">
@@ -664,7 +767,6 @@ export default function BosRbPage() {
               const isManual = manualAnswers[q.key] !== undefined;
               const isOn = combinedAnswers[q.key];
 
-              // NEW: show the softer directional flag on Q6 when it differs
               const showDirectionalBadge =
                 q.key === "rb_aligned" && autoAnswers.rb_direction_ok === true;
 
@@ -742,7 +844,7 @@ export default function BosRbPage() {
 
         {saved && (
           <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
-            ✅ Saved — redirecting to setup...
+            ✅ {isEdit ? "Updated" : "Saved"} — redirecting to setup...
           </div>
         )}
 
@@ -757,10 +859,16 @@ export default function BosRbPage() {
           }`}
         >
           {saving
-            ? "Saving..."
+            ? isEdit
+              ? "Updating..."
+              : "Saving..."
+            : isEdit
+            ? "✏️ Update Setup"
             : verdict.passed
             ? "✅ Save & Trade"
-            : `💾 Save (${score}/10 — Needs ${CHECKLIST_PASS_THRESHOLD - score} More)`}
+            : `💾 Save (${score}/10 — Needs ${
+                CHECKLIST_PASS_THRESHOLD - score
+              } More)`}
         </button>
 
         {/* Info card */}

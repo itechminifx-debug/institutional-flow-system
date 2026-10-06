@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
@@ -20,7 +20,11 @@ import PairPicker from "@/components/PairPicker";
 
 export default function RejectionBlockPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const editId = searchParams?.get("edit") || null;
+  const isEdit = !!editId;
 
   const [form, setForm] = useState({
     pair: "Volatility 80",
@@ -40,6 +44,8 @@ export default function RejectionBlockPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [existingDetailId, setExistingDetailId] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -48,23 +54,60 @@ export default function RejectionBlockPage() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data } = await supabase
+      const { data: prof } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
+      setProfile(prof);
 
-      setProfile(data);
+      if (!isEdit) return;
+
+      setLoadingEdit(true);
+      const { data: setupData, error: setupErr } = await supabase
+        .from("setups")
+        .select("*")
+        .eq("id", editId)
+        .single();
+
+      if (setupErr || !setupData) {
+        setError(setupErr?.message || "Setup not found.");
+        setLoadingEdit(false);
+        return;
+      }
+
+      const { data: detailData } = await supabase
+        .from("rejection_block_setups")
+        .select("*")
+        .eq("setup_id", editId)
+        .single();
+
+      setForm((f) => ({
+        ...f,
+        pair: setupData.pair || f.pair,
+        timeframe: detailData?.timeframe || f.timeframe,
+        zoneType: detailData?.zone_type || f.zoneType,
+        zoneHigh: detailData?.zone_high?.toString() || "",
+        zoneLow: detailData?.zone_low?.toString() || "",
+        rbHigh: detailData?.rb_high?.toString() || "",
+        rbLow: detailData?.rb_low?.toString() || "",
+        closePrice: detailData?.close_price?.toString() || "",
+        atrCurrent: detailData?.atr_current?.toString() || "",
+        atrPrior: detailData?.atr_prior?.toString() || "",
+        notes: setupData.notes || "",
+      }));
+
+      setExistingDetailId(detailData?.id || null);
+      setLoadingEdit(false);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [editId]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // Live computations
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
   const rbCe = computeCe(form.rbHigh, form.rbLow);
 
@@ -87,7 +130,8 @@ export default function RejectionBlockPage() {
   const atr = atrFilter(form.atrCurrent, form.atrPrior);
 
   const trade =
-    negotiation && (negotiation.verdict === "BUY" || negotiation.verdict === "SELL")
+    negotiation &&
+    (negotiation.verdict === "BUY" || negotiation.verdict === "SELL")
       ? computeRejectionBlockTrade({
           rbHigh: form.rbHigh,
           rbLow: form.rbLow,
@@ -118,67 +162,102 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    const { data: setup, error: setupError } = await supabase
-      .from("setups")
-      .insert({
-        user_id: user.id,
-        pair: form.pair,
-        setup_type: "rejection_block",
-        d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-        htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-        ema50_position: "above",
-        rejection_block_zone: `${form.rbLow}-${form.rbHigh}`,
-        ce_price: negotiation.ce,
-        use_ce_entry: true,
-        checklist_score: 0,
-        checklist_passed: false,
-        notes: form.notes,
-      })
-      .select()
-      .single();
+    const setupPayload = {
+      user_id: user.id,
+      pair: form.pair,
+      setup_type: "rejection_block",
+      d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
+      htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
+      ema50_position: "above",
+      rejection_block_zone: `${form.rbLow}-${form.rbHigh}`,
+      ce_price: negotiation.ce,
+      use_ce_entry: true,
+      checklist_score: 0,
+      checklist_passed: false,
+      notes: form.notes,
+    };
 
-    if (setupError) {
-      setError(setupError.message);
-      setSaving(false);
-      return;
+    let setup;
+    if (isEdit) {
+      const { data, error: updErr } = await supabase
+        .from("setups")
+        .update(setupPayload)
+        .eq("id", editId)
+        .select()
+        .single();
+
+      if (updErr) {
+        setError(updErr.message);
+        setSaving(false);
+        return;
+      }
+      setup = data;
+    } else {
+      const { data, error: insErr } = await supabase
+        .from("setups")
+        .insert(setupPayload)
+        .select()
+        .single();
+
+      if (insErr) {
+        setError(insErr.message);
+        setSaving(false);
+        return;
+      }
+      setup = data;
     }
 
-    const { error: detailError } = await supabase
-      .from("rejection_block_setups")
-      .insert({
-        user_id: user.id,
-        setup_id: setup.id,
-        pair: form.pair,
-        timeframe: form.timeframe,
-        zone_type: form.zoneType,
-        zone_high: form.zoneHigh ? parseFloat(form.zoneHigh) : null,
-        zone_low: form.zoneLow ? parseFloat(form.zoneLow) : null,
-        zone_ce: zoneCe,
-        rb_high: form.rbHigh ? parseFloat(form.rbHigh) : null,
-        rb_low: form.rbLow ? parseFloat(form.rbLow) : null,
-        rb_ce: negotiation.ce,
-        rb_position: rbPosition,
-        close_price: form.closePrice ? parseFloat(form.closePrice) : null,
-        premium_discount: negotiation.side,
-        verdict: negotiation.verdict,
-        strength: negotiation.strength,
-        rb_broken: negotiation.rbBroken,
-        reason: negotiation.reason,
-        entry: trade?.entry || null,
-        sl: trade?.sl || null,
-        tp: trade?.tp || null,
-        lot_size: trade?.lotSize || null,
-        risk_amount: trade?.riskAmount || null,
-        atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
-        atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
-        atr_state: atr.key,
-        notes: form.notes,
-      });
+    const detailPayload = {
+      user_id: user.id,
+      setup_id: setup.id,
+      pair: form.pair,
+      timeframe: form.timeframe,
+      zone_type: form.zoneType,
+      zone_high: form.zoneHigh ? parseFloat(form.zoneHigh) : null,
+      zone_low: form.zoneLow ? parseFloat(form.zoneLow) : null,
+      zone_ce: zoneCe,
+      rb_high: form.rbHigh ? parseFloat(form.rbHigh) : null,
+      rb_low: form.rbLow ? parseFloat(form.rbLow) : null,
+      rb_ce: negotiation.ce,
+      rb_position: rbPosition,
+      close_price: form.closePrice ? parseFloat(form.closePrice) : null,
+      premium_discount: negotiation.side,
+      verdict: negotiation.verdict,
+      strength: negotiation.strength,
+      rb_broken: negotiation.rbBroken,
+      reason: negotiation.reason,
+      entry: trade?.entry || null,
+      sl: trade?.sl || null,
+      tp: trade?.tp || null,
+      lot_size: trade?.lotSize || null,
+      risk_amount: trade?.riskAmount || null,
+      atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
+      atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
+      atr_state: atr.key,
+      notes: form.notes,
+    };
 
-    if (detailError) {
-      setError(detailError.message);
-      setSaving(false);
-      return;
+    if (isEdit && existingDetailId) {
+      const { error: updErr } = await supabase
+        .from("rejection_block_setups")
+        .update(detailPayload)
+        .eq("id", existingDetailId);
+
+      if (updErr) {
+        setError(updErr.message);
+        setSaving(false);
+        return;
+      }
+    } else {
+      const { error: insErr } = await supabase
+        .from("rejection_block_setups")
+        .insert(detailPayload);
+
+      if (insErr) {
+        setError(insErr.message);
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);
@@ -186,11 +265,25 @@ export default function RejectionBlockPage() {
     setTimeout(() => router.push(`/setups/${setup.id}`), 800);
   }
 
+  if (loadingEdit) {
+    return (
+      <main className="min-h-screen p-6 bg-black text-white">
+        <div className="max-w-3xl mx-auto text-gray-400">
+          Loading setup...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
-          <h1 className="text-2xl font-bold">Rejection Block Negotiation</h1>
+          <h1 className="text-2xl font-bold">
+            {isEdit
+              ? "Edit Rejection Block Setup"
+              : "Rejection Block Negotiation"}
+          </h1>
           <p className="text-gray-400 text-sm">
             Zones hold orders. Rejection Blocks make decisions.
           </p>
@@ -355,7 +448,7 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* Meaning Card — RB position vs zone */}
+        {/* Meaning Card */}
         {rbPosInfo && (
           <div className={`p-4 rounded-lg border space-y-2 ${rbPosInfo.color}`}>
             <p className="text-xs opacity-80">RB Position vs Zone</p>
@@ -524,7 +617,7 @@ export default function RejectionBlockPage() {
 
         {saved && (
           <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
-            ✅ Saved — redirecting to setup...
+            ✅ {isEdit ? "Updated" : "Saved"} — redirecting to setup...
           </div>
         )}
 
@@ -538,7 +631,9 @@ export default function RejectionBlockPage() {
             !rbPosition
           }
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
-            negotiation?.verdict === "BUY"
+            isEdit
+              ? "bg-blue-700 hover:bg-blue-600"
+              : negotiation?.verdict === "BUY"
               ? "bg-green-700 hover:bg-green-600"
               : negotiation?.verdict === "SELL"
               ? "bg-red-700 hover:bg-red-600"
@@ -546,7 +641,11 @@ export default function RejectionBlockPage() {
           }`}
         >
           {saving
-            ? "Saving..."
+            ? isEdit
+              ? "Updating..."
+              : "Saving..."
+            : isEdit
+            ? "✏️ Update Setup"
             : negotiation?.verdict === "BUY"
             ? "✅ Save BUY Setup"
             : negotiation?.verdict === "SELL"
@@ -567,7 +666,8 @@ export default function RejectionBlockPage() {
               <strong>Price enters a zone</strong> to fill those orders
             </li>
             <li>
-              <strong>The RB makes the decision</strong> after orders are filled
+              <strong>The RB makes the decision</strong> after orders are
+              filled
             </li>
             <li>
               <strong>RB inside the zone</strong> — negotiation happens inside

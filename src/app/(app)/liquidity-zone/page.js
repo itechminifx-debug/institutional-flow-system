@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
 import {
@@ -31,7 +31,11 @@ function emptyRb() {
 
 export default function LiquidityZonePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const editId = searchParams?.get("edit") || null;
+  const isEdit = !!editId;
 
   const [form, setForm] = useState({
     pair: "Volatility 80",
@@ -52,6 +56,12 @@ export default function LiquidityZonePage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
+  // Edit mode bookkeeping
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [existingZoneId, setExistingZoneId] = useState(null);
+  const [existingZoneInfo, setExistingZoneInfo] = useState(null);
+
+  // Load profile + (if editing) existing records
   useEffect(() => {
     async function load() {
       const {
@@ -59,17 +69,88 @@ export default function LiquidityZonePage() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data } = await supabase
+      const { data: prof } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
+      setProfile(prof);
 
-      setProfile(data);
+      if (!isEdit) return;
+
+      // Load setup
+      setLoadingEdit(true);
+      const { data: setupData, error: setupErr } = await supabase
+        .from("setups")
+        .select("*")
+        .eq("id", editId)
+        .single();
+
+      if (setupErr || !setupData) {
+        setError(setupErr?.message || "Setup not found.");
+        setLoadingEdit(false);
+        return;
+      }
+
+      // Load zone detail
+      const { data: zoneData } = await supabase
+        .from("liquidity_zones")
+        .select("*")
+        .eq("setup_id", editId)
+        .single();
+
+      // Load RBs
+      const { data: rbData } = await supabase
+        .from("liquidity_zone_rbs")
+        .select("*")
+        .eq("zone_id", zoneData?.id)
+        .order("created_at", { ascending: false });
+
+      // Pre-fill form
+      setForm((f) => ({
+        ...f,
+        pair: setupData.pair || f.pair,
+        timeframe: zoneData?.timeframe || f.timeframe,
+        zoneKind: zoneData?.zone_kind || f.zoneKind,
+        closePrice: zoneData?.close_price?.toString() || "",
+        atrCurrent: zoneData?.atr_current?.toString() || "",
+        atrPrior: zoneData?.atr_prior?.toString() || "",
+        notes: setupData.notes || "",
+      }));
+
+      // Pre-fill RBs (newest first = highest created_at)
+      if (rbData && rbData.length > 0) {
+        const restoredRbs = rbData.map((rb, idx) => ({
+          id: Math.random().toString(36).slice(2),
+          high: rb.rb_high?.toString() || "",
+          low: rb.rb_low?.toString() || "",
+          addedAt: rb.created_at || new Date(Date.now() - idx * 1000).toISOString(),
+        }));
+        setRbs(restoredRbs);
+      }
+
+      // Restore manual answers if saved
+      if (zoneData?.checklist_answers) {
+        const saved = zoneData.checklist_answers;
+        const manual = {};
+        Object.keys(saved).forEach((k) => {
+          if (saved[k] === true) manual[k] = true;
+        });
+        setManualAnswers(manual);
+      }
+
+      setExistingZoneId(zoneData?.id || null);
+      setExistingZoneInfo({
+        zone_high: zoneData?.zone_high,
+        zone_low: zoneData?.zone_low,
+        zone_ce: zoneData?.zone_ce,
+        candle_count: zoneData?.candle_count,
+      });
+      setLoadingEdit(false);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [editId]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -169,9 +250,18 @@ export default function LiquidityZonePage() {
     }));
   }
 
+  // In edit mode, RBs alone are enough to compute (no candles needed)
+  const canSave = isEdit
+    ? !!activeRb && !!negotiation
+    : !!zone && !!activeRb && !!negotiation;
+
   async function handleSave() {
-    if (!zone || !activeRb || !negotiation) {
-      setError("Fill in the zone, RBs, and close price first.");
+    if (!canSave) {
+      setError(
+        isEdit
+          ? "Fill in the RBs and close price first."
+          : "Fill in the zone, RBs, and close price first."
+      );
       return;
     }
 
@@ -187,66 +277,116 @@ export default function LiquidityZonePage() {
       return;
     }
 
-    const { data: setup, error: setupError } = await supabase
-      .from("setups")
-      .insert({
-        user_id: user.id,
-        pair: form.pair,
-        setup_type: "liquidity_zone",
-        d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-        htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-        ema50_position: "above",
-        rejection_block_zone: `${activeRb.low}-${activeRb.high}`,
-        ce_price: negotiation.ce,
-        use_ce_entry: true,
-        checklist_score: score,
-        checklist_passed: checklistVerdict.passed,
-        notes: form.notes,
-      })
-      .select()
-      .single();
+    const setupPayload = {
+      user_id: user.id,
+      pair: form.pair,
+      setup_type: "liquidity_zone",
+      d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
+      htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
+      ema50_position: "above",
+      rejection_block_zone: `${activeRb.low}-${activeRb.high}`,
+      ce_price: negotiation.ce,
+      use_ce_entry: true,
+      checklist_score: score,
+      checklist_passed: checklistVerdict.passed,
+      notes: form.notes,
+    };
 
-    if (setupError) {
-      setError(setupError.message);
-      setSaving(false);
-      return;
+    let setup;
+
+    if (isEdit) {
+      // UPDATE setups
+      const { data, error: updErr } = await supabase
+        .from("setups")
+        .update(setupPayload)
+        .eq("id", editId)
+        .select()
+        .single();
+
+      if (updErr) {
+        setError(updErr.message);
+        setSaving(false);
+        return;
+      }
+      setup = data;
+    } else {
+      // INSERT setups
+      const { data, error: insErr } = await supabase
+        .from("setups")
+        .insert(setupPayload)
+        .select()
+        .single();
+
+      if (insErr) {
+        setError(insErr.message);
+        setSaving(false);
+        return;
+      }
+      setup = data;
     }
 
-    const { data: zoneRow, error: zoneError } = await supabase
-      .from("liquidity_zones")
-      .insert({
-        user_id: user.id,
-        setup_id: setup.id,
-        pair: form.pair,
-        timeframe: form.timeframe,
-        zone_kind: form.zoneKind,
-        zone_high: zone.zoneHigh,
-        zone_low: zone.zoneLow,
-        zone_ce: zoneCe,
-        candle_count: zone.count,
-        close_price: form.closePrice ? parseFloat(form.closePrice) : null,
-        active_rb_high: activeRb.high,
-        active_rb_low: activeRb.low,
-        active_rb_ce: negotiation.ce,
-        premium_discount: negotiation.side,
-        verdict: negotiation.verdict,
-        atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
-        atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
-        atr_state: atr.key,
-        checklist_score: score,
-        checklist_passed: checklistVerdict.passed,
-        checklist_answers: combinedAnswers,
-        notes: form.notes,
-      })
-      .select()
-      .single();
+    const zonePayload = {
+      user_id: user.id,
+      setup_id: setup.id,
+      pair: form.pair,
+      timeframe: form.timeframe,
+      zone_kind: form.zoneKind,
+      zone_high: zone?.zoneHigh || existingZoneInfo?.zone_high || null,
+      zone_low: zone?.zoneLow || existingZoneInfo?.zone_low || null,
+      zone_ce: zoneCe ?? existingZoneInfo?.zone_ce ?? null,
+      candle_count: zone?.count || existingZoneInfo?.candle_count || 0,
+      close_price: form.closePrice ? parseFloat(form.closePrice) : null,
+      active_rb_high: activeRb.high,
+      active_rb_low: activeRb.low,
+      active_rb_ce: negotiation.ce,
+      premium_discount: negotiation.side,
+      verdict: negotiation.verdict,
+      atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
+      atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
+      atr_state: atr.key,
+      checklist_score: score,
+      checklist_passed: checklistVerdict.passed,
+      checklist_answers: combinedAnswers,
+      notes: form.notes,
+    };
 
-    if (zoneError) {
-      setError(zoneError.message);
-      setSaving(false);
-      return;
+    let zoneRow;
+    if (isEdit && existingZoneId) {
+      const { data, error: updErr } = await supabase
+        .from("liquidity_zones")
+        .update(zonePayload)
+        .eq("id", existingZoneId)
+        .select()
+        .single();
+
+      if (updErr) {
+        setError(updErr.message);
+        setSaving(false);
+        return;
+      }
+      zoneRow = data;
+
+      // Delete old RBs and re-insert (simplest reliable approach)
+      await supabase
+        .from("liquidity_zone_rbs")
+        .delete()
+        .eq("zone_id", existingZoneId);
+    } else {
+      const { data, error: insErr } = await supabase
+        .from("liquidity_zones")
+        .insert(zonePayload)
+        .select()
+        .single();
+
+      if (insErr) {
+        setError(insErr.message);
+        setSaving(false);
+        return;
+      }
+      zoneRow = data;
     }
 
+    // Insert RBs
     const rbRows = rankedRbs.map((rb) => ({
       user_id: user.id,
       zone_id: zoneRow.id,
@@ -273,15 +413,62 @@ export default function LiquidityZonePage() {
     setTimeout(() => router.push(`/setups/${setup.id}`), 800);
   }
 
+  if (loadingEdit) {
+    return (
+      <main className="min-h-screen p-6 bg-black text-white">
+        <div className="max-w-3xl mx-auto text-gray-400">
+          Loading setup...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
-          <h1 className="text-2xl font-bold">Liquidity Zone Negotiation</h1>
+          <h1 className="text-2xl font-bold">
+            {isEdit ? "Edit Liquidity Zone" : "Liquidity Zone Negotiation"}
+          </h1>
           <p className="text-gray-400 text-sm">
-            A stack of rejected wicks — multiple RBs, one CE, one verdict
+            {isEdit
+              ? "Update the saved setup and re-save"
+              : "A stack of rejected wicks — multiple RBs, one CE, one verdict"}
           </p>
         </div>
+
+        {/* In edit mode: show the stored zone info as read-only reference */}
+        {isEdit && existingZoneInfo && (
+          <div className="p-3 rounded-lg bg-blue-950/20 border border-blue-900">
+            <p className="text-xs text-blue-300 font-semibold mb-1">
+              Stored zone (from original save)
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <p className="text-gray-500">Zone High</p>
+                <p className="font-bold tabular-nums text-purple-300">
+                  {existingZoneInfo.zone_high ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">Zone Low</p>
+                <p className="font-bold tabular-nums text-orange-300">
+                  {existingZoneInfo.zone_low ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">Zone CE</p>
+                <p className="font-bold tabular-nums text-blue-300">
+                  {existingZoneInfo.zone_ce ?? "—"}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Candles aren't stored — re-enter them below if you want to
+              rebuild the zone.
+            </p>
+          </div>
+        )}
 
         {/* Context */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -337,11 +524,6 @@ export default function LiquidityZonePage() {
                 🔻 Lower Wick Zone
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {form.zoneKind === "upper"
-                ? "Green → close as bottom. Red → open as bottom. All upper wick tips = top."
-                : "Green → open as top. Red → close as top. All lower wick tips = bottom."}
-            </p>
           </div>
         </div>
 
@@ -767,14 +949,14 @@ export default function LiquidityZonePage() {
 
         {saved && (
           <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
-            ✅ Saved — redirecting to setup...
+            ✅ {isEdit ? "Updated" : "Saved"} — redirecting to setup...
           </div>
         )}
 
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving || !zone || !activeRb || !negotiation}
+          disabled={saving || !canSave}
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             checklistVerdict.passed
               ? "bg-green-700 hover:bg-green-600"
@@ -782,7 +964,11 @@ export default function LiquidityZonePage() {
           }`}
         >
           {saving
-            ? "Saving..."
+            ? isEdit
+              ? "Updating..."
+              : "Saving..."
+            : isEdit
+            ? `✏️ Update Setup (${score}/10)`
             : checklistVerdict.passed
             ? `✅ Save & Trade (${score}/10)`
             : `💾 Save (${score}/10 — Needs ${

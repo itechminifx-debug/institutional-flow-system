@@ -22,7 +22,7 @@ const links = [
   { href: "/sweeps", label: "Sweeps" },
   { href: "/rb-validator", label: "RB Validator" },
   { href: "/ce-tracker", label: "CE Tracker" },
-  { href: "/setups", label: "Setups" },
+  { href: "/setups", label: "My Setups" },
   { href: "/trade", label: "Trade" },
   { href: "/news", label: "News" },
   { href: "/traps", label: "Traps" },
