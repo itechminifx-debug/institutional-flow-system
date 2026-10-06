@@ -7,42 +7,31 @@
 //
 // ZONE CONSTRUCTION
 // ------------------------------------------------------------
-// Upper Wick Zone (built from upper wicks):
+// Upper Wick Zone:
 //   - Green candle → bottom = close, top = upper wick tip
 //   - Red candle   → bottom = open,  top = upper wick tip
-//   - Zone Low  = lowest of (green closes, red opens)
-//   - Zone High = highest of all upper wick tips
 //
 // Lower Wick Zone (vice versa):
 //   - Green candle → top = open,     bottom = lower wick tip
 //   - Red candle   → top = close,    bottom = lower wick tip
-//   - Zone High = highest of (green opens, red closes)
-//   - Zone Low  = lowest of all lower wick tips
 //
 // PRIORITY HIERARCHY
 // ------------------------------------------------------------
-//   1. Current RB  — freshest orders (first target)
-//   2. Previous RB — older orders (secondary)
-//   3. Oldest RB   — weakest (least likely to react)
+//   1. Current RB  — freshest orders
+//   2. Previous RB — older orders
+//   3. Oldest RB   — weakest
 //
-// VERDICT (same premium/discount rule as before)
+// VERDICT — THE RB IS THE DEALING RANGE
 // ------------------------------------------------------------
-//   Close above CE → BUY   (premium)
-//   Close below CE → SELL  (discount)
-//   Close at CE    → WAIT
-//
-// ATR FILTER
-// ------------------------------------------------------------
-//   ATR rising  → trade
-//   ATR falling → wait
+//   Close ABOVE the RB high  → BUY  (strong)  — RB broken upward
+//   Close BELOW the RB low   → SELL (strong)  — RB broken downward
+//   Close in PREMIUM (above CE, inside RB) → SELL (normal)
+//   Close in DISCOUNT (below CE, inside RB) → BUY (normal)
+//   Close = CE → WAIT
 // ============================================================
 
 // ============================================================
 // ZONE CONSTRUCTION
-// ============================================================
-// candle = { type: 'green' | 'red', open, close, wickTip }
-//   - For UPPER wick zones: wickTip = the upper wick extreme
-//   - For LOWER wick zones: wickTip = the lower wick extreme
 // ============================================================
 export function computeUpperWickZone(candles) {
   if (!Array.isArray(candles) || candles.length === 0) return null;
@@ -64,9 +53,7 @@ export function computeUpperWickZone(candles) {
 
   if (clean.length === 0) return null;
 
-  // Bottoms: green → close, red → open
   const bottoms = clean.map((c) => (c.type === "green" ? c.close : c.open));
-  // Tops: every upper wick tip
   const tops = clean.map((c) => c.wickTip);
 
   const zoneLow = Math.min(...bottoms);
@@ -100,9 +87,7 @@ export function computeLowerWickZone(candles) {
 
   if (clean.length === 0) return null;
 
-  // Tops: green → open, red → close
   const tops = clean.map((c) => (c.type === "green" ? c.open : c.close));
-  // Bottoms: every lower wick tip
   const bottoms = clean.map((c) => c.wickTip);
 
   const zoneHigh = Math.max(...tops);
@@ -117,7 +102,7 @@ export function computeLowerWickZone(candles) {
 }
 
 // ============================================================
-// CE — 50% of a zone (used for both zone and RB)
+// CE — 50% of a zone
 // ============================================================
 export function computeCe(high, low) {
   const h = parseFloat(high);
@@ -127,10 +112,7 @@ export function computeCe(high, low) {
 }
 
 // ============================================================
-// RB HIERARCHY — rank by order added (newest = current)
-// ============================================================
-// rbs: array of { id, high, low, addedAt }
-// Returns same array with .rank = 'current' | 'previous' | 'oldest' | 'older'
+// RB HIERARCHY
 // ============================================================
 export function rankRejectionBlocks(rbs) {
   if (!Array.isArray(rbs) || rbs.length === 0) return [];
@@ -138,7 +120,7 @@ export function rankRejectionBlocks(rbs) {
   const sorted = [...rbs].sort((a, b) => {
     const ta = a.addedAt ? new Date(a.addedAt).getTime() : 0;
     const tb = b.addedAt ? new Date(b.addedAt).getTime() : 0;
-    return tb - ta; // newest first
+    return tb - ta;
   });
 
   return sorted.map((rb, i) => {
@@ -182,11 +164,7 @@ export function rbRankInfo(rank) {
 }
 
 // ============================================================
-// ACTIVE RB — the one price is currently negotiating with
-// ============================================================
-// Rule: walk the ranked list (current → previous → oldest)
-// and return the first RB whose zone contains currentPrice.
-// If none contains it, return the closest one.
+// ACTIVE RB
 // ============================================================
 export function findActiveRb(rbs, currentPrice) {
   if (!Array.isArray(rbs) || rbs.length === 0) return null;
@@ -195,7 +173,6 @@ export function findActiveRb(rbs, currentPrice) {
 
   const ranked = rankRejectionBlocks(rbs);
 
-  // First: an RB whose range contains the price
   for (const rb of ranked) {
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
@@ -203,7 +180,6 @@ export function findActiveRb(rbs, currentPrice) {
     if (price >= low && price <= high) return rb;
   }
 
-  // Fallback: closest RB by distance to its CE
   let closest = null;
   let minDist = Infinity;
   for (const rb of ranked) {
@@ -221,7 +197,7 @@ export function findActiveRb(rbs, currentPrice) {
 }
 
 // ============================================================
-// VERDICT — same premium/discount rule as before
+// VERDICT — the RB is the dealing range
 // ============================================================
 export function judgeZoneNegotiation({ activeRb, closePrice }) {
   if (!activeRb) return null;
@@ -232,36 +208,69 @@ export function judgeZoneNegotiation({ activeRb, closePrice }) {
   if (isNaN(high) || isNaN(low) || isNaN(close)) return null;
 
   const ce = Math.round(((high + low) / 2) * 100) / 100;
+
+  // CASE 1 — Close above the RB high (broke upward)
+  if (close > high) {
+    return {
+      verdict: "BUY",
+      side: "above",
+      ce,
+      rbBroken: "up",
+      strength: "strong",
+      reason:
+        "Closed ABOVE the RB high — buyers broke through the entire RB. Strong continuation up.",
+    };
+  }
+
+  // CASE 2 — Close below the RB low (broke downward)
+  if (close < low) {
+    return {
+      verdict: "SELL",
+      side: "below",
+      ce,
+      rbBroken: "down",
+      strength: "strong",
+      reason:
+        "Closed BELOW the RB low — sellers broke through the entire RB. Strong continuation down.",
+    };
+  }
+
   const tolerance = Math.abs(ce) * 0.0001;
 
+  // CASE 5 — Exactly at CE
   if (Math.abs(close - ce) <= tolerance) {
     return {
       verdict: "WAIT",
       side: "at-ce",
       ce,
-      reason: "Price closed at the CE — indecision. Wait for a clear close.",
+      rbBroken: null,
       strength: "weak",
+      reason: "Price closed at the CE — indecision. Wait for a clear close.",
     };
   }
 
+  // CASE 3 — Close in premium (above CE, inside RB) → SELL
   if (close > ce) {
     return {
-      verdict: "BUY",
+      verdict: "SELL",
       side: "premium",
       ce,
-      reason:
-        "Closed in the PREMIUM (above CE) of the active RB — buyers won the negotiation. BUY.",
+      rbBroken: null,
       strength: "normal",
+      reason:
+        "Closed in the PREMIUM (above CE, inside RB) — sellers defended. SELL.",
     };
   }
 
+  // CASE 4 — Close in discount (below CE, inside RB) → BUY
   return {
-    verdict: "SELL",
+    verdict: "BUY",
     side: "discount",
     ce,
-    reason:
-      "Closed in the DISCOUNT (below CE) of the active RB — sellers won the negotiation. SELL.",
+    rbBroken: null,
     strength: "normal",
+    reason:
+      "Closed in the DISCOUNT (below CE, inside RB) — buyers defended. BUY.",
   };
 }
 
@@ -404,7 +413,7 @@ export const LIQUIDITY_ZONE_CHECKLIST = [
     key: "close_clear",
     number: 9,
     label: "Is the close above or below the CE?",
-    hint: "Above = premium = BUY. Below = discount = SELL",
+    hint: "Above = premium = SELL. Below = discount = BUY. Outside the RB = breakout.",
   },
   {
     key: "risk_ok",

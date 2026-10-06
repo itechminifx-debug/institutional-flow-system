@@ -58,7 +58,6 @@ export default function PremiumDiscountPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // Live computations
   const ce = computeCe(form.zoneHigh, form.zoneLow);
   const sideOfCe = ce !== null ? detectSideOfCe(form.closePrice, ce) : null;
   const zonePosition = detectZonePosition(
@@ -352,15 +351,22 @@ export default function PremiumDiscountPage() {
 
         {/* Verdict */}
         {result && (
-          <div
-            className={`p-4 rounded-lg border space-y-3 ${verdict.color}`}
-          >
+          <div className={`p-4 rounded-lg border space-y-3 ${verdict.color}`}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs opacity-80">Verdict</p>
-                <p className="text-2xl font-bold">
-                  {verdict.emoji} {verdict.label}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-2xl font-bold">
+                    {verdict.emoji} {verdict.label}
+                  </p>
+                  {verdict.brokenBadge && (
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full font-semibold ${verdict.brokenBadge.color}`}
+                    >
+                      {verdict.brokenBadge.label}
+                    </span>
+                  )}
+                </div>
               </div>
               {strength && (
                 <span
@@ -435,16 +441,20 @@ export default function PremiumDiscountPage() {
               <strong>Below CE</strong> — Discount (buyers' territory)
             </li>
             <li>
-              <strong>Resistance zone:</strong> close in DISCOUNT = BUY
-              (continuation), close in PREMIUM = SELL (reversal)
+              <strong>Close in premium, inside zone</strong> — SELL
+              (sellers defended)
             </li>
             <li>
-              <strong>Support zone:</strong> close in PREMIUM = SELL
-              (continuation), close in DISCOUNT = BUY (reversal)
+              <strong>Close in discount, inside zone</strong> — BUY
+              (buyers defended)
             </li>
             <li>
-              <strong>Close beyond the zone edge</strong> — strong
-              continuation signal
+              <strong>Close above zone high</strong> — BUY (strong,
+              RB broken ↑)
+            </li>
+            <li>
+              <strong>Close below zone low</strong> — SELL (strong,
+              RB broken ↓)
             </li>
           </ul>
         </div>

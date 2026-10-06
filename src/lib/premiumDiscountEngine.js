@@ -3,22 +3,17 @@
 // ============================================================
 // Applies to ANY zone (Rejection Block, FVG, Order Block, etc.)
 //
-// The CE (50% of the zone) is the pivot:
-//   - Above CE = PREMIUM  → sellers' territory
-//   - Below CE = DISCOUNT → buyers' territory
+// The zone IS the dealing range. Its CE (50%) is the pivot.
 //
-// Rule: WHERE PRICE CLOSES relative to the CE + the zone edges
-// determines CONTINUATION or REVERSAL.
+// VERDICT
+// ------------------------------------------------------------
+//   Close ABOVE zone high  → BUY  (strong)  — zone broken upward
+//   Close BELOW zone low   → SELL (strong)  — zone broken downward
+//   Close in PREMIUM (above CE, inside zone) → SELL (normal)
+//   Close in DISCOUNT (below CE, inside zone) → BUY  (normal)
+//   Close = CE → WAIT
 //
-// Resistance zone approach:
-//   - Close in DISCOUNT          → BUY  (continuation up)
-//   - Close in PREMIUM           → SELL (reversal)
-//   - Close ABOVE zone high      → BUY  (strong continuation up)
-//
-// Support zone approach:
-//   - Close in PREMIUM           → SELL (continuation down)
-//   - Close in DISCOUNT          → BUY  (reversal)
-//   - Close BELOW zone low       → SELL (strong continuation down)
+// Premium = sellers. Discount = buyers.
 // ============================================================
 
 // ============================================================
@@ -39,15 +34,14 @@ export function detectSideOfCe(closePrice, ce) {
   const pivot = parseFloat(ce);
   if (isNaN(close) || isNaN(pivot)) return null;
 
-  const tolerance = Math.abs(pivot) * 0.0001; // 0.01% tolerance
+  const tolerance = Math.abs(pivot) * 0.0001;
   if (Math.abs(close - pivot) <= tolerance) return "at-ce";
   return close > pivot ? "premium" : "discount";
 }
 
 // ============================================================
-// ZONE APPROACH — where was price BEFORE it approached the zone?
+// ZONE APPROACH — where was price BEFORE approaching the zone?
 // ============================================================
-// Returns: 'above' | 'below' | 'inside' | null
 export function detectZoneApproach(priorPrice, zoneHigh, zoneLow) {
   const prior = parseFloat(priorPrice);
   const high = parseFloat(zoneHigh);
@@ -62,7 +56,6 @@ export function detectZoneApproach(priorPrice, zoneHigh, zoneLow) {
 // ============================================================
 // ZONE POSITION — where did price CLOSE relative to the zone?
 // ============================================================
-// Returns: 'above' | 'inside' | 'below' | null
 export function detectZonePosition(closePrice, zoneHigh, zoneLow) {
   const close = parseFloat(closePrice);
   const high = parseFloat(zoneHigh);
@@ -77,23 +70,6 @@ export function detectZonePosition(closePrice, zoneHigh, zoneLow) {
 // ============================================================
 // JUDGE NEGOTIATION — the core verdict
 // ============================================================
-// Inputs:
-//   zoneType    → 'resistance' | 'support'
-//   zoneHigh    → top of zone
-//   zoneLow     → bottom of zone
-//   priorPrice  → price before approaching the zone
-//   closePrice  → price after the negotiation (the close)
-//
-// Returns:
-//   {
-//     verdict:    'BUY' | 'SELL' | 'WAIT',
-//     reason:     human-readable explanation,
-//     premiumDiscount: 'premium' | 'discount' | 'at-ce',
-//     zonePosition: 'above' | 'inside' | 'below',
-//     strength:   'strong' | 'normal' | 'weak',
-//     ce:         the CE price
-//   }
-// ============================================================
 export function judgeNegotiation({
   zoneType,
   zoneHigh,
@@ -101,95 +77,93 @@ export function judgeNegotiation({
   priorPrice,
   closePrice,
 }) {
-  const ce = computeCe(zoneHigh, zoneLow);
-  if (ce === null) return null;
+  const high = parseFloat(zoneHigh);
+  const low = parseFloat(zoneLow);
+  const close = parseFloat(closePrice);
+  if (isNaN(high) || isNaN(low) || isNaN(close)) return null;
 
-  const sideOfCe = detectSideOfCe(closePrice, ce);
-  const zonePosition = detectZonePosition(closePrice, zoneHigh, zoneLow);
-  const approach = detectZoneApproach(priorPrice, zoneHigh, zoneLow);
+  const ce = Math.round(((high + low) / 2) * 100) / 100;
+  const approach = detectZoneApproach(priorPrice, high, low);
 
-  if (!sideOfCe || !zonePosition) return null;
-
-  // Default: wait
-  let verdict = "WAIT";
-  let reason = "Not enough info — check zone and close.";
-  let strength = "weak";
-
-  // ============================================================
-  // RESISTANCE ZONE
-  // ============================================================
-  if (zoneType === "resistance") {
-    if (zonePosition === "above") {
-      // Close above resistance → strong continuation up
-      verdict = "BUY";
-      strength = "strong";
-      reason =
-        "Closed ABOVE the resistance zone — sellers fully failed, buyers broke out. Strong continuation up.";
-    } else if (zonePosition === "inside" && sideOfCe === "discount") {
-      // Close inside but below CE → continuation up
-      verdict = "BUY";
-      strength = "normal";
-      reason =
-        "Closed in the DISCOUNT (below CE) — sellers failed to hold the resistance. Continuation up.";
-    } else if (zonePosition === "inside" && sideOfCe === "premium") {
-      // Close inside but above CE → reversal down
-      verdict = "SELL";
-      strength = "normal";
-      reason =
-        "Closed in the PREMIUM (above CE) — sellers rejected the negotiation. Reversal down.";
-    } else if (zonePosition === "below") {
-      // Close below resistance → strong reversal down (sellers took over)
-      verdict = "SELL";
-      strength = "strong";
-      reason =
-        "Closed BELOW the resistance zone — sellers rejected and drove price down. Strong reversal / continuation down.";
-    }
+  // CASE 1 — Close above the zone high (broke upward)
+  if (close > high) {
+    return {
+      verdict: "BUY",
+      reason:
+        "Closed ABOVE the zone high — buyers broke through the entire zone. Strong continuation up.",
+      premiumDiscount: "premium",
+      zonePosition: "above",
+      approach,
+      strength: "strong",
+      ce,
+      zoneBroken: "up",
+    };
   }
 
-  // ============================================================
-  // SUPPORT ZONE
-  // ============================================================
-  else if (zoneType === "support") {
-    if (zonePosition === "below") {
-      // Close below support → strong continuation down
-      verdict = "SELL";
-      strength = "strong";
-      reason =
-        "Closed BELOW the support zone — buyers fully failed, sellers broke down. Strong continuation down.";
-    } else if (zonePosition === "inside" && sideOfCe === "premium") {
-      // Close inside but above CE → continuation down
-      verdict = "SELL";
-      strength = "normal";
-      reason =
-        "Closed in the PREMIUM (above CE) — buyers failed to hold the support. Continuation down.";
-    } else if (zonePosition === "inside" && sideOfCe === "discount") {
-      // Close inside but below CE → reversal up
-      verdict = "BUY";
-      strength = "normal";
-      reason =
-        "Closed in the DISCOUNT (below CE) — buyers rejected the negotiation. Reversal up.";
-    } else if (zonePosition === "above") {
-      // Close above support → strong reversal up
-      verdict = "BUY";
-      strength = "strong";
-      reason =
-        "Closed ABOVE the support zone — buyers rejected and drove price up. Strong reversal / continuation up.";
-    }
+  // CASE 2 — Close below the zone low (broke downward)
+  if (close < low) {
+    return {
+      verdict: "SELL",
+      reason:
+        "Closed BELOW the zone low — sellers broke through the entire zone. Strong continuation down.",
+      premiumDiscount: "discount",
+      zonePosition: "below",
+      approach,
+      strength: "strong",
+      ce,
+      zoneBroken: "down",
+    };
   }
 
+  // Inside the zone
+  const tolerance = Math.abs(ce) * 0.0001;
+
+  // CASE 5 — Exactly at CE
+  if (Math.abs(close - ce) <= tolerance) {
+    return {
+      verdict: "WAIT",
+      reason:
+        "Price closed at the CE — indecision. Wait for a clear close above or below.",
+      premiumDiscount: "at-ce",
+      zonePosition: "inside",
+      approach,
+      strength: "weak",
+      ce,
+      zoneBroken: null,
+    };
+  }
+
+  // CASE 3 — Close in premium (above CE, inside zone) → SELL
+  if (close > ce) {
+    return {
+      verdict: "SELL",
+      reason:
+        "Closed in the PREMIUM (above CE, inside zone) — sellers defended. SELL.",
+      premiumDiscount: "premium",
+      zonePosition: "inside",
+      approach,
+      strength: "normal",
+      ce,
+      zoneBroken: null,
+    };
+  }
+
+  // CASE 4 — Close in discount (below CE, inside zone) → BUY
   return {
-    verdict,
-    reason,
-    premiumDiscount: sideOfCe,
-    zonePosition,
+    verdict: "BUY",
+    reason:
+      "Closed in the DISCOUNT (below CE, inside zone) — buyers defended. BUY.",
+    premiumDiscount: "discount",
+    zonePosition: "inside",
     approach,
-    strength,
+    strength: "normal",
     ce,
+    zoneBroken: null,
   };
 }
 
 // ============================================================
-// VERDICT BADGE METADATA — for UI rendering
+// VERDICT BADGE — includes "RB broken" badge when applicable
 // ============================================================
 export function premiumDiscountVerdict(result) {
   if (!result) {
@@ -198,6 +172,7 @@ export function premiumDiscountVerdict(result) {
       emoji: "⚪",
       color: "bg-gray-900/40 border-gray-700 text-gray-300",
       description: "Fill in the zone and close to see the verdict.",
+      brokenBadge: null,
     };
   }
 
@@ -222,11 +197,27 @@ export function premiumDiscountVerdict(result) {
     },
   };
 
-  return map[result.verdict] || map.WAIT;
+  const base = map[result.verdict] || map.WAIT;
+
+  if (result.zoneBroken === "up") {
+    base.brokenBadge = {
+      label: "RB broken ↑",
+      color: "bg-green-900/40 text-green-300",
+    };
+  } else if (result.zoneBroken === "down") {
+    base.brokenBadge = {
+      label: "RB broken ↓",
+      color: "bg-red-900/40 text-red-300",
+    };
+  } else {
+    base.brokenBadge = null;
+  }
+
+  return base;
 }
 
 // ============================================================
-// STRENGTH BADGE — separate indicator
+// STRENGTH BADGE
 // ============================================================
 export function strengthInfo(strength) {
   const map = {

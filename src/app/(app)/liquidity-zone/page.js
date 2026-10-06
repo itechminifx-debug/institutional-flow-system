@@ -36,18 +36,14 @@ export default function LiquidityZonePage() {
   const [form, setForm] = useState({
     pair: "Volatility 80",
     timeframe: "H4",
-    zoneKind: "upper", // 'upper' | 'lower'
+    zoneKind: "upper",
     closePrice: "",
     atrCurrent: "",
     atrPrior: "",
     notes: "",
   });
 
-  const [candles, setCandles] = useState([
-    emptyCandle(),
-    emptyCandle(),
-  ]);
-
+  const [candles, setCandles] = useState([emptyCandle(), emptyCandle()]);
   const [rbs, setRbs] = useState([emptyRb()]);
 
   const [manualAnswers, setManualAnswers] = useState({});
@@ -107,7 +103,6 @@ export default function LiquidityZonePage() {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
 
-  // Zone computation (live)
   const zone = useMemo(() => {
     return form.zoneKind === "upper"
       ? computeUpperWickZone(candles)
@@ -116,7 +111,6 @@ export default function LiquidityZonePage() {
 
   const zoneCe = zone ? computeCe(zone.zoneHigh, zone.zoneLow) : null;
 
-  // RB ranking + active RB
   const rankedRbs = useMemo(() => {
     const cleaned = rbs
       .map((rb) => ({
@@ -144,7 +138,6 @@ export default function LiquidityZonePage() {
 
   const atr = atrFilter(form.atrCurrent, form.atrPrior);
 
-  // Auto-answers (some questions auto-detected from state)
   const autoAnswers = {
     zone_present: !!zone,
     rbs_marked: rankedRbs.length > 0,
@@ -194,7 +187,6 @@ export default function LiquidityZonePage() {
       return;
     }
 
-    // 1. setups row
     const { data: setup, error: setupError } = await supabase
       .from("setups")
       .insert({
@@ -220,7 +212,6 @@ export default function LiquidityZonePage() {
       return;
     }
 
-    // 2. liquidity_zones row
     const { data: zoneRow, error: zoneError } = await supabase
       .from("liquidity_zones")
       .insert({
@@ -256,7 +247,6 @@ export default function LiquidityZonePage() {
       return;
     }
 
-    // 3. liquidity_zone_rbs rows
     const rbRows = rankedRbs.map((rb) => ({
       user_id: user.id,
       zone_id: zoneRow.id,
@@ -487,7 +477,7 @@ export default function LiquidityZonePage() {
           </div>
 
           <div className="space-y-2">
-            {rbs.map((rb, i) => {
+            {rbs.map((rb) => {
               const ranked = rankedRbs.find((x) => x.id === rb.id);
               const rank = ranked ? rbRankInfo(ranked.rank) : null;
               const isActive = activeRb && activeRb.id === rb.id;
@@ -565,7 +555,9 @@ export default function LiquidityZonePage() {
                     key={rb.id}
                     className="flex items-center justify-between text-xs"
                   >
-                    <span className={`px-1.5 py-0.5 rounded border ${info.color}`}>
+                    <span
+                      className={`px-1.5 py-0.5 rounded border ${info.color}`}
+                    >
                       {info.emoji} {info.label}
                     </span>
                     <span className="text-gray-400 tabular-nums">
@@ -580,9 +572,7 @@ export default function LiquidityZonePage() {
 
         {/* Price + ATR */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">
-            Negotiation
-          </h2>
+          <h2 className="text-sm font-semibold text-blue-400">Negotiation</h2>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -645,9 +635,21 @@ export default function LiquidityZonePage() {
         {negotiation && (
           <div className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}>
             <p className="text-xs opacity-80">Verdict</p>
-            <p className="text-2xl font-bold">
-              {verdict.emoji} {verdict.label}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-2xl font-bold">
+                {verdict.emoji} {verdict.label}
+              </p>
+              {negotiation.rbBroken === "up" && (
+                <span className="text-xs px-2 py-1 rounded-full font-semibold bg-green-900/40 text-green-300">
+                  RB broken ↑
+                </span>
+              )}
+              {negotiation.rbBroken === "down" && (
+                <span className="text-xs px-2 py-1 rounded-full font-semibold bg-red-900/40 text-red-300">
+                  RB broken ↓
+                </span>
+              )}
+            </div>
             <p className="text-sm opacity-90">{verdict.description}</p>
           </div>
         )}
@@ -807,16 +809,19 @@ export default function LiquidityZonePage() {
               <strong>CE</strong> — 50% of the active RB = negotiation line
             </li>
             <li>
-              <strong>Close above CE</strong> — premium → BUY
+              <strong>Close above RB high</strong> — BUY (strong, RB broken ↑)
             </li>
             <li>
-              <strong>Close below CE</strong> — discount → SELL
+              <strong>Close below RB low</strong> — SELL (strong, RB broken ↓)
+            </li>
+            <li>
+              <strong>Close in premium (inside RB)</strong> — SELL (normal)
+            </li>
+            <li>
+              <strong>Close in discount (inside RB)</strong> — BUY (normal)
             </li>
             <li>
               <strong>ATR rising</strong> — trade. Falling — wait.
-            </li>
-            <li>
-              <strong>RB ignored?</strong> — move to the previous one
             </li>
           </ul>
         </div>
