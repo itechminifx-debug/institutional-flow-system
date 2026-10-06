@@ -15,6 +15,7 @@ const links = [
  { href: "/bos-rb", label: "BOS+RB" },
  { href: "/premium-discount", label: "Premium/Discount" },
  { href: "/liquidity-zone", label: "Liquidity Zone" },
+ { href: "/rejection-block", label: "Rejection Block" },
  { href: "/integrated", label: "Integrated" },
   { href: "/killzones", label: "Killzones" },
   { href: "/liquidity", label: "Liquidity" },
