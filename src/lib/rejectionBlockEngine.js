@@ -7,12 +7,24 @@
 // institutional orders. Price goes into a zone to fill them.
 // After the orders are filled, the Rejection Block decides.
 //
-// The RB is standalone. It can sit:
-//   - INSIDE the zone  → negotiation within the zone
-//   - ABOVE the zone   → negotiation above (zone already broken up)
-//   - BELOW the zone   → negotiation below (zone already broken down)
+// MULTIPLE RBs
+// ------------------------------------------------------------
+// There can be MULTIPLE Rejection Blocks around a zone:
+//   - inside the zone
+//   - above the zone
+//   - below the zone
+//   - any combination of the three
 //
-// VERDICT (same rule as everywhere else)
+// Each RB gets its own position label. RBs are ranked by
+// freshness (current → previous → oldest).
+//
+// The "active RB" is the one price is currently approaching:
+//   1. RB whose range contains the close price, OR
+//   2. RB whose CE is closest to the close price
+//
+// The verdict runs on the ACTIVE RB.
+//
+// VERDICT (RB is the dealing range)
 // ------------------------------------------------------------
 //   Close ABOVE RB high → BUY  (strong) — RB broken ↑
 //   Close BELOW RB low  → SELL (strong) — RB broken ↓
@@ -20,7 +32,7 @@
 //   Close in DISCOUNT (below CE, inside RB) → BUY  (normal)
 //   Close = CE → WAIT
 //
-// ENTRY = CE of the RB (always).
+// ENTRY = CE of the active RB.
 // SL    = beyond the RB wick extreme + ATR buffer.
 // TP    = 2R from entry.
 // ============================================================
@@ -53,7 +65,6 @@ export function computeCe(high, low) {
 // ============================================================
 // RB POSITION vs ZONE
 // ============================================================
-// Returns: 'inside' | 'above' | 'below' | null
 export function detectRbVsZone({ zoneHigh, zoneLow, rbHigh, rbLow }) {
   const zH = parseFloat(zoneHigh);
   const zL = parseFloat(zoneLow);
@@ -61,13 +72,8 @@ export function detectRbVsZone({ zoneHigh, zoneLow, rbHigh, rbLow }) {
   const rL = parseFloat(rbLow);
   if (isNaN(zH) || isNaN(zL) || isNaN(rH) || isNaN(rL)) return null;
 
-  // Fully above the zone
   if (rL > zH) return "above";
-
-  // Fully below the zone
   if (rH < zL) return "below";
-
-  // Overlapping — treat as inside
   return "inside";
 }
 
@@ -102,7 +108,94 @@ export function rbVsZoneInfo(position) {
 }
 
 // ============================================================
-// VERDICT — same rule as everywhere else
+// RB HIERARCHY — rank by order added (newest = current)
+// ============================================================
+export function rankRejectionBlocks(rbs) {
+  if (!Array.isArray(rbs) || rbs.length === 0) return [];
+
+  const sorted = [...rbs].sort((a, b) => {
+    const ta = a.addedAt ? new Date(a.addedAt).getTime() : 0;
+    const tb = b.addedAt ? new Date(b.addedAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  return sorted.map((rb, i) => {
+    let rank;
+    if (i === 0) rank = "current";
+    else if (i === 1) rank = "previous";
+    else if (i === 2) rank = "oldest";
+    else rank = "older";
+    return { ...rb, rank };
+  });
+}
+
+export function rbRankInfo(rank) {
+  const map = {
+    current: {
+      label: "Current RB",
+      emoji: "🎯",
+      color: "bg-green-900/40 text-green-300 border-green-700",
+      description: "Freshest — first target",
+    },
+    previous: {
+      label: "Previous RB",
+      emoji: "🟡",
+      color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
+      description: "Older — still valid",
+    },
+    oldest: {
+      label: "Oldest RB",
+      emoji: "⚪",
+      color: "bg-gray-800/60 text-gray-300 border-gray-600",
+      description: "Weakest — least likely to react",
+    },
+    older: {
+      label: "Older RB",
+      emoji: "⚪",
+      color: "bg-gray-800/60 text-gray-400 border-gray-700",
+      description: "Historical RB",
+    },
+  };
+  return map[rank] || map.older;
+}
+
+// ============================================================
+// ACTIVE RB — the RB price is currently approaching
+// ============================================================
+export function findActiveRb(rbs, currentPrice) {
+  if (!Array.isArray(rbs) || rbs.length === 0) return null;
+  const price = parseFloat(currentPrice);
+  if (isNaN(price)) return rankRejectionBlocks(rbs)[0] || null;
+
+  const ranked = rankRejectionBlocks(rbs);
+
+  // 1. RB whose range contains the price
+  for (const rb of ranked) {
+    const high = parseFloat(rb.high);
+    const low = parseFloat(rb.low);
+    if (isNaN(high) || isNaN(low)) continue;
+    if (price >= low && price <= high) return rb;
+  }
+
+  // 2. Otherwise: closest RB by distance to its CE
+  let closest = null;
+  let minDist = Infinity;
+  for (const rb of ranked) {
+    const high = parseFloat(rb.high);
+    const low = parseFloat(rb.low);
+    if (isNaN(high) || isNaN(low)) continue;
+    const ce = (high + low) / 2;
+    const dist = Math.abs(price - ce);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = rb;
+    }
+  }
+  return closest;
+}
+
+// ============================================================
+// VERDICT — runs on the active RB
 // ============================================================
 export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
   const high = parseFloat(rbHigh);
@@ -112,7 +205,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
 
   const ce = Math.round(((high + low) / 2) * 100) / 100;
 
-  // CASE 1 — Close above RB high (broke upward)
   if (close > high) {
     return {
       verdict: "BUY",
@@ -125,7 +217,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
     };
   }
 
-  // CASE 2 — Close below RB low (broke downward)
   if (close < low) {
     return {
       verdict: "SELL",
@@ -140,7 +231,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
 
   const tolerance = Math.abs(ce) * 0.0001;
 
-  // CASE 5 — At CE
   if (Math.abs(close - ce) <= tolerance) {
     return {
       verdict: "WAIT",
@@ -152,7 +242,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
     };
   }
 
-  // CASE 3 — Premium (above CE, inside RB) → SELL
   if (close > ce) {
     return {
       verdict: "SELL",
@@ -164,7 +253,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
     };
   }
 
-  // CASE 4 — Discount (below CE, inside RB) → BUY
   return {
     verdict: "BUY",
     side: "discount",
@@ -297,12 +385,12 @@ export function atrFilter(atrCurrent, atrPrior) {
 }
 
 // ============================================================
-// TRADE CALCULATOR — Entry = CE, SL = wick + ATR buffer, TP = 2R
+// TRADE CALCULATOR
 // ============================================================
 export function computeRejectionBlockTrade({
   rbHigh,
   rbLow,
-  verdict, // 'BUY' | 'SELL'
+  verdict,
   accountSize = 0,
   riskPercent = 1,
   bufferMultiplier = 0.3,
@@ -316,10 +404,7 @@ export function computeRejectionBlockTrade({
   const ce = Math.round(((high + low) / 2) * 100) / 100;
   const isBull = verdict === "BUY";
 
-  // Entry = CE (always)
   const entry = ce;
-
-  // SL = beyond the RB wick extreme + ATR buffer
   const wickExtreme = isBull ? low : high;
   const buffer = atr > 0 ? atr * bufferMultiplier : 0;
   const sl = isBull ? wickExtreme - buffer : wickExtreme + buffer;

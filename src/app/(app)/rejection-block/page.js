@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
@@ -10,6 +10,9 @@ import {
   computeCe,
   detectRbVsZone,
   rbVsZoneInfo,
+  rankRejectionBlocks,
+  rbRankInfo,
+  findActiveRb,
   judgeRejectionBlock,
   premiumDiscountVerdict,
   strengthInfo,
@@ -17,6 +20,14 @@ import {
   computeRejectionBlockTrade,
 } from "@/lib/rejectionBlockEngine";
 import PairPicker from "@/components/PairPicker";
+
+function emptyRb() {
+  return {
+    id: Math.random().toString(36).slice(2),
+    high: "",
+    low: "",
+  };
+}
 
 export default function RejectionBlockPage() {
   const router = useRouter();
@@ -32,13 +43,13 @@ export default function RejectionBlockPage() {
     zoneType: "fvg",
     zoneHigh: "",
     zoneLow: "",
-    rbHigh: "",
-    rbLow: "",
     closePrice: "",
     atrCurrent: "",
     atrPrior: "",
     notes: "",
   });
+
+  const [rbs, setRbs] = useState([emptyRb()]);
 
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -47,6 +58,9 @@ export default function RejectionBlockPage() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingDetailId, setExistingDetailId] = useState(null);
 
+  // ============================================================
+  // Load profile + existing setup (if editing)
+  // ============================================================
   useEffect(() => {
     async function load() {
       const {
@@ -82,6 +96,7 @@ export default function RejectionBlockPage() {
         .eq("setup_id", editId)
         .single();
 
+      // Pre-fill form
       setForm((f) => ({
         ...f,
         pair: setupData.pair || f.pair,
@@ -89,13 +104,38 @@ export default function RejectionBlockPage() {
         zoneType: detailData?.zone_type || f.zoneType,
         zoneHigh: detailData?.zone_high?.toString() || "",
         zoneLow: detailData?.zone_low?.toString() || "",
-        rbHigh: detailData?.rb_high?.toString() || "",
-        rbLow: detailData?.rb_low?.toString() || "",
         closePrice: detailData?.close_price?.toString() || "",
         atrCurrent: detailData?.atr_current?.toString() || "",
         atrPrior: detailData?.atr_prior?.toString() || "",
         notes: setupData.notes || "",
       }));
+
+      // Load all RBs from child table
+      const { data: rbsData } = await supabase
+        .from("rejection_block_rbs")
+        .select("*")
+        .eq("setup_id", editId)
+        .order("created_at", { ascending: false });
+
+      if (rbsData && rbsData.length > 0) {
+        const restored = rbsData.map((rb, idx) => ({
+          id: Math.random().toString(36).slice(2),
+          high: rb.rb_high?.toString() || "",
+          low: rb.rb_low?.toString() || "",
+          addedAt:
+            rb.created_at || new Date(Date.now() - idx * 1000).toISOString(),
+        }));
+        setRbs(restored);
+      } else if (detailData?.rb_high || detailData?.rb_low) {
+        // Fallback: single RB stored on the master detail row
+        setRbs([
+          {
+            id: Math.random().toString(36).slice(2),
+            high: detailData.rb_high?.toString() || "",
+            low: detailData.rb_low?.toString() || "",
+          },
+        ]);
+      }
 
       setExistingDetailId(detailData?.id || null);
       setLoadingEdit(false);
@@ -108,22 +148,64 @@ export default function RejectionBlockPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  function updateRb(id, field, value) {
+    setRbs((prev) =>
+      prev.map((rb) => (rb.id === id ? { ...rb, [field]: value } : rb))
+    );
+  }
+
+  function addRb() {
+    setRbs((prev) => [...prev, emptyRb()]);
+  }
+
+  function removeRb(id) {
+    setRbs((prev) => prev.filter((rb) => rb.id !== id));
+  }
+
+  // ============================================================
+  // Live computations
+  // ============================================================
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
-  const rbCe = computeCe(form.rbHigh, form.rbLow);
 
-  const rbPosition = detectRbVsZone({
-    zoneHigh: form.zoneHigh,
-    zoneLow: form.zoneLow,
-    rbHigh: form.rbHigh,
-    rbLow: form.rbLow,
-  });
-  const rbPosInfo = rbPosition ? rbVsZoneInfo(rbPosition) : null;
+  const rankedRbs = useMemo(() => {
+    const cleaned = rbs
+      .map((rb) => ({
+        id: rb.id,
+        high: parseFloat(rb.high),
+        low: parseFloat(rb.low),
+        addedAt: rb.addedAt || new Date().toISOString(),
+      }))
+      .filter((rb) => !isNaN(rb.high) && !isNaN(rb.low));
 
-  const negotiation = judgeRejectionBlock({
-    rbHigh: form.rbHigh,
-    rbLow: form.rbLow,
-    closePrice: form.closePrice,
-  });
+    return rankRejectionBlocks(cleaned);
+  }, [rbs]);
+
+  const activeRb = useMemo(() => {
+    if (!form.closePrice) return rankedRbs[0] || null;
+    return findActiveRb(rankedRbs, form.closePrice);
+  }, [rankedRbs, form.closePrice]);
+
+  const activeRbCe = activeRb ? computeCe(activeRb.high, activeRb.low) : null;
+
+  const activeRbPosition = activeRb
+    ? detectRbVsZone({
+        zoneHigh: form.zoneHigh,
+        zoneLow: form.zoneLow,
+        rbHigh: activeRb.high,
+        rbLow: activeRb.low,
+      })
+    : null;
+  const activeRbPosInfo = activeRbPosition
+    ? rbVsZoneInfo(activeRbPosition)
+    : null;
+
+  const negotiation = activeRb
+    ? judgeRejectionBlock({
+        rbHigh: activeRb.high,
+        rbLow: activeRb.low,
+        closePrice: form.closePrice,
+      })
+    : null;
   const verdict = premiumDiscountVerdict(negotiation);
   const strength = negotiation ? strengthInfo(negotiation.strength) : null;
 
@@ -133,8 +215,8 @@ export default function RejectionBlockPage() {
     negotiation &&
     (negotiation.verdict === "BUY" || negotiation.verdict === "SELL")
       ? computeRejectionBlockTrade({
-          rbHigh: form.rbHigh,
-          rbLow: form.rbLow,
+          rbHigh: activeRb.high,
+          rbLow: activeRb.low,
           verdict: negotiation.verdict,
           accountSize: profile?.account_size || 0,
           riskPercent: profile?.risk_percent || 1,
@@ -144,9 +226,12 @@ export default function RejectionBlockPage() {
 
   const zoneInfo = zoneTypeInfo(form.zoneType);
 
+  // ============================================================
+  // SAVE
+  // ============================================================
   async function handleSave() {
-    if (!negotiation || !rbPosition) {
-      setError("Fill in the zone, RB, and close price first.");
+    if (!negotiation || !activeRb) {
+      setError("Fill in the zone, at least one RB, and close price first.");
       return;
     }
 
@@ -169,7 +254,7 @@ export default function RejectionBlockPage() {
       d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
       htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
       ema50_position: "above",
-      rejection_block_zone: `${form.rbLow}-${form.rbHigh}`,
+      rejection_block_zone: `${activeRb.low}-${activeRb.high}`,
       ce_price: negotiation.ce,
       use_ce_entry: true,
       checklist_score: 0,
@@ -185,7 +270,6 @@ export default function RejectionBlockPage() {
         .eq("id", editId)
         .select()
         .single();
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -198,7 +282,6 @@ export default function RejectionBlockPage() {
         .insert(setupPayload)
         .select()
         .single();
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
@@ -216,10 +299,10 @@ export default function RejectionBlockPage() {
       zone_high: form.zoneHigh ? parseFloat(form.zoneHigh) : null,
       zone_low: form.zoneLow ? parseFloat(form.zoneLow) : null,
       zone_ce: zoneCe,
-      rb_high: form.rbHigh ? parseFloat(form.rbHigh) : null,
-      rb_low: form.rbLow ? parseFloat(form.rbLow) : null,
+      rb_high: activeRb.high,
+      rb_low: activeRb.low,
       rb_ce: negotiation.ce,
-      rb_position: rbPosition,
+      rb_position: activeRbPosition,
       close_price: form.closePrice ? parseFloat(form.closePrice) : null,
       premium_discount: negotiation.side,
       verdict: negotiation.verdict,
@@ -237,27 +320,71 @@ export default function RejectionBlockPage() {
       notes: form.notes,
     };
 
+    let detailRow;
     if (isEdit && existingDetailId) {
-      const { error: updErr } = await supabase
+      const { data, error: updErr } = await supabase
         .from("rejection_block_setups")
         .update(detailPayload)
-        .eq("id", existingDetailId);
-
+        .eq("id", existingDetailId)
+        .select()
+        .single();
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
         return;
       }
+      detailRow = data;
     } else {
-      const { error: insErr } = await supabase
+      const { data, error: insErr } = await supabase
         .from("rejection_block_setups")
-        .insert(detailPayload);
-
+        .insert(detailPayload)
+        .select()
+        .single();
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
         return;
       }
+      detailRow = data;
+    }
+
+    // Save all RBs — delete old ones first if editing
+    if (isEdit) {
+      await supabase
+        .from("rejection_block_rbs")
+        .delete()
+        .eq("setup_id", setup.id);
+    }
+
+    const rbRows = rankedRbs.map((rb) => {
+      const pos = detectRbVsZone({
+        zoneHigh: form.zoneHigh,
+        zoneLow: form.zoneLow,
+        rbHigh: rb.high,
+        rbLow: rb.low,
+      });
+
+      return {
+        user_id: user.id,
+        setup_id: setup.id,
+        pair: form.pair,
+        rb_high: rb.high,
+        rb_low: rb.low,
+        rb_ce: computeCe(rb.high, rb.low),
+        rb_position: pos,
+        rank: rb.rank,
+        is_active: rb.id === activeRb.id,
+      };
+    });
+
+    const { error: rbErr } = await supabase
+      .from("rejection_block_rbs")
+      .insert(rbRows);
+
+    if (rbErr) {
+      setError(rbErr.message);
+      setSaving(false);
+      return;
     }
 
     setSaving(false);
@@ -378,61 +505,162 @@ export default function RejectionBlockPage() {
           )}
         </div>
 
-        {/* Rejection Block */}
+        {/* Rejection Blocks (Multiple) */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-blue-400">
-              Rejection Block (where the decision happens)
-            </h2>
-            {rbPosInfo && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${rbPosInfo.color}`}
-              >
-                {rbPosInfo.emoji} {rbPosInfo.label}
-              </span>
-            )}
+            <div>
+              <h2 className="text-sm font-semibold text-blue-400">
+                Rejection Blocks (multiple)
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Add every RB around the zone. Price approaches one — that
+                becomes the active RB.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={addRb}
+              className="text-xs px-3 py-1.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/40"
+            >
+              + Add RB
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                RB Low
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.rbLow}
-                onChange={(e) => update("rbLow", e.target.value)}
-                placeholder="e.g. 209500"
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                RB High
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.rbHigh}
-                onChange={(e) => update("rbHigh", e.target.value)}
-                placeholder="e.g. 209700"
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
-            </div>
+          <div className="space-y-2">
+            {rbs.map((rb) => {
+              const ranked = rankedRbs.find((x) => x.id === rb.id);
+              const rank = ranked ? rbRankInfo(ranked.rank) : null;
+              const isActive = activeRb && activeRb.id === rb.id;
+
+              const pos =
+                rb.high && rb.low
+                  ? detectRbVsZone({
+                      zoneHigh: form.zoneHigh,
+                      zoneLow: form.zoneLow,
+                      rbHigh: rb.high,
+                      rbLow: rb.low,
+                    })
+                  : null;
+              const posInfo = pos ? rbVsZoneInfo(pos) : null;
+
+              return (
+                <div
+                  key={rb.id}
+                  className={`grid grid-cols-12 gap-2 items-end p-2 rounded border ${
+                    isActive
+                      ? "bg-green-950/20 border-green-700 ring-1 ring-green-700"
+                      : "bg-black border-gray-800"
+                  }`}
+                >
+                  <div className="col-span-3 flex flex-col gap-1">
+                    {rank && (
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded-full border text-center ${rank.color}`}
+                      >
+                        {rank.emoji} {rank.label}
+                      </span>
+                    )}
+                    {posInfo && (
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded-full border text-center ${posInfo.color}`}
+                      >
+                        {posInfo.emoji} {posInfo.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-xs mb-1 text-gray-500">
+                      RB Low
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={rb.low}
+                      onChange={(e) => updateRb(rb.id, "low", e.target.value)}
+                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-xs mb-1 text-gray-500">
+                      RB High
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={rb.high}
+                      onChange={(e) => updateRb(rb.id, "high", e.target.value)}
+                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                    />
+                  </div>
+                  <div className="col-span-1 text-right">
+                    {rbs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeRb(rb.id)}
+                        className="text-red-400 text-xs hover:text-red-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                    {isActive && (
+                      <span className="block text-xs text-green-400 font-semibold mt-1">
+                        active
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {rbCe !== null && (
-            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900">
-              <p className="text-xs text-blue-300 font-semibold">
-                RB CE — negotiation line
-              </p>
-              <p className="text-lg font-bold tabular-nums text-blue-200">
-                {formatPrice(rbCe)}
-              </p>
+          {/* Ranked summary */}
+          {rankedRbs.length > 0 && (
+            <div className="space-y-1 pt-2 border-t border-gray-800">
+              <p className="text-xs text-gray-500 mb-1">Ranked list</p>
+              {rankedRbs.map((rb) => {
+                const info = rbRankInfo(rb.rank);
+                const pos = detectRbVsZone({
+                  zoneHigh: form.zoneHigh,
+                  zoneLow: form.zoneLow,
+                  rbHigh: rb.high,
+                  rbLow: rb.low,
+                });
+                const posInfo = pos ? rbVsZoneInfo(pos) : null;
+                const ce = computeCe(rb.high, rb.low);
+                return (
+                  <div
+                    key={rb.id}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`px-1.5 py-0.5 rounded border ${info.color}`}
+                      >
+                        {info.emoji} {info.label}
+                      </span>
+                      {posInfo && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded border ${posInfo.color}`}
+                        >
+                          {posInfo.emoji} {posInfo.label}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-gray-400 tabular-nums">
+                      {rb.low} – {rb.high} (CE {ce})
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
+        </div>
 
+        {/* Close + ATR */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <h2 className="text-sm font-semibold text-blue-400">
+            The Verdict &amp; Volatility
+          </h2>
           <div>
             <label className="block text-xs mb-1 text-gray-400">
               Close Price (the verdict)
@@ -446,49 +674,7 @@ export default function RejectionBlockPage() {
               className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
             />
           </div>
-        </div>
 
-        {/* Meaning Card */}
-        {rbPosInfo && (
-          <div className={`p-4 rounded-lg border space-y-2 ${rbPosInfo.color}`}>
-            <p className="text-xs opacity-80">RB Position vs Zone</p>
-            <p className="text-lg font-bold">
-              {rbPosInfo.emoji} {rbPosInfo.label}
-            </p>
-            <p className="text-sm opacity-90">{rbPosInfo.meaning}</p>
-          </div>
-        )}
-
-        {/* Verdict Card */}
-        {negotiation && (
-          <div className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}>
-            <p className="text-xs opacity-80">Verdict</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-2xl font-bold">
-                {verdict.emoji} {verdict.label}
-              </p>
-              {verdict.brokenBadge && (
-                <span
-                  className={`text-xs px-2 py-1 rounded-full font-semibold ${verdict.brokenBadge.color}`}
-                >
-                  {verdict.brokenBadge.label}
-                </span>
-              )}
-              {strength && (
-                <span
-                  className={`text-xs px-2 py-1 rounded-full font-semibold ${strength.color}`}
-                >
-                  {strength.emoji} {strength.label}
-                </span>
-              )}
-            </div>
-            <p className="text-sm opacity-90">{verdict.description}</p>
-          </div>
-        )}
-
-        {/* ATR */}
-        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">ATR Filter</h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -515,6 +701,7 @@ export default function RejectionBlockPage() {
               />
             </div>
           </div>
+
           <div className={`p-3 rounded-lg border ${atr.color}`}>
             <p className="text-xs font-semibold">
               {atr.emoji} {atr.label}
@@ -523,7 +710,57 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* TRADE CARD */}
+        {/* Active RB Meaning Card */}
+        {activeRb && activeRbPosInfo && (
+          <div
+            className={`p-4 rounded-lg border space-y-2 ${activeRbPosInfo.color}`}
+          >
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs opacity-80">
+                Active RB — the one price is approaching
+              </p>
+              <p className="text-xs opacity-80">
+                CE {activeRbCe !== null ? formatPrice(activeRbCe) : "—"}
+              </p>
+            </div>
+            <p className="text-lg font-bold">
+              {activeRbPosInfo.emoji} {activeRbPosInfo.label}
+            </p>
+            <p className="text-sm opacity-90">{activeRbPosInfo.meaning}</p>
+            <p className="text-xs opacity-80">
+              Range: {activeRb.low} – {activeRb.high}
+            </p>
+          </div>
+        )}
+
+        {/* Verdict Card */}
+        {negotiation && (
+          <div className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}>
+            <p className="text-xs opacity-80">Verdict (active RB)</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-2xl font-bold">
+                {verdict.emoji} {verdict.label}
+              </p>
+              {verdict.brokenBadge && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${verdict.brokenBadge.color}`}
+                >
+                  {verdict.brokenBadge.label}
+                </span>
+              )}
+              {strength && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${strength.color}`}
+                >
+                  {strength.emoji} {strength.label}
+                </span>
+              )}
+            </div>
+            <p className="text-sm opacity-90">{verdict.description}</p>
+          </div>
+        )}
+
+        {/* Trade Card */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-blue-800 space-y-3">
             <div className="flex items-center justify-between">
@@ -628,7 +865,7 @@ export default function RejectionBlockPage() {
             saving ||
             !negotiation ||
             negotiation.verdict === "WAIT" ||
-            !rbPosition
+            !activeRb
           }
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             isEdit
@@ -663,29 +900,26 @@ export default function RejectionBlockPage() {
               <strong>Zones hold orders</strong> — FVG, OB, Liquidity, MSS, BOS
             </li>
             <li>
-              <strong>Price enters a zone</strong> to fill those orders
+              <strong>Multiple RBs</strong> — inside, above, or below the
+              zone
             </li>
             <li>
-              <strong>The RB makes the decision</strong> after orders are
-              filled
+              <strong>Active RB</strong> — the one price is approaching
             </li>
             <li>
-              <strong>RB inside the zone</strong> — negotiation happens inside
+              <strong>Entry</strong> — CE of the active RB (50%)
             </li>
             <li>
-              <strong>RB above the zone</strong> — negotiation happens above
-            </li>
-            <li>
-              <strong>RB below the zone</strong> — negotiation happens below
-            </li>
-            <li>
-              <strong>Entry</strong> — CE of the RB (50%)
-            </li>
-            <li>
-              <strong>SL</strong> — beyond the RB wick + ATR buffer
+              <strong>SL</strong> — beyond the active RB wick + ATR buffer
             </li>
             <li>
               <strong>TP</strong> — 2R from entry
+            </li>
+            <li>
+              <strong>Close above RB high</strong> — BUY (strong, RB broken ↑)
+            </li>
+            <li>
+              <strong>Close below RB low</strong> — SELL (strong, RB broken ↓)
             </li>
           </ul>
         </div>
