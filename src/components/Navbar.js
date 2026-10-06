@@ -14,6 +14,7 @@ const links = [
  { href: "/negotiation", label: "Negotiation" },
  { href: "/bos-rb", label: "BOS+RB" },
  { href: "/premium-discount", label: "Premium/Discount" },
+ { href: "/liquidity-zone", label: "Liquidity Zone" },
  { href: "/integrated", label: "Integrated" },
   { href: "/killzones", label: "Killzones" },
   { href: "/liquidity", label: "Liquidity" },
