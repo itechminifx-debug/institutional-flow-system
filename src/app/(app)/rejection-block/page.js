@@ -25,6 +25,7 @@ import {
   allFlippedInfo,
   checkRbCompleteness,
   detectRbFromTwoCandles,
+  checkDetectionVsClose,
   detectRbsInPath,
   blockerInfo,
   detectReversal,
@@ -136,7 +137,6 @@ export default function RejectionBlockPage() {
         notes: isEdit ? setupData.notes || "" : "",
       }));
 
-      // Restore two candles
       const savedC1 = detailData?.candle_1;
       const savedC2 = detailData?.candle_2;
       if (savedC1) {
@@ -194,7 +194,6 @@ export default function RejectionBlockPage() {
   function removeRb(id) {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
-
   function updateC1(field, value) {
     setCandle1((c) => ({ ...c, [field]: value }));
   }
@@ -202,9 +201,6 @@ export default function RejectionBlockPage() {
     setCandle2((c) => ({ ...c, [field]: value }));
   }
 
-  // ============================================================
-  // RB list
-  // ============================================================
   const rankedRbs = useMemo(() => {
     const cleaned = rbs
       .map((rb) => ({
@@ -217,9 +213,6 @@ export default function RejectionBlockPage() {
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
-  // ============================================================
-  // Two-candle RB detection
-  // ============================================================
   const detection = useMemo(
     () =>
       detectRbFromTwoCandles({
@@ -228,6 +221,17 @@ export default function RejectionBlockPage() {
         currentClose: form.closePrice,
       }),
     [candle1, candle2, form.closePrice]
+  );
+
+  // NEW — instant cross-check close vs detected RB
+  const detectionVsClose = useMemo(
+    () =>
+      checkDetectionVsClose({
+        detection,
+        closePrice: form.closePrice,
+        pipSize: parseFloat(form.pipSize) || PIP_SIZE_DEFAULT,
+      }),
+    [detection, form.closePrice, form.pipSize]
   );
 
   function addDetectedToRbs() {
@@ -244,9 +248,6 @@ export default function RejectionBlockPage() {
     setDetectedAdded(true);
   }
 
-  // ============================================================
-  // Core computations
-  // ============================================================
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
 
   const activeRb = useMemo(() => {
@@ -594,6 +595,8 @@ export default function RejectionBlockPage() {
             swingSize: detection.swingSize,
           }
         : null,
+      detection_vs_close_status: detectionVsClose?.status || null,
+      detection_vs_close_level: detectionVsClose?.level || null,
       path_rbs: pathInfo.pathRbs,
       safe_tp: pathInfo.safeTp,
       safe_tp_pips: pathInfo.safeTpPips,
@@ -793,17 +796,13 @@ export default function RejectionBlockPage() {
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Rule: Candle 1 tip LOW, Candle 2 tip HIGHER → RB forms between
-              the tips. Works for both resistance and support — the system
-              auto-detects which.
+              the tips.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {/* Candle 1 */}
             <div className="p-3 rounded-lg bg-black border border-gray-800 space-y-2">
-              <p className="text-xs font-semibold text-gray-400">
-                Candle 1
-              </p>
+              <p className="text-xs font-semibold text-gray-400">Candle 1</p>
               <select
                 value={candle1.type}
                 onChange={(e) => updateC1("type", e.target.value)}
@@ -838,11 +837,8 @@ export default function RejectionBlockPage() {
               />
             </div>
 
-            {/* Candle 2 */}
             <div className="p-3 rounded-lg bg-black border border-gray-800 space-y-2">
-              <p className="text-xs font-semibold text-gray-400">
-                Candle 2
-              </p>
+              <p className="text-xs font-semibold text-gray-400">Candle 2</p>
               <select
                 value={candle2.type}
                 onChange={(e) => updateC2("type", e.target.value)}
@@ -878,7 +874,6 @@ export default function RejectionBlockPage() {
             </div>
           </div>
 
-          {/* Detection result */}
           {detection.detected ? (
             <div
               className={`p-3 rounded-lg border ${
@@ -922,9 +917,7 @@ export default function RejectionBlockPage() {
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
-                {detection.reason}
-              </p>
+              <p className="text-xs text-gray-400 mt-2">{detection.reason}</p>
 
               <button
                 type="button"
@@ -942,8 +935,12 @@ export default function RejectionBlockPage() {
               </button>
             </div>
           ) : (
-            (candle1.open || candle1.close || candle1.wickTip ||
-              candle2.open || candle2.close || candle2.wickTip) && (
+            (candle1.open ||
+              candle1.close ||
+              candle1.wickTip ||
+              candle2.open ||
+              candle2.close ||
+              candle2.wickTip) && (
               <div className="p-3 rounded-lg bg-red-950/30 border border-red-800">
                 <p className="text-xs text-red-300 font-semibold">
                   ❌ Not a valid RB
@@ -955,6 +952,55 @@ export default function RejectionBlockPage() {
             )
           )}
         </div>
+
+        {/* NEW — Detection vs Verdict Close */}
+        {detectionVsClose && (
+          <div
+            className={`p-4 rounded-lg border-2 space-y-2 ${detectionVsClose.color}`}
+          >
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm font-bold">
+                {detectionVsClose.emoji} {detectionVsClose.label}
+              </p>
+              <span className="text-xs opacity-80">
+                {detectionVsClose.distancePips > 0
+                  ? `${detectionVsClose.distancePips} pips from nearest edge`
+                  : "inside range"}
+              </span>
+            </div>
+            <p className="text-sm opacity-90">
+              {detectionVsClose.description}
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-white/10">
+              <div>
+                <p className="opacity-70">RB Low</p>
+                <p className="font-bold tabular-nums">
+                  {detectionVsClose.rbLow}
+                </p>
+              </div>
+              <div>
+                <p className="opacity-70">RB High</p>
+                <p className="font-bold tabular-nums">
+                  {detectionVsClose.rbHigh}
+                </p>
+              </div>
+              <div>
+                <p className="opacity-70">CE</p>
+                <p className="font-bold tabular-nums">
+                  {detectionVsClose.ce}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs uppercase tracking-wider font-bold">
+              Action:{" "}
+              {detectionVsClose.action === "wait"
+                ? "⏳ WAIT"
+                : detectionVsClose.action === "confirmed"
+                ? "✅ CONFIRMED — proceed"
+                : "▶ Proceed"}
+            </p>
+          </div>
+        )}
 
         {/* Rejection Blocks */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">

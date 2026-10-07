@@ -5,15 +5,19 @@
 //
 // TWO-CANDLE RB DETECTION
 //   User enters two candles (color, open, close, wick tip).
-//   Rule: Candle 1 wick tip LOW, Candle 2 wick tip HIGHER
-//         → RB exists between the two tips.
+//   Rule: Candle 1 tip LOW, Candle 2 tip HIGHER → RB exists.
 //   Auto-detect resistance vs support.
+//
+// DETECTION vs VERDICT CLOSE
+//   When the close price is typed, instantly check it against
+//   the detected RB. Warn if inside or near-edge.
 //
 // RB-IN-PATH:  Safe TP before the nearest blocking RB.
 // PIPS:        2 decimals → pip size = 0.01 (Headway Volatility)
 // ============================================================
 
 export const PIP_SIZE_DEFAULT = 0.01;
+export const NEAR_EDGE_BUFFER_PIPS = 5;
 
 // ============================================================
 // ZONE TYPES
@@ -672,17 +676,6 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 // ============================================================
 // TWO-CANDLE RB DETECTION
 // ============================================================
-// Rule (regardless of resistance or support):
-//   Candle 1 wick tip = LOW
-//   Candle 2 wick tip = HIGHER than Candle 1
-//   → RB exists between the two tips.
-//
-// Auto-detect resistance vs support using:
-//   - Wick position vs body (tip above body = upper wick;
-//     tip below body = lower wick)
-//   - RB position vs current close (RB above close = resistance;
-//     RB below close = support)
-// ============================================================
 export function detectRbFromTwoCandles({
   candle1,
   candle2,
@@ -730,7 +723,6 @@ export function detectRbFromTwoCandles({
   const rbHigh = Math.round(c2t * 100) / 100;
   const ce = Math.round(((rbLow + rbHigh) / 2) * 100) / 100;
 
-  // Wick type per candle — tip above body = upper; tip below body = lower
   const c1Upper = c1t > Math.max(c1o, c1c);
   const c1Lower = c1t < Math.min(c1o, c1c);
   const c2Upper = c2t > Math.max(c2o, c2c);
@@ -742,23 +734,19 @@ export function detectRbFromTwoCandles({
   else if (c1Upper || c2Upper) wickType = "upper";
   else if (c1Lower || c2Lower) wickType = "lower";
 
-  // Auto-type by wick position
   let byWick = null;
   if (wickType === "upper") byWick = "resistance";
   else if (wickType === "lower") byWick = "support";
 
-  // Auto-type by price position
   let byPrice = null;
   if (!isNaN(close)) {
     if (rbLow > close) byPrice = "resistance";
     else if (rbHigh < close) byPrice = "support";
-    else byPrice = "inside"; // RB overlaps close — indecision
+    else byPrice = "inside";
   }
 
-  // Final type — prefer the wick-position method when they agree;
-  // fall back to whichever is available.
-  let autoType = byWick || byPrice || "unknown";
-  let method = byWick ? "by-wick-position" : "by-price-position";
+  const autoType = byWick || byPrice || "unknown";
+  const method = byWick ? "by-wick-position" : "by-price-position";
 
   return {
     detected: true,
@@ -778,7 +766,136 @@ export function detectRbFromTwoCandles({
 }
 
 // ============================================================
-// RB-IN-PATH DETECTION
+// DETECTION vs VERDICT CLOSE  (NEW)
+// ============================================================
+// Instantly cross-checks the close price against the detected RB.
+// Fires the moment the user types the close — no Add required.
+// ============================================================
+export function checkDetectionVsClose({
+  detection,
+  closePrice,
+  pipSize = PIP_SIZE_DEFAULT,
+  bufferPips = NEAR_EDGE_BUFFER_PIPS,
+}) {
+  if (!detection || !detection.detected) return null;
+
+  const close = parseFloat(closePrice);
+  if (isNaN(close)) return null;
+
+  const p = parseFloat(pipSize) || PIP_SIZE_DEFAULT;
+  const buffer = (parseFloat(bufferPips) || NEAR_EDGE_BUFFER_PIPS) * p;
+
+  const rbLow = parseFloat(detection.rbLow);
+  const rbHigh = parseFloat(detection.rbHigh);
+
+  // Distance from close to nearest RB edge (positive = outside, negative = inside)
+  let distanceToLow = (close - rbLow) / p;
+  let distanceToHigh = (rbHigh - close) / p;
+
+  // Inside the RB
+  if (close >= rbLow && close <= rbHigh) {
+    const ce = detection.ce;
+    const side = close > ce ? "premium" : close < ce ? "discount" : "at-ce";
+    return {
+      status: "inside",
+      level: "warning",
+      label: "Verdict close INSIDE the detected RB",
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description:
+        "The close sits inside the detected RB range. Price is still negotiating — the trade may not be confirmed. Wait for a decisive close beyond the RB.",
+      distancePips: 0,
+      side,
+      action: "wait",
+      rbLow,
+      rbHigh,
+      ce,
+    };
+  }
+
+  // Above the RB
+  if (close > rbHigh) {
+    const distancePips = Math.round(((close - rbHigh) / p) * 100) / 100;
+
+    if (close - rbHigh <= buffer) {
+      return {
+        status: "near-edge-above",
+        level: "caution",
+        label: "Verdict close NEAR the upper edge",
+        emoji: "🟠",
+        color: "bg-orange-950/40 border-orange-700 text-orange-200",
+        description:
+          "The close is just above the detected RB's upper edge. Momentum is weak — the RB may reject the entry. Consider waiting for more distance.",
+        distancePips,
+        side: "above",
+        action: "wait",
+        rbLow,
+        rbHigh,
+        ce: detection.ce,
+      };
+    }
+
+    return {
+      status: "beyond-up",
+      level: "ok",
+      label: "Close beyond the detected RB ↑",
+      emoji: "✅",
+      color: "bg-green-950/40 border-green-700 text-green-200",
+      description:
+        "The close has cleared the detected RB upward. This confirms a bullish break of the RB — the entry may proceed.",
+      distancePips,
+      side: "above",
+      action: "confirmed",
+      rbLow,
+      rbHigh,
+      ce: detection.ce,
+    };
+  }
+
+  // Below the RB
+  if (close < rbLow) {
+    const distancePips = Math.round(((rbLow - close) / p) * 100) / 100;
+
+    if (rbLow - close <= buffer) {
+      return {
+        status: "near-edge-below",
+        level: "caution",
+        label: "Verdict close NEAR the lower edge",
+        emoji: "🟠",
+        color: "bg-orange-950/40 border-orange-700 text-orange-200",
+        description:
+          "The close is just below the detected RB's lower edge. Momentum is weak — the RB may reject the entry. Consider waiting for more distance.",
+        distancePips,
+        side: "below",
+        action: "wait",
+        rbLow,
+        rbHigh,
+        ce: detection.ce,
+      };
+    }
+
+    return {
+      status: "beyond-down",
+      level: "ok",
+      label: "Close beyond the detected RB ↓",
+      emoji: "✅",
+      color: "bg-green-950/40 border-green-700 text-green-200",
+      description:
+        "The close has cleared the detected RB downward. This confirms a bearish break of the RB — the entry may proceed.",
+      distancePips,
+      side: "below",
+      action: "confirmed",
+      rbLow,
+      rbHigh,
+      ce: detection.ce,
+    };
+  }
+
+  return null;
+}
+
+// ============================================================
+// RB-IN-PATH
 // ============================================================
 export function detectRbsInPath({
   entry,
@@ -819,7 +936,6 @@ export function detectRbsInPath({
     const distance = isBull ? low - e : e - high;
     const distancePips = Math.round((distance / p) * 100) / 100;
     const ratio = fullRange > 0 ? distance / fullRange : 0;
-
     const safeTp = isBull ? low : high;
 
     pathRbs.push({
