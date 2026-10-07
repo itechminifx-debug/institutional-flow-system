@@ -21,6 +21,10 @@ import {
   emaAlignment,
   checkConditions,
   conditionSummary,
+  detectAllRbsFlipped,
+  allFlippedInfo,
+  detectReversal,
+  computeNextOpportunityTrade,
   atrFilter,
   computeRejectionBlockTrade,
 } from "@/lib/rejectionBlockEngine";
@@ -51,6 +55,7 @@ export default function RejectionBlockPage() {
     ema50Price: "",
     ema50Prior: "",
     closePrice: "",
+    priorClose: "",
     atrCurrent: "",
     atrPrior: "",
     notes: "",
@@ -66,7 +71,7 @@ export default function RejectionBlockPage() {
   const [existingDetailId, setExistingDetailId] = useState(null);
 
   // ============================================================
-  // Load profile + existing setup (if editing)
+  // Load profile + existing setup
   // ============================================================
   useEffect(() => {
     async function load() {
@@ -113,6 +118,7 @@ export default function RejectionBlockPage() {
         ema50Price: detailData?.ema50_price?.toString() || "",
         ema50Prior: detailData?.ema50_prior?.toString() || "",
         closePrice: detailData?.close_price?.toString() || "",
+        priorClose: detailData?.prior_close?.toString() || "",
         atrCurrent: detailData?.atr_current?.toString() || "",
         atrPrior: detailData?.atr_prior?.toString() || "",
         notes: setupData.notes || "",
@@ -215,7 +221,6 @@ export default function RejectionBlockPage() {
   const verdict = premiumDiscountVerdict(negotiation);
   const strength = negotiation ? strengthInfo(negotiation.strength) : null;
 
-  // EMA 50
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     emaPrior: form.ema50Prior,
@@ -230,7 +235,6 @@ export default function RejectionBlockPage() {
       })
     : null;
 
-  // Conditions above/below
   const conditions = useMemo(() => {
     if (!activeRb || !negotiation) return { above: [], below: [] };
     return checkConditions({
@@ -245,6 +249,37 @@ export default function RejectionBlockPage() {
     ? conditionSummary(conditions, negotiation.verdict)
     : null;
 
+  const flipped = useMemo(
+    () => detectAllRbsFlipped({ rankedRbs, closePrice: form.closePrice }),
+    [rankedRbs, form.closePrice]
+  );
+  const flippedInfo = allFlippedInfo(flipped);
+
+  // Next opportunity (reversal after trade)
+  const reversal = useMemo(() => {
+    if (!negotiation || negotiation.verdict === "WAIT") return null;
+    const list =
+      negotiation.verdict === "SELL" ? conditions.below : conditions.above;
+    if (!list || list.length === 0) return null;
+    return detectReversal({
+      verdict: negotiation.verdict,
+      conditionRbs: list,
+      closePrice: form.closePrice,
+      priorClose: form.priorClose,
+    });
+  }, [negotiation, conditions, form.closePrice, form.priorClose]);
+
+  const nextTrade = reversal
+    ? computeNextOpportunityTrade({
+        newRb: reversal.newRb,
+        newDirection: reversal.newDirection,
+        sweepLevel: reversal.sweepLevel,
+        accountSize: profile?.account_size || 0,
+        riskPercent: profile?.risk_percent || 1,
+        atr: parseFloat(form.atrCurrent) || 0,
+      })
+    : null;
+
   const atr = atrFilter(form.atrCurrent, form.atrPrior);
 
   const trade =
@@ -256,7 +291,7 @@ export default function RejectionBlockPage() {
           verdict: negotiation.verdict,
           accountSize: profile?.account_size || 0,
           riskPercent: profile?.risk_percent || 1,
-          atr: parseFloat(form.atr) || parseFloat(form.atrCurrent) || 0,
+          atr: parseFloat(form.atrCurrent) || 0,
         })
       : null;
 
@@ -340,6 +375,7 @@ export default function RejectionBlockPage() {
       rb_ce: negotiation.ce,
       rb_position: activeRbPosition,
       close_price: form.closePrice ? parseFloat(form.closePrice) : null,
+      prior_close: form.priorClose ? parseFloat(form.priorClose) : null,
       premium_discount: negotiation.side,
       verdict: negotiation.verdict,
       strength: negotiation.strength,
@@ -360,38 +396,41 @@ export default function RejectionBlockPage() {
       ema50_aligned: alignment?.key === "aligned",
       conditions_above: conditions.above,
       conditions_below: conditions.below,
+      all_rbs_flipped: flipped.allFlipped,
+      all_rbs_flipped_direction: flipped.direction,
+      reversal_detected: !!reversal,
+      reversal_direction: reversal?.newDirection || null,
+      reversal_rb_high: reversal?.newRb?.high || null,
+      reversal_rb_low: reversal?.newRb?.low || null,
+      reversal_rb_ce: reversal?.newRb?.ce || null,
+      reversal_sweep_level: reversal?.sweepLevel || null,
+      reversal_entry: nextTrade?.entry || null,
+      reversal_sl: nextTrade?.sl || null,
+      reversal_tp: nextTrade?.tp || null,
       notes: form.notes,
     };
 
-    let detailRow;
     if (isEdit && existingDetailId) {
-      const { data, error: updErr } = await supabase
+      const { error: updErr } = await supabase
         .from("rejection_block_setups")
         .update(detailPayload)
-        .eq("id", existingDetailId)
-        .select()
-        .single();
+        .eq("id", existingDetailId);
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
         return;
       }
-      detailRow = data;
     } else {
-      const { data, error: insErr } = await supabase
+      const { error: insErr } = await supabase
         .from("rejection_block_setups")
-        .insert(detailPayload)
-        .select()
-        .single();
+        .insert(detailPayload);
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
         return;
       }
-      detailRow = data;
     }
 
-    // Save all RBs (delete old first if editing)
     if (isEdit) {
       await supabase
         .from("rejection_block_rbs")
@@ -433,6 +472,21 @@ export default function RejectionBlockPage() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => router.push(`/setups/${setup.id}`), 800);
+  }
+
+  function handleSaveAsNewSetup() {
+    if (!nextTrade || !reversal) return;
+    // Navigate back to the same page in "new draft" mode with a hint
+    // that a reversal candidate was detected
+    const params = new URLSearchParams();
+    params.set("prefill_pair", form.pair);
+    params.set("prefill_timeframe", form.timeframe);
+    params.set("prefill_close", form.closePrice || "");
+    params.set("prefill_prior", form.priorClose || "");
+    params.set("prefill_ema50", form.ema50Price || "");
+    params.set("prefill_ema50_prior", form.ema50Prior || "");
+    params.set("prefill_atr", form.atrCurrent || "");
+    router.push(`/rejection-block?${params.toString()}`);
   }
 
   if (loadingEdit) {
@@ -550,7 +604,9 @@ export default function RejectionBlockPage() {
 
         {/* EMA 50 */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">EMA 50 Filter</h2>
+          <h2 className="text-sm font-semibold text-blue-400">
+            EMA 50 Filter
+          </h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -605,7 +661,7 @@ export default function RejectionBlockPage() {
           )}
         </div>
 
-        {/* Rejection Blocks (Multiple) */}
+        {/* Rejection Blocks */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -712,66 +768,41 @@ export default function RejectionBlockPage() {
               );
             })}
           </div>
-
-          {rankedRbs.length > 0 && (
-            <div className="space-y-1 pt-2 border-t border-gray-800">
-              <p className="text-xs text-gray-500 mb-1">Ranked list</p>
-              {rankedRbs.map((rb) => {
-                const info = rbRankInfo(rb.rank);
-                const pos = detectRbVsZone({
-                  zoneHigh: form.zoneHigh,
-                  zoneLow: form.zoneLow,
-                  rbHigh: rb.high,
-                  rbLow: rb.low,
-                });
-                const posInfo = pos ? rbVsZoneInfo(pos) : null;
-                const ce = computeCe(rb.high, rb.low);
-                return (
-                  <div
-                    key={rb.id}
-                    className="flex items-center justify-between text-xs"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`px-1.5 py-0.5 rounded border ${info.color}`}
-                      >
-                        {info.emoji} {info.label}
-                      </span>
-                      {posInfo && (
-                        <span
-                          className={`px-1.5 py-0.5 rounded border ${posInfo.color}`}
-                        >
-                          {posInfo.emoji} {posInfo.label}
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-gray-400 tabular-nums">
-                      {rb.low} – {rb.high} (CE {ce})
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
 
-        {/* Close + ATR */}
+        {/* Close + prior close + ATR */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             The Verdict &amp; Volatility
           </h2>
-          <div>
-            <label className="block text-xs mb-1 text-gray-400">
-              Close Price (the verdict)
-            </label>
-            <input
-              type="number"
-              step="any"
-              value={form.closePrice}
-              onChange={(e) => update("closePrice", e.target.value)}
-              placeholder="e.g. 209680"
-              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-            />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Prior Close
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.priorClose}
+                onChange={(e) => update("priorClose", e.target.value)}
+                placeholder="previous candle close"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Close Price (the verdict)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.closePrice}
+                onChange={(e) => update("closePrice", e.target.value)}
+                placeholder="e.g. 209680"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -854,78 +885,179 @@ export default function RejectionBlockPage() {
                   {strength.emoji} {strength.label}
                 </span>
               )}
+              {flippedInfo && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border font-bold ${flippedInfo.color}`}
+                >
+                  {flippedInfo.emoji} {flippedInfo.label}
+                </span>
+              )}
             </div>
             <p className="text-sm opacity-90">{verdict.description}</p>
           </div>
         )}
 
         {/* Conditions Above/Below */}
-        {negotiation &&
-          negotiation.verdict !== "WAIT" &&
-          condSummary && (
-            <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <h2 className="text-sm font-semibold text-blue-400">
-                  Conditions{" "}
-                  {negotiation.verdict === "BUY" ? "Above" : "Below"}
-                </h2>
+        {negotiation && negotiation.verdict !== "WAIT" && condSummary && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 className="text-sm font-semibold text-blue-400">
+                Conditions{" "}
+                {negotiation.verdict === "BUY" ? "Above" : "Below"}
+              </h2>
+              <div className="flex items-center gap-2">
+                {flippedInfo && (
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full border font-bold ${flippedInfo.color}`}
+                  >
+                    {flippedInfo.emoji} {flippedInfo.label}
+                  </span>
+                )}
                 <span
                   className={`text-xs px-2 py-1 rounded-full border font-semibold ${condSummary.color}`}
                 >
                   {condSummary.emoji} {condSummary.label}
                 </span>
               </div>
-
-              <p className="text-xs text-gray-500">
-                {condSummary.description}
-              </p>
-
-              {(() => {
-                const list =
-                  negotiation.verdict === "BUY"
-                    ? conditions.above
-                    : conditions.below;
-
-                if (list.length === 0) {
-                  return (
-                    <p className="text-xs text-gray-400 py-2">
-                      No adjacent RBs in the path — clear runway.
-                    </p>
-                  );
-                }
-
-                return (
-                  <div className="space-y-2">
-                    {list.map((c, i) => (
-                      <div
-                        key={c.id || i}
-                        className={`p-3 rounded-lg border ${c.tier.color}`}
-                      >
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <span className="text-sm font-bold">
-                            {c.tier.emoji} {c.tier.label}
-                          </span>
-                          <span className="text-xs tabular-nums opacity-90">
-                            {c.low} – {c.high} (CE {c.ce})
-                          </span>
-                        </div>
-                        <p className="text-xs opacity-80 mt-1">
-                          {c.tier.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
             </div>
-          )}
+
+            <p className="text-xs text-gray-500">
+              {flippedInfo
+                ? flippedInfo.description
+                : condSummary.description}
+            </p>
+
+            {(() => {
+              const list =
+                negotiation.verdict === "BUY"
+                  ? conditions.above
+                  : conditions.below;
+
+              if (list.length === 0) {
+                return (
+                  <p className="text-xs text-gray-400 py-2">
+                    No adjacent RBs in the path — clear runway.
+                  </p>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  {list.map((c, i) => (
+                    <div
+                      key={c.id || i}
+                      className={`p-3 rounded-lg border ${c.tier.color}`}
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-sm font-bold">
+                          {c.tier.emoji} {c.tier.label}
+                        </span>
+                        <span className="text-xs tabular-nums opacity-90">
+                          {c.low} – {c.high} (CE {c.ce})
+                        </span>
+                      </div>
+                      <p className="text-xs opacity-80 mt-1">
+                        {c.tier.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Next Opportunity — Reversal after trade */}
+        {reversal && nextTrade && (
+          <div className="p-4 rounded-lg bg-gray-900 border-2 border-purple-700 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 className="text-sm font-bold text-purple-300">
+                🔄 Next Opportunity — Reversal
+              </h2>
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-bold ${
+                  nextTrade.direction === "BUY"
+                    ? "bg-green-900/40 text-green-300"
+                    : "bg-red-900/40 text-red-300"
+                }`}
+              >
+                {nextTrade.direction}
+              </span>
+            </div>
+
+            <p className="text-xs text-purple-200">{reversal.reason}</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-gray-500">New RB</p>
+                <p className="font-bold tabular-nums">
+                  {nextTrade.newRbLow} – {nextTrade.newRbHigh}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">New CE (Entry)</p>
+                <p className="font-bold tabular-nums text-yellow-400">
+                  {formatPrice(nextTrade.entry)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Stop Loss</p>
+                <p className="font-bold tabular-nums text-red-400">
+                  {formatPrice(nextTrade.sl)}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  sweep {formatPrice(reversal.sweepLevel)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Take Profit (2R)</p>
+                <p className="font-bold tabular-nums text-green-400">
+                  {formatPrice(nextTrade.tp)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Risk</p>
+                <p className="font-bold tabular-nums">
+                  {nextTrade.risk.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Lot Size</p>
+                <p className="font-bold tabular-nums">
+                  {nextTrade.lotSize.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Risk ($)</p>
+                <p className="font-bold tabular-nums text-yellow-400">
+                  ${nextTrade.riskAmount.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">RR</p>
+                <p className="font-bold tabular-nums">1:2</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveAsNewSetup}
+              className="w-full py-3 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
+            >
+              🔄 Save as New Setup
+            </button>
+            <p className="text-xs text-gray-500 text-center">
+              Suggestion only — you confirm before any new setup is created.
+            </p>
+          </div>
+        )}
 
         {/* Trade Card */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-blue-800 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-blue-400">
-                Trade Parameters
+                Trade Parameters (active RB)
               </h2>
               <div className="flex items-center gap-2">
                 {alignment && (
@@ -1075,11 +1207,17 @@ export default function RejectionBlockPage() {
               <strong>Active RB</strong> — the one price is approaching
             </li>
             <li>
-              <strong>EMA 50</strong> — rising + price above = BUY aligned;
-              falling + price below = SELL aligned
+              <strong>EMA 50</strong> — rising + price above = BUY aligned
             </li>
             <li>
               <strong>Conditions panel</strong> — RBs in the trade's path
+            </li>
+            <li>
+              <strong>All flipped</strong> — close has cleared every listed RB
+            </li>
+            <li>
+              <strong>Next Opportunity</strong> — reversal after a swept
+              condition RB
             </li>
             <li>
               <strong>Entry</strong> — CE of the active RB (50%)

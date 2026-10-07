@@ -30,11 +30,11 @@ export default function SetupDetailPage() {
   const id = params?.id;
 
   const [setup, setSetup] = useState(null);
+  const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Trade notes — local editable state
   const [tradeNotes, setTradeNotes] = useState("");
   const [notesSaved, setNotesSaved] = useState(false);
   const [notesDirty, setNotesDirty] = useState(false);
@@ -50,10 +50,22 @@ export default function SetupDetailPage() {
 
       if (error) {
         setError(error.message);
-      } else {
-        setSetup(data);
-        setTradeNotes(data.trade_notes || "");
+        setLoading(false);
+        return;
       }
+      setSetup(data);
+      setTradeNotes(data.trade_notes || "");
+
+      // Fetch the matching detail record for rejection_block
+      if (data.setup_type === "rejection_block") {
+        const { data: det } = await supabase
+          .from("rejection_block_setups")
+          .select("*")
+          .eq("setup_id", id)
+          .single();
+        setDetail(det);
+      }
+
       setLoading(false);
     }
     if (id) load();
@@ -70,11 +82,8 @@ export default function SetupDetailPage() {
       .select()
       .single();
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setSetup(data);
-    }
+    if (error) setError(error.message);
+    else setSetup(data);
     setBusy(false);
   }
 
@@ -103,7 +112,6 @@ export default function SetupDetailPage() {
     setBusy(true);
     setError("");
     setNotesSaved(false);
-
     const { data, error } = await supabase
       .from("setups")
       .update({ trade_notes: tradeNotes })
@@ -111,9 +119,8 @@ export default function SetupDetailPage() {
       .select()
       .single();
 
-    if (error) {
-      setError(error.message);
-    } else {
+    if (error) setError(error.message);
+    else {
       setSetup(data);
       setNotesSaved(true);
       setNotesDirty(false);
@@ -248,20 +255,108 @@ export default function SetupDetailPage() {
                 </p>
               </div>
             )}
-            {setup.checklist_score !== null &&
-              setup.checklist_score !== undefined && (
-                <div>
-                  <p className="text-xs text-gray-500">Checklist</p>
-                  <p className="font-bold">
-                    {setup.checklist_score}/10{" "}
-                    {setup.checklist_passed ? "✅" : "⚠️"}
-                  </p>
-                </div>
-              )}
           </div>
         </div>
 
-        {/* Setup Notes (original, read-only) */}
+        {/* All RBs flipped banner */}
+        {detail?.all_rbs_flipped && detail?.all_rbs_flipped_direction && (
+          <div
+            className={`p-4 rounded-lg border-2 ${
+              detail.all_rbs_flipped_direction === "up"
+                ? "bg-green-950/40 border-green-600"
+                : "bg-red-950/40 border-red-600"
+            }`}
+          >
+            <p className="font-bold text-lg">
+              🔥 All RBs flipped{" "}
+              {detail.all_rbs_flipped_direction === "up" ? "↑" : "↓"}
+            </p>
+            <p className="text-sm opacity-90 mt-1">
+              Every listed RB was flipped at the time of this setup — maximum
+              continuation in that direction.
+            </p>
+          </div>
+        )}
+
+        {/* Reversal detected banner */}
+        {detail?.reversal_detected && detail?.reversal_direction && (
+          <div className="p-4 rounded-lg bg-purple-950/30 border-2 border-purple-700 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="font-bold text-purple-300">
+                🔄 Reversal Detected
+              </p>
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-bold ${
+                  detail.reversal_direction === "BUY"
+                    ? "bg-green-900/40 text-green-300"
+                    : "bg-red-900/40 text-red-300"
+                }`}
+              >
+                {detail.reversal_direction}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+              {detail.reversal_rb_low && detail.reversal_rb_high && (
+                <div>
+                  <p className="text-xs text-gray-500">New RB</p>
+                  <p className="font-bold tabular-nums">
+                    {detail.reversal_rb_low} – {detail.reversal_rb_high}
+                  </p>
+                </div>
+              )}
+              {detail.reversal_rb_ce && (
+                <div>
+                  <p className="text-xs text-gray-500">New CE</p>
+                  <p className="font-bold tabular-nums text-yellow-400">
+                    {formatPrice(detail.reversal_rb_ce)}
+                  </p>
+                </div>
+              )}
+              {detail.reversal_sweep_level && (
+                <div>
+                  <p className="text-xs text-gray-500">Sweep Level</p>
+                  <p className="font-bold tabular-nums text-red-300">
+                    {formatPrice(detail.reversal_sweep_level)}
+                  </p>
+                </div>
+              )}
+              {detail.reversal_entry && (
+                <div>
+                  <p className="text-xs text-gray-500">Suggested Entry</p>
+                  <p className="font-bold tabular-nums text-yellow-400">
+                    {formatPrice(detail.reversal_entry)}
+                  </p>
+                </div>
+              )}
+              {detail.reversal_sl && (
+                <div>
+                  <p className="text-xs text-gray-500">Suggested SL</p>
+                  <p className="font-bold tabular-nums text-red-400">
+                    {formatPrice(detail.reversal_sl)}
+                  </p>
+                </div>
+              )}
+              {detail.reversal_tp && (
+                <div>
+                  <p className="text-xs text-gray-500">Suggested TP</p>
+                  <p className="font-bold tabular-nums text-green-400">
+                    {formatPrice(detail.reversal_tp)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <Link
+              href={`/rejection-block`}
+              className="block w-full text-center py-3 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
+            >
+              Open Rejection Block page to take this setup
+            </Link>
+          </div>
+        )}
+
+        {/* Setup Notes */}
         {setup.notes && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
             <h2 className="text-sm font-semibold text-blue-400 mb-2">
@@ -335,7 +430,7 @@ export default function SetupDetailPage() {
           )}
         </div>
 
-        {/* TRADE NOTES — always visible */}
+        {/* Trade Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-blue-800/60 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -343,7 +438,7 @@ export default function SetupDetailPage() {
                 📝 Trade Notes
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Per-setup journal — what you observed, learned, or want to add
+                Per-setup journal — observations, lessons, follow-ups
               </p>
             </div>
             {notesDirty && !notesSaved && (
@@ -366,7 +461,7 @@ export default function SetupDetailPage() {
               setNotesSaved(false);
             }}
             rows={6}
-            placeholder="Write whatever you observed on this trade — entries, exits, emotion, what worked, what didn't, what to add..."
+            placeholder="Write whatever you observed on this trade..."
             className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none resize-none text-sm"
           />
 

@@ -8,13 +8,11 @@
 // After the orders are filled, the Rejection Block decides.
 //
 // MULTIPLE RBs
-// ------------------------------------------------------------
-// Multiple RBs can sit inside, above, or below the zone.
-// RBs are ranked by freshness (current → previous → oldest).
-// The "active RB" is the one price is approaching.
+//   Multiple RBs can sit inside, above, or below the zone.
+//   RBs are ranked by freshness (current → previous → oldest).
+//   The "active RB" is the one price is approaching.
 //
 // VERDICT (RB is the dealing range)
-// ------------------------------------------------------------
 //   Close ABOVE RB high → BUY  (strong) — RB broken ↑
 //   Close BELOW RB low  → SELL (strong) — RB broken ↓
 //   Close in PREMIUM (above CE, inside RB) → SELL (normal)
@@ -22,25 +20,24 @@
 //   Close = CE → WAIT
 //
 // EMA 50 FILTER
-// ------------------------------------------------------------
 //   EMA 50 value + prior → direction (rising / falling / flat)
 //   Close vs EMA 50 → position (above / below / at)
-//   BUY aligned if price above rising EMA 50
-//   SELL aligned if price below falling EMA 50
 //
 // CONDITIONS ABOVE & BELOW (direction-aware)
-// ------------------------------------------------------------
-//   BUY  → check RBs ABOVE the active RB
-//     close > high  → ✅ Confirmed (broke through upward)
-//     close >= ce   → ⚪ Caution
-//     close >= low  → ⚪ Caution
-//     close < low   → ⚠️ Blocked (wall above)
+//   BUY  → RBs above:  close > high = confirmed
+//   SELL → RBs below:  close < low  = confirmed
 //
-//   SELL → check RBs BELOW the active RB
-//     close < low   → ✅ Confirmed (broke through downward)
-//     close <= ce   → ⚪ Caution
-//     close <= high → ⚪ Caution
-//     close > high  → ⚠️ Blocked (wall below)
+// ALL RBs FLIPPED
+//   The current close tells us everything.
+//   For each listed RB:
+//     close > high → flipped up
+//     close < low  → flipped down
+//     else         → not flipped
+//   If EVERY listed RB is flipped the SAME direction → "All flipped"
+//
+// NEXT OPPORTUNITY (Reversal after trade)
+//   When price sweeps a condition RB and closes back → reversal
+//   candidate. Suggestion only — user confirms.
 //
 // ENTRY = CE of the active RB.
 // SL    = beyond the RB wick extreme + ATR buffer.
@@ -447,19 +444,7 @@ export function emaAlignment({ direction, position, verdict }) {
 }
 
 // ============================================================
-// CONDITIONS ABOVE & BELOW  — CORRECTED (direction-aware)
-// ============================================================
-// BUY  → examine RBs ABOVE the active RB
-//   close > high  → ✅ Confirmed (broke up through it)
-//   close >= ce   → ⚪ Caution
-//   close >= low  → ⚪ Caution
-//   close < low   → ⚠️ Blocked (wall above, target not reached)
-//
-// SELL → examine RBs BELOW the active RB
-//   close < low   → ✅ Confirmed (broke down through it)
-//   close <= ce   → ⚪ Caution
-//   close <= high → ⚪ Caution
-//   close > high  → ⚠️ Blocked (wall below, target not reached)
+// CONDITIONS ABOVE & BELOW (direction-aware)
 // ============================================================
 export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
   if (!activeRb || !verdict || verdict === "WAIT") {
@@ -487,17 +472,14 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
 
     const ce = Math.round(((high + low) / 2) * 100) / 100;
 
-    // Decide which bucket this RB belongs to first
     let bucket = null;
     if (low > activeHigh) bucket = "above";
     else if (high < activeLow) bucket = "below";
-    else continue; // overlapping active RB — skip
+    else continue;
 
-    // Direction-aware tier logic
     let tier;
 
     if (bucket === "above") {
-      // Above RB: what matters is whether close has broken through upward
       if (close > high) {
         tier = {
           key: "confirmed",
@@ -533,7 +515,6 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
         };
       }
     } else {
-      // Below RB: what matters is whether close has broken through downward
       if (close < low) {
         tier = {
           key: "confirmed",
@@ -576,19 +557,14 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
     else below.push(entry);
   }
 
-  // Sort: above ascending by low (nearest first); below descending by high (nearest first)
   above.sort((a, b) => a.low - b.low);
   below.sort((a, b) => b.high - a.high);
 
-  // Only return the direction-relevant list
   if (verdict === "BUY") return { above, below: [] };
   if (verdict === "SELL") return { above: [], below };
   return { above, below };
 }
 
-// ============================================================
-// CONDITION SUMMARY — CORRECTED (direction-aware wording)
-// ============================================================
 export function conditionSummary(conditions, verdict) {
   const list = verdict === "BUY" ? conditions.above : conditions.below;
   const where = verdict === "BUY" ? "above" : "below";
@@ -642,6 +618,227 @@ export function conditionSummary(conditions, verdict) {
     emoji: "⚪",
     color: "bg-blue-900/40 text-blue-300 border-blue-700",
     description: "Some RBs confirmed, some still ahead or in progress.",
+  };
+}
+
+// ============================================================
+// ALL RBs FLIPPED
+// ============================================================
+// The current close tells us everything.
+// For each listed RB:
+//   close > high → flipped up
+//   close < low  → flipped down
+//   else         → not flipped
+// If EVERY listed RB is flipped the same direction → allFlipped = true
+// ============================================================
+export function detectAllRbsFlipped({ rankedRbs, closePrice }) {
+  if (!Array.isArray(rankedRbs) || rankedRbs.length === 0) {
+    return { allFlipped: false, direction: null, count: 0, flippedCount: 0 };
+  }
+
+  const close = parseFloat(closePrice);
+  if (isNaN(close)) {
+    return { allFlipped: false, direction: null, count: 0, flippedCount: 0 };
+  }
+
+  let upCount = 0;
+  let downCount = 0;
+  let notFlipped = 0;
+
+  for (const rb of rankedRbs) {
+    const high = parseFloat(rb.high);
+    const low = parseFloat(rb.low);
+    if (isNaN(high) || isNaN(low)) {
+      notFlipped++;
+      continue;
+    }
+
+    if (close > high) upCount++;
+    else if (close < low) downCount++;
+    else notFlipped++;
+  }
+
+  const total = rankedRbs.length;
+  const allUp = upCount === total;
+  const allDown = downCount === total;
+
+  return {
+    allFlipped: allUp || allDown,
+    direction: allUp ? "up" : allDown ? "down" : null,
+    count: total,
+    flippedCount: upCount + downCount,
+    upCount,
+    downCount,
+    notFlipped,
+  };
+}
+
+export function allFlippedInfo(flipped) {
+  if (!flipped || !flipped.allFlipped) return null;
+
+  if (flipped.direction === "up") {
+    return {
+      key: "up",
+      label: `All RBs flipped ↑`,
+      emoji: "🔥",
+      color: "bg-green-900/50 text-green-200 border-green-600",
+      description: `Every listed RB (${flipped.count}) is flipped up — maximum bullish continuation.`,
+    };
+  }
+
+  return {
+    key: "down",
+    label: `All RBs flipped ↓`,
+    emoji: "🔥",
+    color: "bg-red-900/50 text-red-200 border-red-600",
+    description: `Every listed RB (${flipped.count}) is flipped down — maximum bearish continuation.`,
+  };
+}
+
+// ============================================================
+// NEXT OPPORTUNITY — Reversal after trade
+// ============================================================
+// Trigger:
+//   SELL → price closed below a condition RB's low, then closed back above it
+//   BUY  → price closed above a condition RB's high, then closed back below it
+//
+// Result: the condition RB becomes the new active RB, direction flips.
+// Suggestion only — user confirms.
+// ============================================================
+export function detectReversal({
+  verdict,
+  conditionRbs,
+  closePrice,
+  priorClose,
+}) {
+  if (!verdict || verdict === "WAIT") return null;
+  if (!Array.isArray(conditionRbs) || conditionRbs.length === 0) return null;
+
+  const close = parseFloat(closePrice);
+  const prior = parseFloat(priorClose);
+  if (isNaN(close)) return null;
+
+  // SELL → look for reversal to BUY (sweep below low, close back above)
+  if (verdict === "SELL") {
+    for (const rb of conditionRbs) {
+      const low = parseFloat(rb.low);
+      if (isNaN(low)) continue;
+
+      // Prior close was below the low (swept), current close back above
+      const swept = !isNaN(prior) && prior < low;
+      const reclaimed = close > low;
+
+      if (swept && reclaimed) {
+        return {
+          detected: true,
+          newDirection: "BUY",
+          newRb: { high: rb.high, low: rb.low, ce: rb.ce },
+          sweepLevel: low,
+          reason:
+            "Price swept below the condition RB low and closed back above — buyers rejected the sweep. BUY reversal candidate.",
+        };
+      }
+
+      // Fallback: current close already reclaimed the low without prior
+      if (!isNaN(close) && close > low && close < rb.high) {
+        return {
+          detected: true,
+          newDirection: "BUY",
+          newRb: { high: rb.high, low: rb.low, ce: rb.ce },
+          sweepLevel: low,
+          reason:
+            "Price closed back inside the condition RB above its low — buyers rejecting lower prices. BUY reversal candidate.",
+        };
+      }
+    }
+  }
+
+  // BUY → look for reversal to SELL (sweep above high, close back below)
+  if (verdict === "BUY") {
+    for (const rb of conditionRbs) {
+      const high = parseFloat(rb.high);
+      if (isNaN(high)) continue;
+
+      const swept = !isNaN(prior) && prior > high;
+      const reclaimed = close < high;
+
+      if (swept && reclaimed) {
+        return {
+          detected: true,
+          newDirection: "SELL",
+          newRb: { high: rb.high, low: rb.low, ce: rb.ce },
+          sweepLevel: high,
+          reason:
+            "Price swept above the condition RB high and closed back below — sellers rejected the sweep. SELL reversal candidate.",
+        };
+      }
+
+      if (!isNaN(close) && close < high && close > rb.low) {
+        return {
+          detected: true,
+          newDirection: "SELL",
+          newRb: { high: rb.high, low: rb.low, ce: rb.ce },
+          sweepLevel: high,
+          reason:
+            "Price closed back inside the condition RB below its high — sellers rejecting higher prices. SELL reversal candidate.",
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+export function computeNextOpportunityTrade({
+  newRb,
+  newDirection,
+  sweepLevel,
+  accountSize = 0,
+  riskPercent = 1,
+  bufferMultiplier = 0.3,
+  atr = 0,
+}) {
+  if (!newRb || !newDirection) return null;
+  const high = parseFloat(newRb.high);
+  const low = parseFloat(newRb.low);
+  if (isNaN(high) || isNaN(low)) return null;
+  if (newDirection !== "BUY" && newDirection !== "SELL") return null;
+
+  const ce = Math.round(((high + low) / 2) * 100) / 100;
+  const isBull = newDirection === "BUY";
+
+  const entry = ce;
+
+  // SL beyond the sweep level + buffer
+  const sweep = parseFloat(sweepLevel);
+  const buffer = atr > 0 ? atr * bufferMultiplier : 0;
+  const sl = isBull
+    ? (isNaN(sweep) ? low : sweep) - buffer
+    : (isNaN(sweep) ? high : sweep) + buffer;
+
+  const risk = Math.abs(entry - sl);
+  const tp = isBull ? entry + risk * 2 : entry - risk * 2;
+
+  const riskAmount = (accountSize * riskPercent) / 100;
+  const lotSize =
+    risk > 0
+      ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
+      : 0;
+
+  return {
+    direction: newDirection,
+    entry,
+    sl,
+    tp,
+    risk,
+    reward: risk * 2,
+    rr: 2,
+    lotSize,
+    riskAmount,
+    ce,
+    sweepLevel: isNaN(sweep) ? null : sweep,
+    newRbHigh: high,
+    newRbLow: low,
   };
 }
 
