@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
+import { createTradeFromSetup } from "@/lib/journalEngine";
 import {
   computeUpperWickZone,
   computeLowerWickZone,
@@ -55,13 +56,10 @@ export default function LiquidityZonePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-
-  // Edit mode bookkeeping
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingZoneId, setExistingZoneId] = useState(null);
   const [existingZoneInfo, setExistingZoneInfo] = useState(null);
 
-  // Load profile + (if editing) existing records
   useEffect(() => {
     async function load() {
       const {
@@ -78,7 +76,6 @@ export default function LiquidityZonePage() {
 
       if (!isEdit) return;
 
-      // Load setup
       setLoadingEdit(true);
       const { data: setupData, error: setupErr } = await supabase
         .from("setups")
@@ -92,21 +89,18 @@ export default function LiquidityZonePage() {
         return;
       }
 
-      // Load zone detail
       const { data: zoneData } = await supabase
         .from("liquidity_zones")
         .select("*")
         .eq("setup_id", editId)
         .single();
 
-      // Load RBs
       const { data: rbData } = await supabase
         .from("liquidity_zone_rbs")
         .select("*")
         .eq("zone_id", zoneData?.id)
         .order("created_at", { ascending: false });
 
-      // Pre-fill form
       setForm((f) => ({
         ...f,
         pair: setupData.pair || f.pair,
@@ -118,18 +112,17 @@ export default function LiquidityZonePage() {
         notes: setupData.notes || "",
       }));
 
-      // Pre-fill RBs (newest first = highest created_at)
       if (rbData && rbData.length > 0) {
         const restoredRbs = rbData.map((rb, idx) => ({
           id: Math.random().toString(36).slice(2),
           high: rb.rb_high?.toString() || "",
           low: rb.rb_low?.toString() || "",
-          addedAt: rb.created_at || new Date(Date.now() - idx * 1000).toISOString(),
+          addedAt:
+            rb.created_at || new Date(Date.now() - idx * 1000).toISOString(),
         }));
         setRbs(restoredRbs);
       }
 
-      // Restore manual answers if saved
       if (zoneData?.checklist_answers) {
         const saved = zoneData.checklist_answers;
         const manual = {};
@@ -250,7 +243,6 @@ export default function LiquidityZonePage() {
     }));
   }
 
-  // In edit mode, RBs alone are enough to compute (no candles needed)
   const canSave = isEdit
     ? !!activeRb && !!negotiation
     : !!zone && !!activeRb && !!negotiation;
@@ -293,16 +285,13 @@ export default function LiquidityZonePage() {
     };
 
     let setup;
-
     if (isEdit) {
-      // UPDATE setups
       const { data, error: updErr } = await supabase
         .from("setups")
         .update(setupPayload)
         .eq("id", editId)
         .select()
         .single();
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -310,13 +299,11 @@ export default function LiquidityZonePage() {
       }
       setup = data;
     } else {
-      // INSERT setups
       const { data, error: insErr } = await supabase
         .from("setups")
         .insert(setupPayload)
         .select()
         .single();
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
@@ -358,7 +345,6 @@ export default function LiquidityZonePage() {
         .eq("id", existingZoneId)
         .select()
         .single();
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -366,7 +352,6 @@ export default function LiquidityZonePage() {
       }
       zoneRow = data;
 
-      // Delete old RBs and re-insert (simplest reliable approach)
       await supabase
         .from("liquidity_zone_rbs")
         .delete()
@@ -377,7 +362,6 @@ export default function LiquidityZonePage() {
         .insert(zonePayload)
         .select()
         .single();
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
@@ -386,7 +370,6 @@ export default function LiquidityZonePage() {
       zoneRow = data;
     }
 
-    // Insert RBs
     const rbRows = rankedRbs.map((rb) => ({
       user_id: user.id,
       zone_id: zoneRow.id,
@@ -406,6 +389,27 @@ export default function LiquidityZonePage() {
       setError(rbError.message);
       setSaving(false);
       return;
+    }
+
+    // Auto-create a linked trade in the journal
+    if (!isEdit) {
+      await createTradeFromSetup({
+        supabase,
+        userId: user.id,
+        setupId: setup.id,
+        pair: form.pair,
+        direction: negotiation.verdict === "BUY" ? "buy" : "sell",
+        entry: negotiation.ce,
+        sl: null,
+        tp: null,
+        lotSize: null,
+        riskPercent: profile?.risk_percent || 1,
+        rr: 2,
+        extra: {
+          ce_price: negotiation.ce,
+          used_ce_entry: true,
+        },
+      });
     }
 
     setSaving(false);
@@ -428,16 +432,15 @@ export default function LiquidityZonePage() {
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
           <h1 className="text-2xl font-bold">
-            {isEdit ? "Edit Liquidity Zone" : "Liquidity Zone Negotiation"}
+            {isEdit
+              ? "Edit Liquidity Zone"
+              : "Liquidity Zone Negotiation"}
           </h1>
           <p className="text-gray-400 text-sm">
-            {isEdit
-              ? "Update the saved setup and re-save"
-              : "A stack of rejected wicks — multiple RBs, one CE, one verdict"}
+            A stack of rejected wicks — multiple RBs, one CE, one verdict
           </p>
         </div>
 
-        {/* In edit mode: show the stored zone info as read-only reference */}
         {isEdit && existingZoneInfo && (
           <div className="p-3 rounded-lg bg-blue-950/20 border border-blue-900">
             <p className="text-xs text-blue-300 font-semibold mb-1">
@@ -463,10 +466,6 @@ export default function LiquidityZonePage() {
                 </p>
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Candles aren't stored — re-enter them below if you want to
-              rebuild the zone.
-            </p>
           </div>
         )}
 
@@ -754,7 +753,9 @@ export default function LiquidityZonePage() {
 
         {/* Price + ATR */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">Negotiation</h2>
+          <h2 className="text-sm font-semibold text-blue-400">
+            Negotiation
+          </h2>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">

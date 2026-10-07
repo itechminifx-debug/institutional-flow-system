@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
+import { createTradeFromSetup } from "@/lib/journalEngine";
 import { verdictInfo } from "@/lib/rbVerdict";
 import {
   CONFIGURATIONS,
@@ -67,7 +68,6 @@ export default function NegotiationPage() {
 
       if (!isEdit) return;
 
-      // Load existing setup + negotiation record
       setLoadingEdit(true);
       const { data: setupData, error: setupErr } = await supabase
         .from("setups")
@@ -87,7 +87,6 @@ export default function NegotiationPage() {
         .eq("setup_id", editId)
         .single();
 
-      // Pre-fill from detail record (falls back to setup)
       setForm((f) => ({
         ...f,
         pair: setupData.pair || f.pair,
@@ -248,7 +247,6 @@ export default function NegotiationPage() {
         .eq("id", editId)
         .select()
         .single();
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -261,7 +259,6 @@ export default function NegotiationPage() {
         .insert(setupPayload)
         .select()
         .single();
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
@@ -300,7 +297,6 @@ export default function NegotiationPage() {
         .from("negotiations")
         .update(negPayload)
         .eq("id", existingNegId);
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -310,12 +306,40 @@ export default function NegotiationPage() {
       const { error: insErr } = await supabase
         .from("negotiations")
         .insert(negPayload);
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
         return;
       }
+    }
+
+    // Auto-create a linked trade in the journal
+    if (!isEdit) {
+      await createTradeFromSetup({
+        supabase,
+        userId: user.id,
+        setupId: setup.id,
+        pair: form.pair,
+        direction:
+          battle.state === "bullish_confirmed"
+            ? "buy"
+            : battle.state === "bearish_confirmed"
+            ? "sell"
+            : direction === "bullish"
+            ? "buy"
+            : "sell",
+        entry: trade?.entry,
+        sl: trade?.sl,
+        tp: trade?.tp,
+        lotSize: trade?.lotSize,
+        riskPercent: profile?.risk_percent || 1,
+        rr: 2,
+        extra: {
+          ce_price: setup.ce_price,
+          used_ce_entry: true,
+          rb_verdict: battle.state,
+        },
+      });
     }
 
     setSaving(false);
@@ -584,9 +608,7 @@ export default function NegotiationPage() {
 
                 <div
                   className="absolute left-0 right-0 h-0.5 bg-red-500 z-10"
-                  style={{
-                    top: "95%",
-                  }}
+                  style={{ top: "95%" }}
                 >
                   <span className="absolute right-2 top-1 text-xs text-red-400 font-bold">
                     Bearish Target {formatPrice(battle.bearishTarget)}

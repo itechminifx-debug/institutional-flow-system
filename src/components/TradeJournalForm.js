@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import ScreenshotUpload from "@/components/ScreenshotUpload";
+import { syncTradeOutcome, journalPips } from "@/lib/journalEngine";
 
 const EMOTIONS = [
   "Calm",
@@ -34,6 +35,13 @@ export default function TradeJournalForm({ trade }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const pips = journalPips({
+    entry: trade.entry_price,
+    sl: trade.stop_loss,
+    tp: trade.take_profit,
+    pipSize: 0.01,
+  });
 
   async function saveJournal() {
     setError("");
@@ -84,34 +92,38 @@ export default function TradeJournalForm({ trade }) {
       })
       .eq("id", trade.id);
 
-    setLoading(false);
-
     if (updateError) {
       setError(updateError.message);
+      setLoading(false);
       return;
     }
 
+    // Sync outcome back to setup + visit
+    await syncTradeOutcome({ supabase, tradeId: trade.id });
+
+    setLoading(false);
     router.push("/journal");
     router.refresh();
   }
 
   const isOpen = trade.status === "open";
-  const isClosed = !isOpen;
 
   return (
     <div className="space-y-6">
       {/* Trade summary */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
         <div className="flex items-center gap-2 mb-3">
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
-              trade.direction === "buy"
-                ? "bg-green-900/40 text-green-300"
-                : "bg-red-900/40 text-red-300"
-            }`}
-          >
-            {trade.direction}
-          </span>
+          {trade.direction && (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full ${
+                trade.direction === "buy"
+                  ? "bg-green-900/40 text-green-300"
+                  : "bg-red-900/40 text-red-300"
+              }`}
+            >
+              {trade.direction}
+            </span>
+          )}
           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-300">
             {trade.status}
           </span>
@@ -144,18 +156,49 @@ export default function TradeJournalForm({ trade }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
-          <div>
-            <p className="text-gray-500 text-xs">Risk %</p>
-            <p className="text-white">{trade.risk_percent ?? "—"}%</p>
+        {pips && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-sm pt-3 border-t border-gray-800">
+            <div>
+              <p className="text-gray-500 text-xs">SL distance</p>
+              <p className="font-bold tabular-nums text-red-300">
+                {pips.slPips} pips
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs">TP distance</p>
+              <p className="font-bold tabular-nums text-green-300">
+                {pips.tpPips} pips
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs">Pip size</p>
+              <p className="font-bold tabular-nums text-gray-300">
+                {pips.pipSize}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs">RR Ratio</p>
+              <p className="font-bold text-white">
+                {trade.rr_ratio ? `1:${trade.rr_ratio}` : "—"}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-gray-500 text-xs">RR Ratio</p>
-            <p className="text-white">
-              {trade.rr_ratio ? `1:${trade.rr_ratio}` : "—"}
-            </p>
+        )}
+
+        {!pips && (
+          <div className="grid grid-cols-2 gap-3 mt-3 text-sm pt-3 border-t border-gray-800">
+            <div>
+              <p className="text-gray-500 text-xs">Risk %</p>
+              <p className="text-white">{trade.risk_percent ?? "—"}%</p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs">RR Ratio</p>
+              <p className="text-white">
+                {trade.rr_ratio ? `1:${trade.rr_ratio}` : "—"}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Trade management toggles */}
@@ -172,9 +215,7 @@ export default function TradeJournalForm({ trade }) {
               onChange={(e) => setPartialTaken(e.target.checked)}
               className="w-5 h-5 accent-yellow-500"
             />
-            <span className="text-sm">
-              Partial taken at 1:1 (Rule 12)
-            </span>
+            <span className="text-sm">Partial taken at 1:1 (Rule 12)</span>
           </label>
 
           <label className="flex items-center gap-3 cursor-pointer">
@@ -194,7 +235,7 @@ export default function TradeJournalForm({ trade }) {
       {/* Journal entry */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
         <h2 className="text-lg font-semibold text-blue-400">
-          Journal Entry (Step 15)
+          Journal Entry
         </h2>
 
         <div>
@@ -225,13 +266,15 @@ export default function TradeJournalForm({ trade }) {
           />
         </div>
       </div>
-{/* Screenshots */}
-<div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
-  <ScreenshotUpload
-    tradeId={trade.id}
-    existingUrls={trade.screenshot_urls || []}
-  />
-</div>
+
+      {/* Screenshots */}
+      <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+        <ScreenshotUpload
+          tradeId={trade.id}
+          existingUrls={trade.screenshot_urls || []}
+        />
+      </div>
+
       {/* Close trade section */}
       {isOpen && (
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -308,7 +351,6 @@ export default function TradeJournalForm({ trade }) {
         </div>
       )}
 
-      {/* Save journal button */}
       <button
         type="button"
         onClick={saveJournal}

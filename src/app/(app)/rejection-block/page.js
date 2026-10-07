@@ -1,5 +1,6 @@
 "use client";
 
+import { createTradeFromSetup } from "@/lib/journalEngine";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
@@ -653,17 +654,41 @@ export default function RejectionBlockPage() {
     });
 
     const { error: rbErr } = await supabase
-      .from("rejection_block_rbs")
-      .insert(rbRows);
-    if (rbErr) {
-      setError(rbErr.message);
-      setSaving(false);
-      return;
-    }
+  .from("rejection_block_rbs")
+  .insert(rbRows);
+if (rbErr) {
+  setError(rbErr.message);
+  setSaving(false);
+  return;
+}
 
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => router.push(`/setups/${setup.id}`), 800);
+// Auto-create a linked trade in the journal
+if (!isEdit) {
+  await createTradeFromSetup({
+    supabase,
+    userId: user.id,
+    setupId: setup.id,
+    pair: form.pair,
+    direction: negotiation.verdict === "BUY" ? "buy" : "sell",
+    entry: trade?.entry,
+    sl: trade?.sl,
+    tp: trade?.tp,
+    lotSize: trade?.lotSize,
+    riskPercent: profile?.risk_percent || 1,
+    rr: 2,
+    extra: {
+      ce_price: negotiation.ce,
+      used_ce_entry: true,
+      rb_verdict: negotiation.verdict,
+      rb_verdict_price: form.closePrice ? parseFloat(form.closePrice) : null,
+      rb_verdict_flipped: negotiation.verdict === "SELL",
+    },
+  });
+}
+
+setSaving(false);
+setSaved(true);
+setTimeout(() => router.push(`/setups/${setup.id}`), 800);
   }
 
   if (loadingEdit) {

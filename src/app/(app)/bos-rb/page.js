@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
+import { createTradeFromSetup } from "@/lib/journalEngine";
 import {
   BOS_RB_CHECKLIST,
   CHECKLIST_PASS_THRESHOLD,
@@ -103,7 +104,8 @@ export default function BosRbPage() {
         rbZoneLow: detailData?.rb_zone_low?.toString() || "",
         fvgPresent: detailData?.fvg_present || false,
         lowerTfShift: detailData?.lower_tf_shift || false,
-        useCe: setupData.use_ce_entry !== undefined ? setupData.use_ce_entry : true,
+        useCe:
+          setupData.use_ce_entry !== undefined ? setupData.use_ce_entry : true,
         atr: detailData?.atr?.toString() || "",
         notes: setupData.notes || "",
       }));
@@ -235,7 +237,6 @@ export default function BosRbPage() {
         .eq("id", editId)
         .select()
         .single();
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -248,7 +249,6 @@ export default function BosRbPage() {
         .insert(setupPayload)
         .select()
         .single();
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
@@ -288,7 +288,6 @@ export default function BosRbPage() {
         .from("bos_rb_setups")
         .update(detailPayload)
         .eq("id", existingDetailId);
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -298,12 +297,32 @@ export default function BosRbPage() {
       const { error: insErr } = await supabase
         .from("bos_rb_setups")
         .insert(detailPayload);
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
         return;
       }
+    }
+
+    // Auto-create a linked trade in the journal
+    if (!isEdit) {
+      await createTradeFromSetup({
+        supabase,
+        userId: user.id,
+        setupId: setup.id,
+        pair: form.pair,
+        direction: form.htfBias === "bullish" ? "buy" : "sell",
+        entry: trade?.entry,
+        sl: trade?.sl,
+        tp: trade?.tp,
+        lotSize: trade?.lotSize,
+        riskPercent: profile?.risk_percent || 1,
+        rr: 2,
+        extra: {
+          ce_price: trade?.entry || null,
+          used_ce_entry: form.useCe,
+        },
+      });
     }
 
     setSaving(false);

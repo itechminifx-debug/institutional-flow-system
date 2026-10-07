@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
+import { createTradeFromSetup } from "@/lib/journalEngine";
 import {
   computeCe,
   detectSideOfCe,
@@ -160,7 +161,6 @@ export default function PremiumDiscountPage() {
         .eq("id", editId)
         .select()
         .single();
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -173,7 +173,6 @@ export default function PremiumDiscountPage() {
         .insert(setupPayload)
         .select()
         .single();
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
@@ -207,7 +206,6 @@ export default function PremiumDiscountPage() {
         .from("premium_discount_setups")
         .update(detailPayload)
         .eq("id", existingDetailId);
-
       if (updErr) {
         setError(updErr.message);
         setSaving(false);
@@ -217,12 +215,32 @@ export default function PremiumDiscountPage() {
       const { error: insErr } = await supabase
         .from("premium_discount_setups")
         .insert(detailPayload);
-
       if (insErr) {
         setError(insErr.message);
         setSaving(false);
         return;
       }
+    }
+
+    // Auto-create a linked trade in the journal
+    if (!isEdit) {
+      await createTradeFromSetup({
+        supabase,
+        userId: user.id,
+        setupId: setup.id,
+        pair: form.pair,
+        direction: result.verdict === "BUY" ? "buy" : "sell",
+        entry: result.ce,
+        sl: null,
+        tp: null,
+        lotSize: null,
+        riskPercent: profile?.risk_percent || 1,
+        rr: 2,
+        extra: {
+          ce_price: result.ce,
+          used_ce_entry: true,
+        },
+      });
     }
 
     setSaving(false);
