@@ -3,17 +3,14 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// CANDLE WICK DETECTION
-//   Enter recent candles (open, close, wick tip)
-//   → engine detects wicks that form candidate RBs
-//   → user clicks "Add" to accept them into the RB list
+// TWO-CANDLE RB DETECTION
+//   User enters two candles (color, open, close, wick tip).
+//   Rule: Candle 1 wick tip LOW, Candle 2 wick tip HIGHER
+//         → RB exists between the two tips.
+//   Auto-detect resistance vs support.
 //
-// RB-IN-PATH DETECTION
-//   After verdict fires, scan RBs ahead of the trade
-//   → flag blockers before the 2R target
-//   → compute Safe TP (before the nearest blocker)
-//
-// PIPS: 2 decimals → pip size = 0.01 (Headway Volatility pairs)
+// RB-IN-PATH:  Safe TP before the nearest blocking RB.
+// PIPS:        2 decimals → pip size = 0.01 (Headway Volatility)
 // ============================================================
 
 export const PIP_SIZE_DEFAULT = 0.01;
@@ -51,12 +48,9 @@ export function computePips({ entry, sl, tp, pipSize = PIP_SIZE_DEFAULT }) {
   const s = parseFloat(sl);
   const t = parseFloat(tp);
   const p = parseFloat(pipSize) || PIP_SIZE_DEFAULT;
-
   if (isNaN(e) || isNaN(s) || isNaN(t)) return null;
-
   const slDistance = Math.round((Math.abs(e - s) / p) * 100) / 100;
   const tpDistance = Math.round((Math.abs(t - e) / p) * 100) / 100;
-
   return { slDistance, tpDistance, pipSize: p };
 }
 
@@ -110,13 +104,11 @@ export function rbVsZoneInfo(position) {
 // ============================================================
 export function rankRejectionBlocks(rbs) {
   if (!Array.isArray(rbs) || rbs.length === 0) return [];
-
   const sorted = [...rbs].sort((a, b) => {
     const ta = a.addedAt ? new Date(a.addedAt).getTime() : 0;
     const tb = b.addedAt ? new Date(b.addedAt).getTime() : 0;
     return tb - ta;
   });
-
   return sorted.map((rb, i) => {
     let rank;
     if (i === 0) rank = "current";
@@ -300,7 +292,6 @@ export function premiumDiscountVerdict(result) {
   } else {
     base.brokenBadge = null;
   }
-
   return base;
 }
 
@@ -332,7 +323,6 @@ export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
   const c = parseFloat(emaPrice);
   const p = parseFloat(emaPrior);
   const close = parseFloat(closePrice);
-
   if (isNaN(c) || isNaN(p)) {
     return { direction: "unknown", position: "unknown", change: 0, aligned: null };
   }
@@ -348,7 +338,6 @@ export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
     if (Math.abs(close - c) <= tolerance) position = "at";
     else position = close > c ? "above" : "below";
   }
-
   return { direction, position, change, emaPrice: c, emaPrior: p };
 }
 
@@ -467,7 +456,7 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
       } else {
         tier = { key: "blocked", label: "Blocked", emoji: "⚠️",
           color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
-          description: "Close is below this RB — it is a wall above. Price must clear it." };
+          description: "Close is below this RB — it is a wall above." };
       }
     } else {
       if (close < low) {
@@ -485,7 +474,7 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
       } else {
         tier = { key: "blocked", label: "Blocked", emoji: "⚠️",
           color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
-          description: "Close is above this RB — it is a wall below. Price must clear it." };
+          description: "Close is above this RB — it is a wall below." };
       }
     }
 
@@ -681,96 +670,124 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 }
 
 // ============================================================
-// CANDLE → RB DETECTION  (NEW)
+// TWO-CANDLE RB DETECTION
 // ============================================================
-// candle = { id, type: 'green'|'red', open, close, wickTip }
-// wickTip = the "significant" wick for this candle (upper or lower)
+// Rule (regardless of resistance or support):
+//   Candle 1 wick tip = LOW
+//   Candle 2 wick tip = HIGHER than Candle 1
+//   → RB exists between the two tips.
 //
-// A wick is a candidate RB when wick size ≥ 1× body size.
-//
-// Bullish candle (green):
-//   - Upper wick ≥ body → RB above: low = close, high = wickTip
-//   - Lower wick ≥ body → RB below: low = wickTip, high = close
-//
-// Bearish candle (red):
-//   - Upper wick ≥ body → RB above: low = open, high = wickTip
-//   - Lower wick ≥ body → RB below: low = wickTip, high = open
-//
-// Since we don't have both wick tips in the input, we treat the
-// "wickTip" as the significant wick the user cared about.
-// The body edge nearest to the wick becomes the other side of the RB.
+// Auto-detect resistance vs support using:
+//   - Wick position vs body (tip above body = upper wick;
+//     tip below body = lower wick)
+//   - RB position vs current close (RB above close = resistance;
+//     RB below close = support)
 // ============================================================
-export function detectRbsFromCandles({ candles }) {
-  if (!Array.isArray(candles) || candles.length === 0) return [];
+export function detectRbFromTwoCandles({
+  candle1,
+  candle2,
+  currentClose,
+  minSwing = 0,
+}) {
+  const c1o = parseFloat(candle1?.open);
+  const c1c = parseFloat(candle1?.close);
+  const c1t = parseFloat(candle1?.wickTip);
+  const c2o = parseFloat(candle2?.open);
+  const c2c = parseFloat(candle2?.close);
+  const c2t = parseFloat(candle2?.wickTip);
+  const close = parseFloat(currentClose);
 
-  const suggestions = [];
+  if (
+    isNaN(c1o) ||
+    isNaN(c1c) ||
+    isNaN(c1t) ||
+    isNaN(c2o) ||
+    isNaN(c2c) ||
+    isNaN(c2t)
+  ) {
+    return {
+      detected: false,
+      reason: "Enter both candles fully (color, open, close, wick tip).",
+    };
+  }
 
-  candles.forEach((c, i) => {
-    const open = parseFloat(c.open);
-    const close = parseFloat(c.close);
-    const wick = parseFloat(c.wickTip);
-    if (isNaN(open) || isNaN(close) || isNaN(wick)) return;
+  if (c1t >= c2t) {
+    return {
+      detected: false,
+      reason: `Not a valid RB — Candle 1 tip (${c1t}) must be LOWER than Candle 2 tip (${c2t}).`,
+    };
+  }
 
-    const body = Math.abs(open - close);
-    const wickSize = Math.abs(wick - Math.max(open, close)) || Math.abs(wick - Math.min(open, close));
-    const isGreen = c.type === "green";
-    const isUpperWick = wick > Math.max(open, close);
-    const isLowerWick = wick < Math.min(open, close);
+  const swingSize = Math.round((c2t - c1t) * 100) / 100;
+  if (swingSize < (parseFloat(minSwing) || 0)) {
+    return {
+      detected: false,
+      reason: `Swing too small (${swingSize}) — below the minimum.`,
+    };
+  }
 
-    if (body === 0) return;
-    if (wickSize < body) return; // wick not significant enough
+  const rbLow = Math.round(c1t * 100) / 100;
+  const rbHigh = Math.round(c2t * 100) / 100;
+  const ce = Math.round(((rbLow + rbHigh) / 2) * 100) / 100;
 
-    const ratio = Math.round((wickSize / body) * 100) / 100;
+  // Wick type per candle — tip above body = upper; tip below body = lower
+  const c1Upper = c1t > Math.max(c1o, c1c);
+  const c1Lower = c1t < Math.min(c1o, c1c);
+  const c2Upper = c2t > Math.max(c2o, c2c);
+  const c2Lower = c2t < Math.min(c2o, c2c);
 
-    // Body edge on the wick side
-    let bodyEdge;
-    if (isUpperWick) {
-      bodyEdge = Math.max(open, close); // top of body
-    } else {
-      bodyEdge = Math.min(open, close); // bottom of body
-    }
+  let wickType = "unknown";
+  if (c1Upper && c2Upper) wickType = "upper";
+  else if (c1Lower && c2Lower) wickType = "lower";
+  else if (c1Upper || c2Upper) wickType = "upper";
+  else if (c1Lower || c2Lower) wickType = "lower";
 
-    // RB range
-    let rbHigh, rbLow, side;
-    if (isUpperWick) {
-      rbHigh = Math.max(wick, bodyEdge);
-      rbLow = Math.min(wick, bodyEdge);
-      side = "above";
-    } else if (isLowerWick) {
-      rbHigh = Math.max(wick, bodyEdge);
-      rbLow = Math.min(wick, bodyEdge);
-      side = "below";
-    } else {
-      return;
-    }
+  // Auto-type by wick position
+  let byWick = null;
+  if (wickType === "upper") byWick = "resistance";
+  else if (wickType === "lower") byWick = "support";
 
-    suggestions.push({
-      id: `candle-${i}-${side}`,
-      source: `${isUpperWick ? "Upper" : "Lower"} wick`,
-      candleIndex: i,
-      candleType: c.type,
-      side,
-      high: Math.round(rbHigh * 100) / 100,
-      low: Math.round(rbLow * 100) / 100,
-      wickSize: Math.round(wickSize * 100) / 100,
-      bodySize: Math.round(body * 100) / 100,
-      ratio,
-      reason: `Long ${isUpperWick ? "upper" : "lower"} wick on candle ${
-        i + 1
-      } (${ratio}× body) — possible RB ${side}`,
-    });
-  });
+  // Auto-type by price position
+  let byPrice = null;
+  if (!isNaN(close)) {
+    if (rbLow > close) byPrice = "resistance";
+    else if (rbHigh < close) byPrice = "support";
+    else byPrice = "inside"; // RB overlaps close — indecision
+  }
 
-  return suggestions;
+  // Final type — prefer the wick-position method when they agree;
+  // fall back to whichever is available.
+  let autoType = byWick || byPrice || "unknown";
+  let method = byWick ? "by-wick-position" : "by-price-position";
+
+  return {
+    detected: true,
+    reason: `Valid RB — Candle 1 tip ${c1t} is lower than Candle 2 tip ${c2t}. Swing size ${swingSize}.`,
+    rbLow,
+    rbHigh,
+    ce,
+    swingSize,
+    wickType,
+    autoType,
+    autoTypeMethod: method,
+    byWickPosition: byWick,
+    byPricePosition: byPrice,
+    candle1Wick: c1Upper ? "upper" : c1Lower ? "lower" : "unknown",
+    candle2Wick: c2Upper ? "upper" : c2Lower ? "lower" : "unknown",
+  };
 }
 
 // ============================================================
-// RB-IN-PATH DETECTION  (NEW)
+// RB-IN-PATH DETECTION
 // ============================================================
-// After a verdict fires, walk the trade path and flag RBs
-// that sit between entry and the 2R target.
-// ============================================================
-export function detectRbsInPath({ entry, sl, tp, direction, rankedRbs, pipSize = PIP_SIZE_DEFAULT }) {
+export function detectRbsInPath({
+  entry,
+  sl,
+  tp,
+  direction,
+  rankedRbs,
+  pipSize = PIP_SIZE_DEFAULT,
+}) {
   if (!entry || !tp || !direction || !Array.isArray(rankedRbs)) {
     return { pathRbs: [], hasBlockers: false, safeTp: null, safeTpPips: null };
   }
@@ -791,10 +808,9 @@ export function detectRbsInPath({ entry, sl, tp, direction, rankedRbs, pipSize =
     const low = parseFloat(rb.low);
     if (isNaN(high) || isNaN(low)) continue;
 
-    // RB must sit ahead of entry in the trade direction
     if (isBull) {
-      if (low <= e) continue; // not ahead
-      if (low >= t) continue; // beyond the target
+      if (low <= e) continue;
+      if (low >= t) continue;
     } else {
       if (high >= e) continue;
       if (high <= t) continue;
@@ -804,9 +820,7 @@ export function detectRbsInPath({ entry, sl, tp, direction, rankedRbs, pipSize =
     const distancePips = Math.round((distance / p) * 100) / 100;
     const ratio = fullRange > 0 ? distance / fullRange : 0;
 
-    // Safe TP = just before the RB's near edge
-    const buffer = 0.0001 * 0; // no artificial buffer — the edge itself
-    const safeTp = isBull ? low - buffer : high + buffer;
+    const safeTp = isBull ? low : high;
 
     pathRbs.push({
       id: rb.id,
@@ -820,7 +834,6 @@ export function detectRbsInPath({ entry, sl, tp, direction, rankedRbs, pipSize =
     });
   }
 
-  // Sort nearest-first
   if (isBull) pathRbs.sort((a, b) => a.low - b.low);
   else pathRbs.sort((a, b) => b.high - a.high);
 
@@ -889,7 +902,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: low,
           reason:
-            "Price swept below the condition RB low and closed back above — buyers rejected the sweep. BUY reversal candidate.",
+            "Price swept below the condition RB low and closed back above — buyers rejected. BUY reversal candidate.",
         };
       }
       if (close > low && close < rb.high) {
@@ -899,7 +912,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: low,
           reason:
-            "Price closed back inside the condition RB above its low — buyers rejecting lower prices. BUY reversal candidate.",
+            "Price closed back inside the condition RB above its low — BUY reversal candidate.",
         };
       }
     }
@@ -918,7 +931,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: high,
           reason:
-            "Price swept above the condition RB high and closed back below — sellers rejected the sweep. SELL reversal candidate.",
+            "Price swept above the condition RB high and closed back below — sellers rejected. SELL reversal candidate.",
         };
       }
       if (close < high && close > rb.low) {
@@ -928,7 +941,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: high,
           reason:
-            "Price closed back inside the condition RB below its high — sellers rejecting higher prices. SELL reversal candidate.",
+            "Price closed back inside the condition RB below its high — SELL reversal candidate.",
         };
       }
     }
@@ -1035,7 +1048,8 @@ export function zoneLifecycleLabel(setup, visits) {
       label: "Zone live — no visits yet",
       emoji: "🆕",
       color: "bg-blue-900/40 text-blue-300 border-blue-700",
-      description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
+      description:
+        days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
     };
   }
   return {
@@ -1043,7 +1057,8 @@ export function zoneLifecycleLabel(setup, visits) {
     label: `Zone live — ${visits.length} visit${visits.length === 1 ? "" : "s"}`,
     emoji: "🟢",
     color: "bg-green-900/40 text-green-300 border-green-700",
-    description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
+    description:
+      days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
   };
 }
 
