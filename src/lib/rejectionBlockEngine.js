@@ -5,12 +5,15 @@
 //
 // TWO-CANDLE RB DETECTION
 //   User enters two candles (color, open, close, wick tip).
-//   Rule: Candle 1 tip LOW, Candle 2 tip HIGHER → RB exists.
-//   Auto-detect resistance vs support.
+//
+//   Rule:
+//     Candle 1 tip LOW, Candle 2 tip HIGHER → Resistance RB (rising)
+//     Candle 1 tip LOW, Candle 2 tip LOWER  → Support RB   (falling)
+//     Both candles share the SAME starting direction (tip 1 low).
+//     The swing direction determines the RB type.
 //
 // DETECTION vs VERDICT CLOSE
-//   When the close price is typed, instantly check it against
-//   the detected RB. Warn if inside or near-edge.
+//   Instantly check the close price against the detected RB.
 //
 // RB-IN-PATH:  Safe TP before the nearest blocking RB.
 // PIPS:        2 decimals → pip size = 0.01 (Headway Volatility)
@@ -674,7 +677,14 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 }
 
 // ============================================================
-// TWO-CANDLE RB DETECTION
+// TWO-CANDLE RB DETECTION — CORRECTED
+// ============================================================
+// Rule:
+//   Candle 1 tip LOW, Candle 2 tip HIGHER → Resistance RB (rising)
+//   Candle 1 tip LOW, Candle 2 tip LOWER  → Support RB   (falling)
+//   Candle 1 tip == Candle 2 tip → invalid
+//
+// Swing direction determines the RB type.
 // ============================================================
 export function detectRbFromTwoCandles({
   candle1,
@@ -704,14 +714,16 @@ export function detectRbFromTwoCandles({
     };
   }
 
-  if (c1t >= c2t) {
+  // CORRECTED: only skip if the two tips are identical.
+  // Both rising and falling swings are valid RBs.
+  if (c1t === c2t) {
     return {
       detected: false,
-      reason: `Not a valid RB — Candle 1 tip (${c1t}) must be LOWER than Candle 2 tip (${c2t}).`,
+      reason: `Candle 1 tip (${c1t}) and Candle 2 tip (${c2t}) are equal — no swing, no RB.`,
     };
   }
 
-  const swingSize = Math.round((c2t - c1t) * 100) / 100;
+  const swingSize = Math.round(Math.abs(c2t - c1t) * 100) / 100;
   if (swingSize < (parseFloat(minSwing) || 0)) {
     return {
       detected: false,
@@ -719,10 +731,15 @@ export function detectRbFromTwoCandles({
     };
   }
 
-  const rbLow = Math.round(c1t * 100) / 100;
-  const rbHigh = Math.round(c2t * 100) / 100;
+  // Swing direction determines RB type
+  const swingDirection = c1t < c2t ? "up" : "down";
+  const autoType = swingDirection === "up" ? "resistance" : "support";
+
+  const rbLow = Math.round(Math.min(c1t, c2t) * 100) / 100;
+  const rbHigh = Math.round(Math.max(c1t, c2t) * 100) / 100;
   const ce = Math.round(((rbLow + rbHigh) / 2) * 100) / 100;
 
+  // Wick type per candle (for context — how the tip sits vs the body)
   const c1Upper = c1t > Math.max(c1o, c1c);
   const c1Lower = c1t < Math.min(c1o, c1c);
   const c2Upper = c2t > Math.max(c2o, c2c);
@@ -734,42 +751,27 @@ export function detectRbFromTwoCandles({
   else if (c1Upper || c2Upper) wickType = "upper";
   else if (c1Lower || c2Lower) wickType = "lower";
 
-  let byWick = null;
-  if (wickType === "upper") byWick = "resistance";
-  else if (wickType === "lower") byWick = "support";
-
-  let byPrice = null;
-  if (!isNaN(close)) {
-    if (rbLow > close) byPrice = "resistance";
-    else if (rbHigh < close) byPrice = "support";
-    else byPrice = "inside";
-  }
-
-  const autoType = byWick || byPrice || "unknown";
-  const method = byWick ? "by-wick-position" : "by-price-position";
-
   return {
     detected: true,
-    reason: `Valid RB — Candle 1 tip ${c1t} is lower than Candle 2 tip ${c2t}. Swing size ${swingSize}.`,
+    reason:
+      swingDirection === "up"
+        ? `Valid Resistance RB — Candle 1 tip ${c1t} is lower than Candle 2 tip ${c2t}. Rising swing.`
+        : `Valid Support RB — Candle 1 tip ${c1t} is higher than Candle 2 tip ${c2t}. Falling swing.`,
     rbLow,
     rbHigh,
     ce,
     swingSize,
+    swingDirection,
     wickType,
     autoType,
-    autoTypeMethod: method,
-    byWickPosition: byWick,
-    byPricePosition: byPrice,
+    autoTypeMethod: "by-swing-direction",
     candle1Wick: c1Upper ? "upper" : c1Lower ? "lower" : "unknown",
     candle2Wick: c2Upper ? "upper" : c2Lower ? "lower" : "unknown",
   };
 }
 
 // ============================================================
-// DETECTION vs VERDICT CLOSE  (NEW)
-// ============================================================
-// Instantly cross-checks the close price against the detected RB.
-// Fires the moment the user types the close — no Add required.
+// DETECTION vs VERDICT CLOSE
 // ============================================================
 export function checkDetectionVsClose({
   detection,
@@ -787,10 +789,6 @@ export function checkDetectionVsClose({
 
   const rbLow = parseFloat(detection.rbLow);
   const rbHigh = parseFloat(detection.rbHigh);
-
-  // Distance from close to nearest RB edge (positive = outside, negative = inside)
-  let distanceToLow = (close - rbLow) / p;
-  let distanceToHigh = (rbHigh - close) / p;
 
   // Inside the RB
   if (close >= rbLow && close <= rbHigh) {
