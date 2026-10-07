@@ -3,11 +3,17 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// PIPS: 2 decimals → pip size = 0.01 (Headway Volatility pairs)
+// CANDLE WICK DETECTION
+//   Enter recent candles (open, close, wick tip)
+//   → engine detects wicks that form candidate RBs
+//   → user clicks "Add" to accept them into the RB list
 //
-// Everything else as before:
-//   - Multiple RBs, active RB, verdict, EMA 50, conditions,
-//     all flipped, next opportunity, zone lifecycle.
+// RB-IN-PATH DETECTION
+//   After verdict fires, scan RBs ahead of the trade
+//   → flag blockers before the 2R target
+//   → compute Safe TP (before the nearest blocker)
+//
+// PIPS: 2 decimals → pip size = 0.01 (Headway Volatility pairs)
 // ============================================================
 
 export const PIP_SIZE_DEFAULT = 0.01;
@@ -51,11 +57,7 @@ export function computePips({ entry, sl, tp, pipSize = PIP_SIZE_DEFAULT }) {
   const slDistance = Math.round((Math.abs(e - s) / p) * 100) / 100;
   const tpDistance = Math.round((Math.abs(t - e) / p) * 100) / 100;
 
-  return {
-    slDistance,
-    tpDistance,
-    pipSize: p,
-  };
+  return { slDistance, tpDistance, pipSize: p };
 }
 
 // ============================================================
@@ -334,7 +336,6 @@ export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
   if (isNaN(c) || isNaN(p)) {
     return { direction: "unknown", position: "unknown", change: 0, aligned: null };
   }
-
   const change = ((c - p) / (p || 1)) * 100;
   let direction;
   if (change > 0.02) direction = "rising";
@@ -652,8 +653,7 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
       label: `${rankedRbs.length} RB listed`,
       emoji: "⚠️",
       color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
-      description:
-        "Only one RB is listed. List every RB around the zone.",
+      description: "Only one RB is listed. List every RB around the zone.",
       gaps: [],
     };
   }
@@ -677,6 +677,191 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
     color: "bg-green-950/30 border-green-800 text-green-200",
     description: `${rankedRbs.length} RBs listed — spacing looks consistent.`,
     gaps: [],
+  };
+}
+
+// ============================================================
+// CANDLE → RB DETECTION  (NEW)
+// ============================================================
+// candle = { id, type: 'green'|'red', open, close, wickTip }
+// wickTip = the "significant" wick for this candle (upper or lower)
+//
+// A wick is a candidate RB when wick size ≥ 1× body size.
+//
+// Bullish candle (green):
+//   - Upper wick ≥ body → RB above: low = close, high = wickTip
+//   - Lower wick ≥ body → RB below: low = wickTip, high = close
+//
+// Bearish candle (red):
+//   - Upper wick ≥ body → RB above: low = open, high = wickTip
+//   - Lower wick ≥ body → RB below: low = wickTip, high = open
+//
+// Since we don't have both wick tips in the input, we treat the
+// "wickTip" as the significant wick the user cared about.
+// The body edge nearest to the wick becomes the other side of the RB.
+// ============================================================
+export function detectRbsFromCandles({ candles }) {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
+
+  const suggestions = [];
+
+  candles.forEach((c, i) => {
+    const open = parseFloat(c.open);
+    const close = parseFloat(c.close);
+    const wick = parseFloat(c.wickTip);
+    if (isNaN(open) || isNaN(close) || isNaN(wick)) return;
+
+    const body = Math.abs(open - close);
+    const wickSize = Math.abs(wick - Math.max(open, close)) || Math.abs(wick - Math.min(open, close));
+    const isGreen = c.type === "green";
+    const isUpperWick = wick > Math.max(open, close);
+    const isLowerWick = wick < Math.min(open, close);
+
+    if (body === 0) return;
+    if (wickSize < body) return; // wick not significant enough
+
+    const ratio = Math.round((wickSize / body) * 100) / 100;
+
+    // Body edge on the wick side
+    let bodyEdge;
+    if (isUpperWick) {
+      bodyEdge = Math.max(open, close); // top of body
+    } else {
+      bodyEdge = Math.min(open, close); // bottom of body
+    }
+
+    // RB range
+    let rbHigh, rbLow, side;
+    if (isUpperWick) {
+      rbHigh = Math.max(wick, bodyEdge);
+      rbLow = Math.min(wick, bodyEdge);
+      side = "above";
+    } else if (isLowerWick) {
+      rbHigh = Math.max(wick, bodyEdge);
+      rbLow = Math.min(wick, bodyEdge);
+      side = "below";
+    } else {
+      return;
+    }
+
+    suggestions.push({
+      id: `candle-${i}-${side}`,
+      source: `${isUpperWick ? "Upper" : "Lower"} wick`,
+      candleIndex: i,
+      candleType: c.type,
+      side,
+      high: Math.round(rbHigh * 100) / 100,
+      low: Math.round(rbLow * 100) / 100,
+      wickSize: Math.round(wickSize * 100) / 100,
+      bodySize: Math.round(body * 100) / 100,
+      ratio,
+      reason: `Long ${isUpperWick ? "upper" : "lower"} wick on candle ${
+        i + 1
+      } (${ratio}× body) — possible RB ${side}`,
+    });
+  });
+
+  return suggestions;
+}
+
+// ============================================================
+// RB-IN-PATH DETECTION  (NEW)
+// ============================================================
+// After a verdict fires, walk the trade path and flag RBs
+// that sit between entry and the 2R target.
+// ============================================================
+export function detectRbsInPath({ entry, sl, tp, direction, rankedRbs, pipSize = PIP_SIZE_DEFAULT }) {
+  if (!entry || !tp || !direction || !Array.isArray(rankedRbs)) {
+    return { pathRbs: [], hasBlockers: false, safeTp: null, safeTpPips: null };
+  }
+
+  const e = parseFloat(entry);
+  const t = parseFloat(tp);
+  const p = parseFloat(pipSize) || PIP_SIZE_DEFAULT;
+  if (isNaN(e) || isNaN(t)) {
+    return { pathRbs: [], hasBlockers: false, safeTp: null, safeTpPips: null };
+  }
+
+  const isBull = direction === "BUY";
+  const fullRange = Math.abs(t - e);
+  const pathRbs = [];
+
+  for (const rb of rankedRbs) {
+    const high = parseFloat(rb.high);
+    const low = parseFloat(rb.low);
+    if (isNaN(high) || isNaN(low)) continue;
+
+    // RB must sit ahead of entry in the trade direction
+    if (isBull) {
+      if (low <= e) continue; // not ahead
+      if (low >= t) continue; // beyond the target
+    } else {
+      if (high >= e) continue;
+      if (high <= t) continue;
+    }
+
+    const distance = isBull ? low - e : e - high;
+    const distancePips = Math.round((distance / p) * 100) / 100;
+    const ratio = fullRange > 0 ? distance / fullRange : 0;
+
+    // Safe TP = just before the RB's near edge
+    const buffer = 0.0001 * 0; // no artificial buffer — the edge itself
+    const safeTp = isBull ? low - buffer : high + buffer;
+
+    pathRbs.push({
+      id: rb.id,
+      high,
+      low,
+      ce: Math.round(((high + low) / 2) * 100) / 100,
+      distancePips,
+      distanceRatio: Math.round(ratio * 100) / 100,
+      blocksBeforeTp: true,
+      safeTp: Math.round(safeTp * 100) / 100,
+    });
+  }
+
+  // Sort nearest-first
+  if (isBull) pathRbs.sort((a, b) => a.low - b.low);
+  else pathRbs.sort((a, b) => b.high - a.high);
+
+  const nearest = pathRbs[0] || null;
+  const safeTp = nearest ? nearest.safeTp : null;
+  const safeTpPips = nearest
+    ? Math.round((Math.abs(safeTp - e) / p) * 100) / 100
+    : null;
+
+  return {
+    pathRbs,
+    hasBlockers: pathRbs.length > 0,
+    safeTp,
+    safeTpPips,
+    nearest: nearest || null,
+  };
+}
+
+export function blockerInfo({ direction, nearest, distanceRatio }) {
+  if (!nearest) return null;
+  if (distanceRatio !== undefined && distanceRatio < 0.5) {
+    return {
+      key: "weak",
+      label: "Weak setup — blocked early",
+      emoji: "🚫",
+      color: "bg-red-950/40 border-red-700 text-red-200",
+      description:
+        direction === "BUY"
+          ? "An RB sits less than halfway to your target — the BUY may reject there."
+          : "An RB sits less than halfway to your target — the SELL may reject there.",
+    };
+  }
+  return {
+    key: "warning",
+    label: "RB ahead in path",
+    emoji: "⚠️",
+    color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+    description:
+      direction === "BUY"
+        ? "Price may reject at this RB before reaching the full target."
+        : "Price may reject at this RB before reaching the full target.",
   };
 }
 
@@ -760,6 +945,7 @@ export function computeNextOpportunityTrade({
   riskPercent = 1,
   bufferMultiplier = 0.3,
   atr = 0,
+  pipSize = PIP_SIZE_DEFAULT,
 }) {
   if (!newRb || !newDirection) return null;
   const high = parseFloat(newRb.high);
@@ -786,7 +972,7 @@ export function computeNextOpportunityTrade({
       ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
       : 0;
 
-  const pips = computePips({ entry, sl, tp });
+  const pips = computePips({ entry, sl, tp, pipSize });
 
   return {
     direction: newDirection,
@@ -811,19 +997,9 @@ export function computeNextOpportunityTrade({
 // ============================================================
 export function zoneStats(visits) {
   if (!Array.isArray(visits) || visits.length === 0) {
-    return {
-      total: 0,
-      wins: 0,
-      losses: 0,
-      be: 0,
-      pending: 0,
-      winRate: null,
-    };
+    return { total: 0, wins: 0, losses: 0, be: 0, pending: 0, winRate: null };
   }
-  let wins = 0,
-    losses = 0,
-    be = 0,
-    pending = 0;
+  let wins = 0, losses = 0, be = 0, pending = 0;
   for (const v of visits) {
     if (v.outcome === "win") wins++;
     else if (v.outcome === "loss") losses++;
@@ -832,14 +1008,7 @@ export function zoneStats(visits) {
   }
   const closed = wins + losses + be;
   const winRate = closed > 0 ? Math.round((wins / closed) * 100) : null;
-  return {
-    total: visits.length,
-    wins,
-    losses,
-    be,
-    pending,
-    winRate,
-  };
+  return { total: visits.length, wins, losses, be, pending, winRate };
 }
 
 export function zoneLifecycleLabel(setup, visits) {
@@ -895,7 +1064,6 @@ export function atrFilter(atrCurrent, atrPrior) {
     };
   }
   const change = ((c - p) / (p || 1)) * 100;
-
   if (change > 2) {
     return {
       key: "rising",
@@ -937,6 +1105,7 @@ export function computeRejectionBlockTrade({
   riskPercent = 1,
   bufferMultiplier = 0.3,
   atr = 0,
+  pipSize = PIP_SIZE_DEFAULT,
 }) {
   const high = parseFloat(rbHigh);
   const low = parseFloat(rbLow);
@@ -959,7 +1128,7 @@ export function computeRejectionBlockTrade({
       ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
       : 0;
 
-  const pips = computePips({ entry, sl, tp });
+  const pips = computePips({ entry, sl, tp, pipSize });
 
   return {
     direction: verdict,

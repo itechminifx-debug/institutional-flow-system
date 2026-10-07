@@ -24,6 +24,9 @@ import {
   detectAllRbsFlipped,
   allFlippedInfo,
   checkRbCompleteness,
+  detectRbsFromCandles,
+  detectRbsInPath,
+  blockerInfo,
   detectReversal,
   computeNextOpportunityTrade,
   atrFilter,
@@ -35,6 +38,15 @@ import PairPicker from "@/components/PairPicker";
 
 function emptyRb() {
   return { id: Math.random().toString(36).slice(2), high: "", low: "" };
+}
+function emptyCandle() {
+  return {
+    id: Math.random().toString(36).slice(2),
+    type: "green",
+    open: "",
+    close: "",
+    wickTip: "",
+  };
 }
 
 export default function RejectionBlockPage() {
@@ -65,6 +77,9 @@ export default function RejectionBlockPage() {
   });
 
   const [rbs, setRbs] = useState([emptyRb()]);
+  const [candles, setCandles] = useState([emptyCandle(), emptyCandle()]);
+  const [addedSuggestionIds, setAddedSuggestionIds] = useState([]);
+
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -126,6 +141,18 @@ export default function RejectionBlockPage() {
         notes: isEdit ? setupData.notes || "" : "",
       }));
 
+      if (isEdit && Array.isArray(detailData?.candles)) {
+        setCandles(
+          detailData.candles.map((c) => ({
+            id: Math.random().toString(36).slice(2),
+            type: c.type || "green",
+            open: c.open?.toString() || "",
+            close: c.close?.toString() || "",
+            wickTip: c.wickTip?.toString() || "",
+          }))
+        );
+      }
+
       const { data: rbsData } = await supabase
         .from("rejection_block_rbs")
         .select("*")
@@ -165,8 +192,21 @@ export default function RejectionBlockPage() {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
 
-  const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
+  function updateCandle(id, field, value) {
+    setCandles((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, [field]: value } : c))
+    );
+  }
+  function addCandle() {
+    setCandles((prev) => [...prev, emptyCandle()]);
+  }
+  function removeCandle(id) {
+    setCandles((prev) => prev.filter((c) => c.id !== id));
+  }
 
+  // ============================================================
+  // RB list
+  // ============================================================
   const rankedRbs = useMemo(() => {
     const cleaned = rbs
       .map((rb) => ({
@@ -178,6 +218,37 @@ export default function RejectionBlockPage() {
       .filter((rb) => !isNaN(rb.high) && !isNaN(rb.low));
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
+
+  // ============================================================
+  // Candle → suggestions
+  // ============================================================
+  const suggestions = useMemo(
+    () => detectRbsFromCandles({ candles }),
+    [candles]
+  );
+
+  const pendingSuggestions = suggestions.filter(
+    (s) => !addedSuggestionIds.includes(s.id)
+  );
+
+  function addSuggestionToRbs(s) {
+    if (addedSuggestionIds.includes(s.id)) return;
+    setRbs((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(36).slice(2),
+        high: s.high.toString(),
+        low: s.low.toString(),
+        addedAt: new Date().toISOString(),
+      },
+    ]);
+    setAddedSuggestionIds((prev) => [...prev, s.id]);
+  }
+
+  // ============================================================
+  // Core computations
+  // ============================================================
+  const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
 
   const activeRb = useMemo(() => {
     if (!form.closePrice) return rankedRbs[0] || null;
@@ -272,6 +343,7 @@ export default function RejectionBlockPage() {
         accountSize: profile?.account_size || 0,
         riskPercent: profile?.risk_percent || 1,
         atr: parseFloat(form.atrCurrent) || 0,
+        pipSize: parseFloat(form.pipSize) || PIP_SIZE_DEFAULT,
       })
     : null;
 
@@ -287,10 +359,35 @@ export default function RejectionBlockPage() {
           accountSize: profile?.account_size || 0,
           riskPercent: profile?.risk_percent || 1,
           atr: parseFloat(form.atrCurrent) || 0,
+          pipSize: parseFloat(form.pipSize) || PIP_SIZE_DEFAULT,
         })
       : null;
 
-  // Recompute pips with the current pip size (override the default 0.01)
+  // ============================================================
+  // RB-in-path
+  // ============================================================
+  const pathInfo = useMemo(() => {
+    if (!trade || !negotiation) {
+      return { pathRbs: [], hasBlockers: false, safeTp: null, safeTpPips: null };
+    }
+    return detectRbsInPath({
+      entry: trade.entry,
+      sl: trade.sl,
+      tp: trade.tp,
+      direction: trade.direction,
+      rankedRbs,
+      pipSize: parseFloat(form.pipSize) || PIP_SIZE_DEFAULT,
+    });
+  }, [trade, negotiation, rankedRbs, form.pipSize]);
+
+  const pathBlockerBadge = pathInfo.nearest
+    ? blockerInfo({
+        direction: trade?.direction,
+        nearest: pathInfo.nearest,
+        distanceRatio: pathInfo.nearest.distanceRatio,
+      })
+    : null;
+
   const pipSize = parseFloat(form.pipSize) || PIP_SIZE_DEFAULT;
   const tradePips = trade
     ? computePips({
@@ -329,7 +426,6 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // VISIT MODE
     if (isVisit) {
       const { data: parentRbs } = await supabase
         .from("rejection_block_rbs")
@@ -395,7 +491,6 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // NEW or EDIT
     const setupPayload = {
       user_id: user.id,
       pair: form.pair,
@@ -438,6 +533,13 @@ export default function RejectionBlockPage() {
       }
       setup = data;
     }
+
+    const candlesPayload = candles.map((c) => ({
+      type: c.type,
+      open: c.open ? parseFloat(c.open) : null,
+      close: c.close ? parseFloat(c.close) : null,
+      wickTip: c.wickTip ? parseFloat(c.wickTip) : null,
+    }));
 
     const detailPayload = {
       user_id: user.id,
@@ -488,6 +590,11 @@ export default function RejectionBlockPage() {
       reversal_entry: nextTrade?.entry || null,
       reversal_sl: nextTrade?.sl || null,
       reversal_tp: nextTrade?.tp || null,
+      candles: candlesPayload,
+      path_rbs: pathInfo.pathRbs,
+      safe_tp: pathInfo.safeTp,
+      safe_tp_pips: pathInfo.safeTpPips,
+      has_blockers: pathInfo.hasBlockers,
       notes: form.notes,
     };
 
@@ -553,20 +660,10 @@ export default function RejectionBlockPage() {
     setTimeout(() => router.push(`/setups/${setup.id}`), 800);
   }
 
-  function handleSaveAsNewSetup() {
-    if (!nextTrade || !reversal) return;
-    const params = new URLSearchParams();
-    params.set("prefill_pair", form.pair);
-    params.set("prefill_timeframe", form.timeframe);
-    router.push(`/rejection-block?${params.toString()}`);
-  }
-
   if (loadingEdit) {
     return (
       <main className="min-h-screen p-6 bg-black text-white">
-        <div className="max-w-3xl mx-auto text-gray-400">
-          Loading setup...
-        </div>
+        <div className="max-w-3xl mx-auto text-gray-400">Loading setup...</div>
       </main>
     );
   }
@@ -583,17 +680,14 @@ export default function RejectionBlockPage() {
               : "Rejection Block Negotiation"}
           </h1>
           <p className="text-gray-400 text-sm">
-            {isVisit
-              ? "Same zone, same RBs — new reaction"
-              : "Zones hold orders. Rejection Blocks make decisions."}
+            Zones hold orders. Rejection Blocks make decisions.
           </p>
         </div>
 
         {isVisit && (
           <div className="p-3 rounded-lg bg-purple-950/30 border border-purple-700">
             <p className="text-xs text-purple-200">
-              🔄 <strong>Visit mode</strong> — logging a new reaction on the
-              existing zone.
+              🔄 Visit mode — logging a new reaction on the existing zone.
             </p>
           </div>
         )}
@@ -688,61 +782,163 @@ export default function RejectionBlockPage() {
           )}
         </div>
 
-        {/* EMA 50 */}
+        {/* Candle input → detected RBs */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">
-            EMA 50 Filter
-          </h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-center justify-between">
             <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                EMA 50 Price (current)
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.ema50Price}
-                onChange={(e) => update("ema50Price", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
+              <h2 className="text-sm font-semibold text-blue-400">
+                Candles → Auto-detect RBs
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Enter candle open / close / wick tip. The engine finds
+                wicks that form candidate RBs.
+              </p>
             </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                EMA 50 Price (prior)
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.ema50Prior}
-                onChange={(e) => update("ema50Prior", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={addCandle}
+              className="text-xs px-3 py-1.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/40"
+            >
+              + Add candle
+            </button>
           </div>
-          {ema.direction !== "unknown" && (
-            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs">
-                <span className="text-gray-400">Direction:</span>{" "}
-                <span className={`font-bold ${emaMeta.direction.color}`}>
-                  {emaMeta.direction.emoji} {emaMeta.direction.label}
-                </span>
-              </p>
-              <p className="text-xs">
-                <span className="text-gray-400">Close position:</span>{" "}
-                <span className={`font-bold ${emaMeta.position.color}`}>
-                  {emaMeta.position.label}
-                </span>
-              </p>
-              {alignment && (
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
-                >
-                  {alignment.label}
-                </span>
-              )}
-            </div>
-          )}
+
+          <div className="space-y-2">
+            {candles.map((c, i) => (
+              <div
+                key={c.id}
+                className="grid grid-cols-12 gap-2 items-end bg-black p-2 rounded border border-gray-800"
+              >
+                <div className="col-span-2">
+                  <label className="block text-xs mb-1 text-gray-500">
+                    Type
+                  </label>
+                  <select
+                    value={c.type}
+                    onChange={(e) =>
+                      updateCandle(c.id, "type", e.target.value)
+                    }
+                    className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                  >
+                    <option value="green">🟢 Green</option>
+                    <option value="red">🔴 Red</option>
+                  </select>
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs mb-1 text-gray-500">
+                    Open
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={c.open}
+                    onChange={(e) =>
+                      updateCandle(c.id, "open", e.target.value)
+                    }
+                    className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs mb-1 text-gray-500">
+                    Close
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={c.close}
+                    onChange={(e) =>
+                      updateCandle(c.id, "close", e.target.value)
+                    }
+                    className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs mb-1 text-gray-500">
+                    Wick tip
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={c.wickTip}
+                    onChange={(e) =>
+                      updateCandle(c.id, "wickTip", e.target.value)
+                    }
+                    className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                  />
+                </div>
+                <div className="col-span-1 text-right">
+                  {candles.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeCandle(c.id)}
+                      className="text-red-400 text-xs hover:text-red-300"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* Detected RBs */}
+        {suggestions.length > 0 && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <h2 className="text-sm font-semibold text-blue-400">
+              Detected RBs from candles
+            </h2>
+            <p className="text-xs text-gray-500">
+              Wick ≥ 1× body → candidate RB. Click Add to include it in the
+              RB list.
+            </p>
+
+            {pendingSuggestions.length === 0 ? (
+              <p className="text-xs text-gray-400 py-2">
+                All detected RBs have been added.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {pendingSuggestions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="p-3 rounded-lg bg-black border border-gray-800 flex items-center justify-between gap-3 flex-wrap"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                            s.side === "above"
+                              ? "bg-purple-900/40 text-purple-300"
+                              : "bg-orange-900/40 text-orange-300"
+                          }`}
+                        >
+                          {s.side === "above" ? "🔺 Above" : "🔻 Below"}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {s.source} · {s.ratio}× body
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {s.reason}
+                      </p>
+                      <p className="text-xs text-gray-300 tabular-nums mt-1">
+                        {s.low} – {s.high}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addSuggestionToRbs(s)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-green-800 hover:bg-green-700 font-bold"
+                    >
+                      + Add to RBs
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Rejection Blocks */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -773,16 +969,6 @@ export default function RejectionBlockPage() {
             <p className="text-xs opacity-90 mt-1">
               {completeness.description}
             </p>
-            {completeness.gaps && completeness.gaps.length > 0 && (
-              <ul className="text-xs opacity-80 mt-2 list-disc ml-4 space-y-0.5">
-                {completeness.gaps.map((g, i) => (
-                  <li key={i}>
-                    Gap of {g.gap} between {g.from.low}–{g.from.high} and{" "}
-                    {g.to.low}–{g.to.high}
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
 
           <div className="space-y-2">
@@ -834,7 +1020,9 @@ export default function RejectionBlockPage() {
                       type="number"
                       step="any"
                       value={rb.low}
-                      onChange={(e) => updateRb(rb.id, "low", e.target.value)}
+                      onChange={(e) =>
+                        updateRb(rb.id, "low", e.target.value)
+                      }
                       disabled={isVisit}
                       className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs disabled:opacity-50"
                     />
@@ -847,7 +1035,9 @@ export default function RejectionBlockPage() {
                       type="number"
                       step="any"
                       value={rb.high}
-                      onChange={(e) => updateRb(rb.id, "high", e.target.value)}
+                      onChange={(e) =>
+                        updateRb(rb.id, "high", e.target.value)
+                      }
                       disabled={isVisit}
                       className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs disabled:opacity-50"
                     />
@@ -874,11 +1064,38 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* Close + ATR + Pip */}
+        {/* EMA + Close + ATR + Pip */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            The Verdict, Volatility &amp; Pip Size
+            EMA 50 · Verdict · Volatility · Pip
           </h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Price}
+                onChange={(e) => update("ema50Price", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 (prior)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Prior}
+                onChange={(e) => update("ema50Prior", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -890,7 +1107,6 @@ export default function RejectionBlockPage() {
                 step="any"
                 value={form.priorClose}
                 onChange={(e) => update("priorClose", e.target.value)}
-                placeholder="previous candle close"
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               />
             </div>
@@ -903,7 +1119,6 @@ export default function RejectionBlockPage() {
                 step="any"
                 value={form.closePrice}
                 onChange={(e) => update("closePrice", e.target.value)}
-                placeholder="e.g. 209680"
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               />
             </div>
@@ -912,7 +1127,7 @@ export default function RejectionBlockPage() {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                ATR (current)
+                ATR current
               </label>
               <input
                 type="number"
@@ -924,7 +1139,7 @@ export default function RejectionBlockPage() {
             </div>
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                ATR (prior)
+                ATR prior
               </label>
               <input
                 type="number"
@@ -940,51 +1155,20 @@ export default function RejectionBlockPage() {
               </label>
               <select
                 value={form.pipSize}
-                onChange={(e) => update("pipSize", parseFloat(e.target.value))}
+                onChange={(e) =>
+                  update("pipSize", parseFloat(e.target.value))
+                }
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               >
-                <option value={0.0001}>0.0001 (FX)</option>
+                <option value={0.0001}>0.0001</option>
                 <option value={0.001}>0.001</option>
-                <option value={0.01}>0.01 (VOL / Gold)</option>
+                <option value={0.01}>0.01 (VOL)</option>
                 <option value={0.1}>0.1</option>
                 <option value={1}>1.0</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Headway VOL pairs: 0.01
-              </p>
             </div>
-          </div>
-
-          <div className={`p-3 rounded-lg border ${atr.color}`}>
-            <p className="text-xs font-semibold">
-              {atr.emoji} {atr.label}
-            </p>
-            <p className="text-xs opacity-90 mt-1">{atr.description}</p>
           </div>
         </div>
-
-        {/* Active RB */}
-        {activeRb && activeRbPosInfo && (
-          <div
-            className={`p-4 rounded-lg border space-y-2 ${activeRbPosInfo.color}`}
-          >
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs opacity-80">
-                Active RB — the one price is approaching
-              </p>
-              <p className="text-xs opacity-80">
-                CE {activeRbCe !== null ? formatPrice(activeRbCe) : "—"}
-              </p>
-            </div>
-            <p className="text-lg font-bold">
-              {activeRbPosInfo.emoji} {activeRbPosInfo.label}
-            </p>
-            <p className="text-sm opacity-90">{activeRbPosInfo.meaning}</p>
-            <p className="text-xs opacity-80">
-              Range: {activeRb.low} – {activeRb.high}
-            </p>
-          </div>
-        )}
 
         {/* Verdict */}
         {negotiation && (
@@ -1015,74 +1199,160 @@ export default function RejectionBlockPage() {
                   {flippedInfo.emoji} {flippedInfo.label}
                 </span>
               )}
+              {pathBlockerBadge && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border font-bold ${pathBlockerBadge.color}`}
+                >
+                  {pathBlockerBadge.emoji} {pathBlockerBadge.label}
+                </span>
+              )}
             </div>
             <p className="text-sm opacity-90">{verdict.description}</p>
           </div>
         )}
 
-        {/* Conditions */}
-        {negotiation && negotiation.verdict !== "WAIT" && condSummary && (
-          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+        {/* Trade Card */}
+        {trade && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-blue-800 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-blue-400">
-                Conditions{" "}
-                {negotiation.verdict === "BUY" ? "Above" : "Below"}
+                Trade Parameters
               </h2>
-              <div className="flex items-center gap-2">
-                {flippedInfo && (
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full border font-bold ${flippedInfo.color}`}
-                  >
-                    {flippedInfo.emoji} {flippedInfo.label}
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-bold ${
+                  trade.direction === "BUY"
+                    ? "bg-green-900/40 text-green-300"
+                    : "bg-red-900/40 text-red-300"
+                }`}
+              >
+                {trade.direction}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-gray-500">Entry (CE)</p>
+                <p className="font-bold tabular-nums text-yellow-400">
+                  {formatPrice(trade.entry)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Stop Loss</p>
+                <p className="font-bold tabular-nums text-red-400">
+                  {formatPrice(trade.sl)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Take Profit (2R)</p>
+                <p className="font-bold tabular-nums text-green-400">
+                  {formatPrice(trade.tp)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">RR</p>
+                <p className="font-bold tabular-nums text-white">1:2</p>
+              </div>
+              {tradePips && (
+                <>
+                  <div>
+                    <p className="text-xs text-gray-500">SL distance</p>
+                    <p className="font-bold tabular-nums text-red-300">
+                      {tradePips.slDistance} pips
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">TP distance</p>
+                    <p className="font-bold tabular-nums text-green-300">
+                      {tradePips.tpDistance} pips
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Pip size</p>
+                    <p className="font-bold tabular-nums text-gray-300">
+                      {tradePips.pipSize}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Path to Target */}
+        {trade && pathInfo.hasBlockers && pathInfo.nearest && (
+          <div className="p-4 rounded-lg bg-gray-900 border-2 border-yellow-700 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 className="text-sm font-bold text-yellow-300">
+                ⚠️ RBs in the path
+              </h2>
+              {pathBlockerBadge && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border font-bold ${pathBlockerBadge.color}`}
+                >
+                  {pathBlockerBadge.emoji} {pathBlockerBadge.label}
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-yellow-200">
+              {pathBlockerBadge?.description ||
+                "Price may reject at these RBs before reaching the full target."}
+            </p>
+
+            <div className="space-y-2">
+              {pathInfo.pathRbs.map((rb, i) => (
+                <div
+                  key={rb.id || i}
+                  className="p-3 rounded-lg bg-black border border-gray-800"
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-sm font-bold">
+                      {i === 0 ? "🎯 Nearest" : `RB ${i + 1}`}
+                    </span>
+                    <span className="text-xs tabular-nums text-gray-400">
+                      {rb.low} – {rb.high} (CE {rb.ce})
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
+                    <p>
+                      <span className="text-gray-500">Distance:</span>{" "}
+                      <span className="font-bold text-yellow-300 tabular-nums">
+                        {rb.distancePips} pips
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-gray-500">Safe TP:</span>{" "}
+                      <span className="font-bold text-green-300 tabular-nums">
+                        {formatPrice(rb.safeTp)}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 rounded-lg bg-yellow-950/30 border border-yellow-800">
+              <p className="text-xs text-yellow-200 font-semibold">
+                💡 Recommended:
+              </p>
+              <p className="text-xs text-yellow-100 mt-1">
+                Full 2R target:{" "}
+                <strong className="tabular-nums">
+                  {formatPrice(trade.tp)}
+                </strong>
+              </p>
+              <p className="text-xs text-yellow-100">
+                Safe TP (before nearest RB):{" "}
+                <strong className="tabular-nums">
+                  {formatPrice(pathInfo.safeTp)}
+                </strong>{" "}
+                {pathInfo.safeTpPips !== null && (
+                  <span className="text-yellow-300">
+                    ({pathInfo.safeTpPips} pips)
                   </span>
                 )}
-                <span
-                  className={`text-xs px-2 py-1 rounded-full border font-semibold ${condSummary.color}`}
-                >
-                  {condSummary.emoji} {condSummary.label}
-                </span>
-              </div>
+              </p>
             </div>
-            <p className="text-xs text-gray-500">
-              {flippedInfo
-                ? flippedInfo.description
-                : condSummary.description}
-            </p>
-            {(() => {
-              const list =
-                negotiation.verdict === "BUY"
-                  ? conditions.above
-                  : conditions.below;
-              if (list.length === 0) {
-                return (
-                  <p className="text-xs text-gray-400 py-2">
-                    No adjacent RBs in the path — clear runway.
-                  </p>
-                );
-              }
-              return (
-                <div className="space-y-2">
-                  {list.map((c, i) => (
-                    <div
-                      key={c.id || i}
-                      className={`p-3 rounded-lg border ${c.tier.color}`}
-                    >
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <span className="text-sm font-bold">
-                          {c.tier.emoji} {c.tier.label}
-                        </span>
-                        <span className="text-xs tabular-nums opacity-90">
-                          {c.low} – {c.high} (CE {c.ce})
-                        </span>
-                      </div>
-                      <p className="text-xs opacity-80 mt-1">
-                        {c.tier.description}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
           </div>
         )}
 
@@ -1112,7 +1382,7 @@ export default function RejectionBlockPage() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">New CE (Entry)</p>
+                <p className="text-xs text-gray-500">New CE</p>
                 <p className="font-bold tabular-nums text-yellow-400">
                   {formatPrice(nextTrade.entry)}
                 </p>
@@ -1132,124 +1402,15 @@ export default function RejectionBlockPage() {
               {nextTradePips && (
                 <>
                   <div>
-                    <p className="text-xs text-gray-500">SL distance</p>
+                    <p className="text-xs text-gray-500">SL pips</p>
                     <p className="font-bold tabular-nums text-red-300">
-                      {nextTradePips.slDistance} pips
+                      {nextTradePips.slDistance}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">TP distance</p>
+                    <p className="text-xs text-gray-500">TP pips</p>
                     <p className="font-bold tabular-nums text-green-300">
-                      {nextTradePips.tpDistance} pips
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-            {!isVisit && (
-              <button
-                type="button"
-                onClick={handleSaveAsNewSetup}
-                className="w-full py-3 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
-              >
-                🔄 Save as New Setup
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Trade Card */}
-        {trade && (
-          <div className="p-4 rounded-lg bg-gray-900 border border-blue-800 space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h2 className="text-sm font-semibold text-blue-400">
-                Trade Parameters (active RB)
-              </h2>
-              <div className="flex items-center gap-2">
-                {alignment && (
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
-                  >
-                    {alignment.label}
-                  </span>
-                )}
-                <span
-                  className={`text-xs px-2 py-1 rounded-full font-bold ${
-                    trade.direction === "BUY"
-                      ? "bg-green-900/40 text-green-300"
-                      : "bg-red-900/40 text-red-300"
-                  }`}
-                >
-                  {trade.direction}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-gray-500">Entry (CE)</p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  {formatPrice(trade.entry)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Stop Loss</p>
-                <p className="font-bold tabular-nums text-red-400">
-                  {formatPrice(trade.sl)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Take Profit (2R)</p>
-                <p className="font-bold tabular-nums text-green-400">
-                  {formatPrice(trade.tp)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">RR</p>
-                <p className="font-bold tabular-nums text-white">1:2</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.risk.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Reward</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.reward.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Lot Size</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.lotSize.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk ($)</p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  ${trade.riskAmount.toFixed(2)}
-                </p>
-              </div>
-              {tradePips && (
-                <>
-                  <div>
-                    <p className="text-xs text-gray-500">SL distance</p>
-                    <p className="font-bold tabular-nums text-red-300">
-                      {tradePips.slDistance} pips
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">TP distance</p>
-                    <p className="font-bold tabular-nums text-green-300">
-                      {tradePips.tpDistance} pips
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Pip size</p>
-                    <p className="font-bold tabular-nums text-gray-300">
-                      {tradePips.pipSize}
+                      {nextTradePips.tpDistance}
                     </p>
                   </div>
                 </>
@@ -1278,8 +1439,7 @@ export default function RejectionBlockPage() {
 
         {saved && (
           <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
-            ✅{" "}
-            {isVisit ? "Visit logged" : isEdit ? "Updated" : "Saved"} —
+            ✅ {isVisit ? "Visit logged" : isEdit ? "Updated" : "Saved"} —
             redirecting...
           </div>
         )}
