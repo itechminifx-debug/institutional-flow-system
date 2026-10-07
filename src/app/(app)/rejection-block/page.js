@@ -28,6 +28,8 @@ import {
   computeNextOpportunityTrade,
   atrFilter,
   computeRejectionBlockTrade,
+  computePips,
+  PIP_SIZE_DEFAULT,
 } from "@/lib/rejectionBlockEngine";
 import PairPicker from "@/components/PairPicker";
 
@@ -58,6 +60,7 @@ export default function RejectionBlockPage() {
     priorClose: "",
     atrCurrent: "",
     atrPrior: "",
+    pipSize: PIP_SIZE_DEFAULT,
     notes: "",
   });
 
@@ -69,9 +72,6 @@ export default function RejectionBlockPage() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingDetailId, setExistingDetailId] = useState(null);
 
-  // ============================================================
-  // Load
-  // ============================================================
   useEffect(() => {
     async function load() {
       const {
@@ -89,8 +89,8 @@ export default function RejectionBlockPage() {
       if (!isLoadExisting) return;
 
       const lookupId = isEdit ? editId : visitId;
-
       setLoadingEdit(true);
+
       const { data: setupData, error: setupErr } = await supabase
         .from("setups")
         .select("*")
@@ -116,13 +116,13 @@ export default function RejectionBlockPage() {
         zoneType: detailData?.zone_type || f.zoneType,
         zoneHigh: detailData?.zone_high?.toString() || "",
         zoneLow: detailData?.zone_low?.toString() || "",
-        // In visit mode, do not prefill EMA / close — those are the new visit's data
         ema50Price: isEdit ? detailData?.ema50_price?.toString() || "" : "",
         ema50Prior: isEdit ? detailData?.ema50_prior?.toString() || "" : "",
         closePrice: isEdit ? detailData?.close_price?.toString() || "" : "",
         priorClose: isEdit ? detailData?.prior_close?.toString() || "" : "",
         atrCurrent: isEdit ? detailData?.atr_current?.toString() || "" : "",
         atrPrior: isEdit ? detailData?.atr_prior?.toString() || "" : "",
+        pipSize: detailData?.pip_size || PIP_SIZE_DEFAULT,
         notes: isEdit ? setupData.notes || "" : "",
       }));
 
@@ -141,14 +141,6 @@ export default function RejectionBlockPage() {
             rb.created_at || new Date(Date.now() - idx * 1000).toISOString(),
         }));
         setRbs(restored);
-      } else if (detailData?.rb_high || detailData?.rb_low) {
-        setRbs([
-          {
-            id: Math.random().toString(36).slice(2),
-            high: detailData.rb_high?.toString() || "",
-            low: detailData.rb_low?.toString() || "",
-          },
-        ]);
       }
 
       setExistingDetailId(detailData?.id || null);
@@ -173,9 +165,6 @@ export default function RejectionBlockPage() {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
 
-  // ============================================================
-  // Computations
-  // ============================================================
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
 
   const rankedRbs = useMemo(() => {
@@ -301,11 +290,27 @@ export default function RejectionBlockPage() {
         })
       : null;
 
+  // Recompute pips with the current pip size (override the default 0.01)
+  const pipSize = parseFloat(form.pipSize) || PIP_SIZE_DEFAULT;
+  const tradePips = trade
+    ? computePips({
+        entry: trade.entry,
+        sl: trade.sl,
+        tp: trade.tp,
+        pipSize,
+      })
+    : null;
+  const nextTradePips = nextTrade
+    ? computePips({
+        entry: nextTrade.entry,
+        sl: nextTrade.sl,
+        tp: nextTrade.tp,
+        pipSize,
+      })
+    : null;
+
   const zoneInfo = zoneTypeInfo(form.zoneType);
 
-  // ============================================================
-  // SAVE
-  // ============================================================
   async function handleSave() {
     if (!negotiation || !activeRb) {
       setError("Fill in the zone, at least one RB, and close price first.");
@@ -324,9 +329,8 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // ---- VISIT MODE: create a new visit row, do not touch parent ----
+    // VISIT MODE
     if (isVisit) {
-      // Find the rb id on the parent that matches the active one
       const { data: parentRbs } = await supabase
         .from("rejection_block_rbs")
         .select("*")
@@ -369,6 +373,9 @@ export default function RejectionBlockPage() {
         tp: trade?.tp || null,
         lot_size: trade?.lotSize || null,
         risk_amount: trade?.riskAmount || null,
+        pip_size: pipSize,
+        sl_pips: tradePips?.slDistance || null,
+        tp_pips: tradePips?.tpDistance || null,
         notes: form.notes,
       };
 
@@ -388,7 +395,7 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // ---- NEW or EDIT mode ----
+    // NEW or EDIT
     const setupPayload = {
       user_id: user.id,
       pair: form.pair,
@@ -457,6 +464,9 @@ export default function RejectionBlockPage() {
       tp: trade?.tp || null,
       lot_size: trade?.lotSize || null,
       risk_amount: trade?.riskAmount || null,
+      pip_size: pipSize,
+      sl_pips: tradePips?.slDistance || null,
+      tp_pips: tradePips?.tpDistance || null,
       atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
       atr_state: atr.key,
@@ -548,8 +558,6 @@ export default function RejectionBlockPage() {
     const params = new URLSearchParams();
     params.set("prefill_pair", form.pair);
     params.set("prefill_timeframe", form.timeframe);
-    params.set("prefill_close", form.closePrice || "");
-    params.set("prefill_prior", form.priorClose || "");
     router.push(`/rejection-block?${params.toString()}`);
   }
 
@@ -581,12 +589,11 @@ export default function RejectionBlockPage() {
           </p>
         </div>
 
-        {/* Visit-mode banner */}
         {isVisit && (
           <div className="p-3 rounded-lg bg-purple-950/30 border border-purple-700">
             <p className="text-xs text-purple-200">
               🔄 <strong>Visit mode</strong> — logging a new reaction on the
-              existing zone. The parent setup and its RBs are unchanged.
+              existing zone.
             </p>
           </div>
         )}
@@ -624,7 +631,6 @@ export default function RejectionBlockPage() {
           <h2 className="text-sm font-semibold text-blue-400">
             Zone (where orders sit)
           </h2>
-
           <div>
             <label className="block text-xs mb-1 text-gray-400">
               Zone Type
@@ -642,7 +648,6 @@ export default function RejectionBlockPage() {
               ))}
             </select>
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -673,7 +678,6 @@ export default function RejectionBlockPage() {
               />
             </div>
           </div>
-
           {zoneCe !== null && (
             <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900">
               <p className="text-xs text-blue-300 font-semibold">Zone CE</p>
@@ -699,7 +703,6 @@ export default function RejectionBlockPage() {
                 step="any"
                 value={form.ema50Price}
                 onChange={(e) => update("ema50Price", e.target.value)}
-                placeholder="e.g. 209550"
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               />
             </div>
@@ -712,12 +715,10 @@ export default function RejectionBlockPage() {
                 step="any"
                 value={form.ema50Prior}
                 onChange={(e) => update("ema50Prior", e.target.value)}
-                placeholder="e.g. 209520"
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               />
             </div>
           </div>
-
           {ema.direction !== "unknown" && (
             <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
               <p className="text-xs">
@@ -765,7 +766,6 @@ export default function RejectionBlockPage() {
             )}
           </div>
 
-          {/* Completeness check */}
           <div className={`p-3 rounded-lg border ${completeness.color}`}>
             <p className="text-xs font-semibold">
               {completeness.emoji} {completeness.label}
@@ -790,7 +790,6 @@ export default function RejectionBlockPage() {
               const ranked = rankedRbs.find((x) => x.id === rb.id);
               const rank = ranked ? rbRankInfo(ranked.rank) : null;
               const isActive = activeRb && activeRb.id === rb.id;
-
               const pos =
                 rb.high && rb.low
                   ? detectRbVsZone({
@@ -875,10 +874,10 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* Close + ATR */}
+        {/* Close + ATR + Pip */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            The Verdict &amp; Volatility
+            The Verdict, Volatility &amp; Pip Size
           </h2>
 
           <div className="grid grid-cols-2 gap-3">
@@ -910,7 +909,7 @@ export default function RejectionBlockPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
                 ATR (current)
@@ -935,6 +934,25 @@ export default function RejectionBlockPage() {
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               />
             </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Pip size
+              </label>
+              <select
+                value={form.pipSize}
+                onChange={(e) => update("pipSize", parseFloat(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                <option value={0.0001}>0.0001 (FX)</option>
+                <option value={0.001}>0.001</option>
+                <option value={0.01}>0.01 (VOL / Gold)</option>
+                <option value={0.1}>0.1</option>
+                <option value={1}>1.0</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Headway VOL pairs: 0.01
+              </p>
+            </div>
           </div>
 
           <div className={`p-3 rounded-lg border ${atr.color}`}>
@@ -945,7 +963,7 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* Active RB Meaning */}
+        {/* Active RB */}
         {activeRb && activeRbPosInfo && (
           <div
             className={`p-4 rounded-lg border space-y-2 ${activeRbPosInfo.color}`}
@@ -968,7 +986,7 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
-        {/* Verdict Card */}
+        {/* Verdict */}
         {negotiation && (
           <div className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}>
             <p className="text-xs opacity-80">Verdict (active RB)</p>
@@ -1111,6 +1129,22 @@ export default function RejectionBlockPage() {
                   {formatPrice(nextTrade.tp)}
                 </p>
               </div>
+              {nextTradePips && (
+                <>
+                  <div>
+                    <p className="text-xs text-gray-500">SL distance</p>
+                    <p className="font-bold tabular-nums text-red-300">
+                      {nextTradePips.slDistance} pips
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">TP distance</p>
+                    <p className="font-bold tabular-nums text-green-300">
+                      {nextTradePips.tpDistance} pips
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
             {!isVisit && (
               <button
@@ -1150,6 +1184,7 @@ export default function RejectionBlockPage() {
                 </span>
               </div>
             </div>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-500">Entry (CE)</p>
@@ -1197,6 +1232,28 @@ export default function RejectionBlockPage() {
                   ${trade.riskAmount.toFixed(2)}
                 </p>
               </div>
+              {tradePips && (
+                <>
+                  <div>
+                    <p className="text-xs text-gray-500">SL distance</p>
+                    <p className="font-bold tabular-nums text-red-300">
+                      {tradePips.slDistance} pips
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">TP distance</p>
+                    <p className="font-bold tabular-nums text-green-300">
+                      {tradePips.tpDistance} pips
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Pip size</p>
+                    <p className="font-bold tabular-nums text-gray-300">
+                      {tradePips.pipSize}
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

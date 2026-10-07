@@ -3,16 +3,14 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// MULTIPLE RBs — all must be listed for correct verdicts.
-// ACTIVE RB — the one price is approaching.
-// VERDICT — close above/below the active RB decides direction.
-// EMA 50 FILTER — aligns trade with higher-tf trend.
-// CONDITIONS ABOVE/BELOW — direction-aware confirm/block tiers.
-// ALL RBs FLIPPED — close beyond every listed RB = max continuation.
-// NEXT OPPORTUNITY — reversal after a swept condition RB.
-// ZONE LIFECYCLE — a zone can give entries for weeks.
-//   Each visit logs a new reaction on the same RBs.
+// PIPS: 2 decimals → pip size = 0.01 (Headway Volatility pairs)
+//
+// Everything else as before:
+//   - Multiple RBs, active RB, verdict, EMA 50, conditions,
+//     all flipped, next opportunity, zone lifecycle.
 // ============================================================
+
+export const PIP_SIZE_DEFAULT = 0.01;
 
 // ============================================================
 // ZONE TYPES
@@ -37,6 +35,27 @@ export function computeCe(high, low) {
   const l = parseFloat(low);
   if (isNaN(h) || isNaN(l)) return null;
   return Math.round(((h + l) / 2) * 100) / 100;
+}
+
+// ============================================================
+// PIPS
+// ============================================================
+export function computePips({ entry, sl, tp, pipSize = PIP_SIZE_DEFAULT }) {
+  const e = parseFloat(entry);
+  const s = parseFloat(sl);
+  const t = parseFloat(tp);
+  const p = parseFloat(pipSize) || PIP_SIZE_DEFAULT;
+
+  if (isNaN(e) || isNaN(s) || isNaN(t)) return null;
+
+  const slDistance = Math.round((Math.abs(e - s) / p) * 100) / 100;
+  const tpDistance = Math.round((Math.abs(t - e) / p) * 100) / 100;
+
+  return {
+    slDistance,
+    tpDistance,
+    pipSize: p,
+  };
 }
 
 // ============================================================
@@ -594,10 +613,7 @@ export function allFlippedInfo(flipped) {
 }
 
 // ============================================================
-// RB COMPLETENESS CHECK (NEW)
-// ============================================================
-// Warns if too few RBs are listed or if there's an obvious gap
-// between adjacent RBs (possible missing RB).
+// RB COMPLETENESS CHECK
 // ============================================================
 export function checkRbCompleteness({ rankedRbs, atr }) {
   if (!Array.isArray(rankedRbs) || rankedRbs.length === 0) {
@@ -607,7 +623,7 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
       label: "No RBs listed",
       emoji: "🚫",
       color: "bg-red-950/40 border-red-700 text-red-200",
-      description: "Add every RB around the zone. At minimum, one inside and one above or below.",
+      description: "Add every RB around the zone.",
       gaps: [],
     };
   }
@@ -637,11 +653,10 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
       emoji: "⚠️",
       color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
       description:
-        "Only one RB is listed. List every RB around the zone — the system needs them all for a correct verdict.",
+        "Only one RB is listed. List every RB around the zone.",
       gaps: [],
     };
   }
-
   if (gaps.length > 0) {
     return {
       complete: false,
@@ -654,7 +669,6 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
       gaps,
     };
   }
-
   return {
     complete: true,
     level: "ok",
@@ -667,7 +681,7 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 }
 
 // ============================================================
-// NEXT OPPORTUNITY — Reversal after trade
+// NEXT OPPORTUNITY
 // ============================================================
 export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }) {
   if (!verdict || verdict === "WAIT") return null;
@@ -772,6 +786,8 @@ export function computeNextOpportunityTrade({
       ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
       : 0;
 
+  const pips = computePips({ entry, sl, tp });
+
   return {
     direction: newDirection,
     entry,
@@ -786,14 +802,12 @@ export function computeNextOpportunityTrade({
     sweepLevel: isNaN(sweep) ? null : sweep,
     newRbHigh: high,
     newRbLow: low,
+    pips,
   };
 }
 
 // ============================================================
-// ZONE LIFECYCLE HELPERS (NEW)
-// ============================================================
-// Aggregates visit outcomes for a zone.
-// visits: array of { outcome: 'win'|'loss'|'breakeven'|null, ... }
+// ZONE LIFECYCLE
 // ============================================================
 export function zoneStats(visits) {
   if (!Array.isArray(visits) || visits.length === 0) {
@@ -806,22 +820,18 @@ export function zoneStats(visits) {
       winRate: null,
     };
   }
-
   let wins = 0,
     losses = 0,
     be = 0,
     pending = 0;
-
   for (const v of visits) {
     if (v.outcome === "win") wins++;
     else if (v.outcome === "loss") losses++;
     else if (v.outcome === "breakeven") be++;
     else pending++;
   }
-
   const closed = wins + losses + be;
   const winRate = closed > 0 ? Math.round((wins / closed) * 100) : null;
-
   return {
     total: visits.length,
     wins,
@@ -834,7 +844,6 @@ export function zoneStats(visits) {
 
 export function zoneLifecycleLabel(setup, visits) {
   if (!setup) return null;
-
   const created = setup.created_at
     ? new Date(setup.created_at).getTime()
     : null;
@@ -851,7 +860,6 @@ export function zoneLifecycleLabel(setup, visits) {
       description: "This zone is no longer being tracked.",
     };
   }
-
   if (!visits || visits.length === 0) {
     return {
       key: "new",
@@ -861,7 +869,6 @@ export function zoneLifecycleLabel(setup, visits) {
       description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
     };
   }
-
   return {
     key: "active",
     label: `Zone live — ${visits.length} visit${visits.length === 1 ? "" : "s"}`,
@@ -952,6 +959,8 @@ export function computeRejectionBlockTrade({
       ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
       : 0;
 
+  const pips = computePips({ entry, sl, tp });
+
   return {
     direction: verdict,
     entry,
@@ -966,5 +975,6 @@ export function computeRejectionBlockTrade({
     wickExtreme,
     ce,
     slSource: buffer > 0 ? "wick+buffer" : "wick",
+    pips,
   };
 }
