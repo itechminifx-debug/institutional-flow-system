@@ -28,11 +28,19 @@
 //   BUY aligned if price above rising EMA 50
 //   SELL aligned if price below falling EMA 50
 //
-// CONDITIONS ABOVE & BELOW
+// CONDITIONS ABOVE & BELOW (direction-aware)
 // ------------------------------------------------------------
 //   BUY  → check RBs ABOVE the active RB
+//     close > high  → ✅ Confirmed (broke through upward)
+//     close >= ce   → ⚪ Caution
+//     close >= low  → ⚪ Caution
+//     close < low   → ⚠️ Blocked (wall above)
+//
 //   SELL → check RBs BELOW the active RB
-//   Per adjacent RB: confirmed / caution / blocked
+//     close < low   → ✅ Confirmed (broke through downward)
+//     close <= ce   → ⚪ Caution
+//     close <= high → ⚪ Caution
+//     close > high  → ⚠️ Blocked (wall below)
 //
 // ENTRY = CE of the active RB.
 // SL    = beyond the RB wick extreme + ATR buffer.
@@ -336,10 +344,6 @@ export function strengthInfo(strength) {
 // ============================================================
 // EMA 50 FILTER
 // ============================================================
-// User enters EMA 50 price and prior price.
-// Direction = rising / falling / flat.
-// Position = where the close sits vs the EMA 50 line.
-// ============================================================
 export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
   const c = parseFloat(emaPrice);
   const p = parseFloat(emaPrior);
@@ -443,18 +447,21 @@ export function emaAlignment({ direction, position, verdict }) {
 }
 
 // ============================================================
-// CONDITIONS ABOVE & BELOW
+// CONDITIONS ABOVE & BELOW  — CORRECTED (direction-aware)
 // ============================================================
-// BUY  → examine RBs above the active RB
-// SELL → examine RBs below the active RB
-// Per adjacent RB: confirmed / caution / blocked based on close vs CE
+// BUY  → examine RBs ABOVE the active RB
+//   close > high  → ✅ Confirmed (broke up through it)
+//   close >= ce   → ⚪ Caution
+//   close >= low  → ⚪ Caution
+//   close < low   → ⚠️ Blocked (wall above, target not reached)
+//
+// SELL → examine RBs BELOW the active RB
+//   close < low   → ✅ Confirmed (broke down through it)
+//   close <= ce   → ⚪ Caution
+//   close <= high → ⚪ Caution
+//   close > high  → ⚠️ Blocked (wall below, target not reached)
 // ============================================================
-export function checkConditions({
-  activeRb,
-  allRbs,
-  closePrice,
-  verdict,
-}) {
+export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
   if (!activeRb || !verdict || verdict === "WAIT") {
     return { above: [], below: [] };
   }
@@ -464,6 +471,9 @@ export function checkConditions({
 
   const activeHigh = parseFloat(activeRb.high);
   const activeLow = parseFloat(activeRb.low);
+  if (isNaN(activeHigh) || isNaN(activeLow)) {
+    return { above: [], below: [] };
+  }
 
   const above = [];
   const below = [];
@@ -477,68 +487,112 @@ export function checkConditions({
 
     const ce = Math.round(((high + low) / 2) * 100) / 100;
 
-    // Determine tier for each side
+    // Decide which bucket this RB belongs to first
+    let bucket = null;
+    if (low > activeHigh) bucket = "above";
+    else if (high < activeLow) bucket = "below";
+    else continue; // overlapping active RB — skip
+
+    // Direction-aware tier logic
     let tier;
-    if (close > high) {
-      tier = {
-        key: "confirmed",
-        label: "Confirmed",
-        emoji: "✅",
-        color: "bg-green-900/40 text-green-300 border-green-700",
-        description: "Close has broken through this RB cleanly.",
-      };
-    } else if (close >= ce) {
-      tier = {
-        key: "caution",
-        label: "Caution",
-        emoji: "⚪",
-        color: "bg-blue-900/40 text-blue-300 border-blue-700",
-        description: "Close sits between CE and high — still inside.",
-      };
-    } else if (close >= low) {
-      tier = {
-        key: "caution",
-        label: "Caution",
-        emoji: "⚪",
-        color: "bg-blue-900/40 text-blue-300 border-blue-700",
-        description: "Close sits between low and CE — still inside.",
-      };
+
+    if (bucket === "above") {
+      // Above RB: what matters is whether close has broken through upward
+      if (close > high) {
+        tier = {
+          key: "confirmed",
+          label: "Confirmed",
+          emoji: "✅",
+          color: "bg-green-900/40 text-green-300 border-green-700",
+          description: "Close has broken above this RB — path is open.",
+        };
+      } else if (close >= ce) {
+        tier = {
+          key: "caution",
+          label: "Caution",
+          emoji: "⚪",
+          color: "bg-blue-900/40 text-blue-300 border-blue-700",
+          description: "Close sits in the upper half — still inside this RB.",
+        };
+      } else if (close >= low) {
+        tier = {
+          key: "caution",
+          label: "Caution",
+          emoji: "⚪",
+          color: "bg-blue-900/40 text-blue-300 border-blue-700",
+          description: "Close sits in the lower half — still inside this RB.",
+        };
+      } else {
+        tier = {
+          key: "blocked",
+          label: "Blocked",
+          emoji: "⚠️",
+          color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
+          description:
+            "Close is below this RB — it is a wall above. Price must clear it.",
+        };
+      }
     } else {
-      tier = {
-        key: "blocked",
-        label: "Blocked",
-        emoji: "⚠️",
-        color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
-        description: "Close is below this RB — it is a wall above.",
-      };
+      // Below RB: what matters is whether close has broken through downward
+      if (close < low) {
+        tier = {
+          key: "confirmed",
+          label: "Confirmed",
+          emoji: "✅",
+          color: "bg-green-900/40 text-green-300 border-green-700",
+          description: "Close has broken below this RB — path is open.",
+        };
+      } else if (close <= ce) {
+        tier = {
+          key: "caution",
+          label: "Caution",
+          emoji: "⚪",
+          color: "bg-blue-900/40 text-blue-300 border-blue-700",
+          description: "Close sits in the lower half — still inside this RB.",
+        };
+      } else if (close <= high) {
+        tier = {
+          key: "caution",
+          label: "Caution",
+          emoji: "⚪",
+          color: "bg-blue-900/40 text-blue-300 border-blue-700",
+          description: "Close sits in the upper half — still inside this RB.",
+        };
+      } else {
+        tier = {
+          key: "blocked",
+          label: "Blocked",
+          emoji: "⚠️",
+          color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
+          description:
+            "Close is above this RB — it is a wall below. Price must clear it.",
+        };
+      }
     }
 
-    const entry = {
-      id: rb.id,
-      high,
-      low,
-      ce,
-      tier,
-      close,
-    };
+    const entry = { id: rb.id, high, low, ce, tier, close };
 
-    // Assign to above or below bucket based on RB position vs active RB
-    if (low > activeHigh) above.push(entry);
-    else if (high < activeLow) below.push(entry);
+    if (bucket === "above") above.push(entry);
+    else below.push(entry);
   }
 
-  // Sort: above ascending by low (nearest first), below descending by high (nearest first)
+  // Sort: above ascending by low (nearest first); below descending by high (nearest first)
   above.sort((a, b) => a.low - b.low);
   below.sort((a, b) => b.high - a.high);
 
-  // If verdict is SELL, only return below; if BUY, only return above
+  // Only return the direction-relevant list
   if (verdict === "BUY") return { above, below: [] };
   if (verdict === "SELL") return { above: [], below };
   return { above, below };
 }
 
+// ============================================================
+// CONDITION SUMMARY — CORRECTED (direction-aware wording)
+// ============================================================
 export function conditionSummary(conditions, verdict) {
   const list = verdict === "BUY" ? conditions.above : conditions.below;
+  const where = verdict === "BUY" ? "above" : "below";
+
   if (!list || list.length === 0) {
     return {
       key: "none",
@@ -554,24 +608,31 @@ export function conditionSummary(conditions, verdict) {
 
   const blocked = list.filter((x) => x.tier.key === "blocked").length;
   const confirmed = list.filter((x) => x.tier.key === "confirmed").length;
+  const caution = list.filter((x) => x.tier.key === "caution").length;
 
   if (blocked > 0 && confirmed === 0) {
     return {
       key: "blocked",
-      label: `${blocked} RB${blocked === 1 ? "" : "s"} above ⚠️`,
+      label: `${blocked} RB${blocked === 1 ? "" : "s"} ${where} ⚠️`,
       emoji: "⚠️",
       color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
-      description: "Price must clear these RBs to reach the target.",
+      description:
+        verdict === "BUY"
+          ? "Price must clear these RBs to reach the target above."
+          : "Price must clear these RBs to reach the target below.",
     };
   }
 
-  if (confirmed > 0 && blocked === 0) {
+  if (confirmed > 0 && blocked === 0 && caution === 0) {
     return {
       key: "clear",
       label: "Path clear ✅",
       emoji: "✅",
       color: "bg-green-900/40 text-green-300 border-green-700",
-      description: "Close has already broken through the RBs in the path.",
+      description:
+        verdict === "BUY"
+          ? "Close has already broken above the RBs in the path."
+          : "Close has already broken below the RBs in the path.",
     };
   }
 
@@ -580,7 +641,7 @@ export function conditionSummary(conditions, verdict) {
     label: "Mixed conditions",
     emoji: "⚪",
     color: "bg-blue-900/40 text-blue-300 border-blue-700",
-    description: "Some RBs confirmed, some still ahead.",
+    description: "Some RBs confirmed, some still ahead or in progress.",
   };
 }
 
