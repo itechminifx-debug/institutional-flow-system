@@ -16,6 +16,11 @@ import {
   judgeRejectionBlock,
   premiumDiscountVerdict,
   strengthInfo,
+  computeEmaDirection,
+  emaInfo,
+  emaAlignment,
+  checkConditions,
+  conditionSummary,
   atrFilter,
   computeRejectionBlockTrade,
 } from "@/lib/rejectionBlockEngine";
@@ -43,6 +48,8 @@ export default function RejectionBlockPage() {
     zoneType: "fvg",
     zoneHigh: "",
     zoneLow: "",
+    ema50Price: "",
+    ema50Prior: "",
     closePrice: "",
     atrCurrent: "",
     atrPrior: "",
@@ -96,7 +103,6 @@ export default function RejectionBlockPage() {
         .eq("setup_id", editId)
         .single();
 
-      // Pre-fill form
       setForm((f) => ({
         ...f,
         pair: setupData.pair || f.pair,
@@ -104,13 +110,14 @@ export default function RejectionBlockPage() {
         zoneType: detailData?.zone_type || f.zoneType,
         zoneHigh: detailData?.zone_high?.toString() || "",
         zoneLow: detailData?.zone_low?.toString() || "",
+        ema50Price: detailData?.ema50_price?.toString() || "",
+        ema50Prior: detailData?.ema50_prior?.toString() || "",
         closePrice: detailData?.close_price?.toString() || "",
         atrCurrent: detailData?.atr_current?.toString() || "",
         atrPrior: detailData?.atr_prior?.toString() || "",
         notes: setupData.notes || "",
       }));
 
-      // Load all RBs from child table
       const { data: rbsData } = await supabase
         .from("rejection_block_rbs")
         .select("*")
@@ -127,7 +134,6 @@ export default function RejectionBlockPage() {
         }));
         setRbs(restored);
       } else if (detailData?.rb_high || detailData?.rb_low) {
-        // Fallback: single RB stored on the master detail row
         setRbs([
           {
             id: Math.random().toString(36).slice(2),
@@ -209,6 +215,36 @@ export default function RejectionBlockPage() {
   const verdict = premiumDiscountVerdict(negotiation);
   const strength = negotiation ? strengthInfo(negotiation.strength) : null;
 
+  // EMA 50
+  const ema = computeEmaDirection({
+    emaPrice: form.ema50Price,
+    emaPrior: form.ema50Prior,
+    closePrice: form.closePrice,
+  });
+  const emaMeta = emaInfo(ema);
+  const alignment = negotiation
+    ? emaAlignment({
+        direction: ema.direction,
+        position: ema.position,
+        verdict: negotiation.verdict,
+      })
+    : null;
+
+  // Conditions above/below
+  const conditions = useMemo(() => {
+    if (!activeRb || !negotiation) return { above: [], below: [] };
+    return checkConditions({
+      activeRb,
+      allRbs: rankedRbs,
+      closePrice: form.closePrice,
+      verdict: negotiation.verdict,
+    });
+  }, [activeRb, rankedRbs, form.closePrice, negotiation]);
+
+  const condSummary = negotiation
+    ? conditionSummary(conditions, negotiation.verdict)
+    : null;
+
   const atr = atrFilter(form.atrCurrent, form.atrPrior);
 
   const trade =
@@ -253,7 +289,7 @@ export default function RejectionBlockPage() {
       setup_type: "rejection_block",
       d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
       htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-      ema50_position: "above",
+      ema50_position: ema.position !== "unknown" ? ema.position : "above",
       rejection_block_zone: `${activeRb.low}-${activeRb.high}`,
       ce_price: negotiation.ce,
       use_ce_entry: true,
@@ -317,6 +353,13 @@ export default function RejectionBlockPage() {
       atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
       atr_state: atr.key,
+      ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
+      ema50_prior: form.ema50Prior ? parseFloat(form.ema50Prior) : null,
+      ema50_direction: ema.direction,
+      ema50_position_field: ema.position,
+      ema50_aligned: alignment?.key === "aligned",
+      conditions_above: conditions.above,
+      conditions_below: conditions.below,
       notes: form.notes,
     };
 
@@ -348,7 +391,7 @@ export default function RejectionBlockPage() {
       detailRow = data;
     }
 
-    // Save all RBs — delete old ones first if editing
+    // Save all RBs (delete old first if editing)
     if (isEdit) {
       await supabase
         .from("rejection_block_rbs")
@@ -505,6 +548,63 @@ export default function RejectionBlockPage() {
           )}
         </div>
 
+        {/* EMA 50 */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <h2 className="text-sm font-semibold text-blue-400">EMA 50 Filter</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 Price (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Price}
+                onChange={(e) => update("ema50Price", e.target.value)}
+                placeholder="e.g. 209550"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 Price (prior)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Prior}
+                onChange={(e) => update("ema50Prior", e.target.value)}
+                placeholder="e.g. 209520"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+          </div>
+
+          {ema.direction !== "unknown" && (
+            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs">
+                <span className="text-gray-400">Direction:</span>{" "}
+                <span className={`font-bold ${emaMeta.direction.color}`}>
+                  {emaMeta.direction.emoji} {emaMeta.direction.label}
+                </span>
+              </p>
+              <p className="text-xs">
+                <span className="text-gray-400">Close position:</span>{" "}
+                <span className={`font-bold ${emaMeta.position.color}`}>
+                  {emaMeta.position.label}
+                </span>
+              </p>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Rejection Blocks (Multiple) */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
@@ -613,7 +713,6 @@ export default function RejectionBlockPage() {
             })}
           </div>
 
-          {/* Ranked summary */}
           {rankedRbs.length > 0 && (
             <div className="space-y-1 pt-2 border-t border-gray-800">
               <p className="text-xs text-gray-500 mb-1">Ranked list</p>
@@ -710,7 +809,7 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* Active RB Meaning Card */}
+        {/* Active RB Meaning */}
         {activeRb && activeRbPosInfo && (
           <div
             className={`p-4 rounded-lg border space-y-2 ${activeRbPosInfo.color}`}
@@ -760,22 +859,92 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
+        {/* Conditions Above/Below */}
+        {negotiation &&
+          negotiation.verdict !== "WAIT" &&
+          condSummary && (
+            <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-blue-400">
+                  Conditions{" "}
+                  {negotiation.verdict === "BUY" ? "Above" : "Below"}
+                </h2>
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border font-semibold ${condSummary.color}`}
+                >
+                  {condSummary.emoji} {condSummary.label}
+                </span>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                {condSummary.description}
+              </p>
+
+              {(() => {
+                const list =
+                  negotiation.verdict === "BUY"
+                    ? conditions.above
+                    : conditions.below;
+
+                if (list.length === 0) {
+                  return (
+                    <p className="text-xs text-gray-400 py-2">
+                      No adjacent RBs in the path — clear runway.
+                    </p>
+                  );
+                }
+
+                return (
+                  <div className="space-y-2">
+                    {list.map((c, i) => (
+                      <div
+                        key={c.id || i}
+                        className={`p-3 rounded-lg border ${c.tier.color}`}
+                      >
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <span className="text-sm font-bold">
+                            {c.tier.emoji} {c.tier.label}
+                          </span>
+                          <span className="text-xs tabular-nums opacity-90">
+                            {c.low} – {c.high} (CE {c.ce})
+                          </span>
+                        </div>
+                        <p className="text-xs opacity-80 mt-1">
+                          {c.tier.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
         {/* Trade Card */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-blue-800 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-blue-400">
                 Trade Parameters
               </h2>
-              <span
-                className={`text-xs px-2 py-1 rounded-full font-bold ${
-                  trade.direction === "BUY"
-                    ? "bg-green-900/40 text-green-300"
-                    : "bg-red-900/40 text-red-300"
-                }`}
-              >
-                {trade.direction}
-              </span>
+              <div className="flex items-center gap-2">
+                {alignment && (
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
+                  >
+                    {alignment.label}
+                  </span>
+                )}
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-bold ${
+                    trade.direction === "BUY"
+                      ? "bg-green-900/40 text-green-300"
+                      : "bg-red-900/40 text-red-300"
+                  }`}
+                >
+                  {trade.direction}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -900,11 +1069,17 @@ export default function RejectionBlockPage() {
               <strong>Zones hold orders</strong> — FVG, OB, Liquidity, MSS, BOS
             </li>
             <li>
-              <strong>Multiple RBs</strong> — inside, above, or below the
-              zone
+              <strong>Multiple RBs</strong> — inside, above, or below the zone
             </li>
             <li>
               <strong>Active RB</strong> — the one price is approaching
+            </li>
+            <li>
+              <strong>EMA 50</strong> — rising + price above = BUY aligned;
+              falling + price below = SELL aligned
+            </li>
+            <li>
+              <strong>Conditions panel</strong> — RBs in the trade's path
             </li>
             <li>
               <strong>Entry</strong> — CE of the active RB (50%)
@@ -914,12 +1089,6 @@ export default function RejectionBlockPage() {
             </li>
             <li>
               <strong>TP</strong> — 2R from entry
-            </li>
-            <li>
-              <strong>Close above RB high</strong> — BUY (strong, RB broken ↑)
-            </li>
-            <li>
-              <strong>Close below RB low</strong> — SELL (strong, RB broken ↓)
             </li>
           </ul>
         </div>

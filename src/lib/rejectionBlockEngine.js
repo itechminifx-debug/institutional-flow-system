@@ -9,20 +9,9 @@
 //
 // MULTIPLE RBs
 // ------------------------------------------------------------
-// There can be MULTIPLE Rejection Blocks around a zone:
-//   - inside the zone
-//   - above the zone
-//   - below the zone
-//   - any combination of the three
-//
-// Each RB gets its own position label. RBs are ranked by
-// freshness (current → previous → oldest).
-//
-// The "active RB" is the one price is currently approaching:
-//   1. RB whose range contains the close price, OR
-//   2. RB whose CE is closest to the close price
-//
-// The verdict runs on the ACTIVE RB.
+// Multiple RBs can sit inside, above, or below the zone.
+// RBs are ranked by freshness (current → previous → oldest).
+// The "active RB" is the one price is approaching.
 //
 // VERDICT (RB is the dealing range)
 // ------------------------------------------------------------
@@ -31,6 +20,19 @@
 //   Close in PREMIUM (above CE, inside RB) → SELL (normal)
 //   Close in DISCOUNT (below CE, inside RB) → BUY  (normal)
 //   Close = CE → WAIT
+//
+// EMA 50 FILTER
+// ------------------------------------------------------------
+//   EMA 50 value + prior → direction (rising / falling / flat)
+//   Close vs EMA 50 → position (above / below / at)
+//   BUY aligned if price above rising EMA 50
+//   SELL aligned if price below falling EMA 50
+//
+// CONDITIONS ABOVE & BELOW
+// ------------------------------------------------------------
+//   BUY  → check RBs ABOVE the active RB
+//   SELL → check RBs BELOW the active RB
+//   Per adjacent RB: confirmed / caution / blocked
 //
 // ENTRY = CE of the active RB.
 // SL    = beyond the RB wick extreme + ATR buffer.
@@ -85,7 +87,7 @@ export function rbVsZoneInfo(position) {
       emoji: "🎯",
       color: "bg-blue-900/40 text-blue-300 border-blue-700",
       meaning:
-        "The RB sits inside the zone. Negotiation is happening within the order-filled zone — this is where the fight is settled.",
+        "The RB sits inside the zone. Negotiation is happening within the order-filled zone.",
     },
     above: {
       key: "above",
@@ -93,7 +95,7 @@ export function rbVsZoneInfo(position) {
       emoji: "🔺",
       color: "bg-purple-900/40 text-purple-300 border-purple-700",
       meaning:
-        "The RB sits above the zone. Zone orders were filled — negotiation is now happening above. Price is deciding whether to break higher.",
+        "The RB sits above the zone. Zone orders were filled — negotiation is happening above.",
     },
     below: {
       key: "below",
@@ -101,14 +103,14 @@ export function rbVsZoneInfo(position) {
       emoji: "🔻",
       color: "bg-orange-900/40 text-orange-300 border-orange-700",
       meaning:
-        "The RB sits below the zone. Zone orders were filled — negotiation is now happening below. Price is deciding whether to break lower.",
+        "The RB sits below the zone. Zone orders were filled — negotiation is happening below.",
     },
   };
   return map[position] || map.inside;
 }
 
 // ============================================================
-// RB HIERARCHY — rank by order added (newest = current)
+// RB HIERARCHY
 // ============================================================
 export function rankRejectionBlocks(rbs) {
   if (!Array.isArray(rbs) || rbs.length === 0) return [];
@@ -160,7 +162,7 @@ export function rbRankInfo(rank) {
 }
 
 // ============================================================
-// ACTIVE RB — the RB price is currently approaching
+// ACTIVE RB
 // ============================================================
 export function findActiveRb(rbs, currentPrice) {
   if (!Array.isArray(rbs) || rbs.length === 0) return null;
@@ -169,7 +171,6 @@ export function findActiveRb(rbs, currentPrice) {
 
   const ranked = rankRejectionBlocks(rbs);
 
-  // 1. RB whose range contains the price
   for (const rb of ranked) {
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
@@ -177,7 +178,6 @@ export function findActiveRb(rbs, currentPrice) {
     if (price >= low && price <= high) return rb;
   }
 
-  // 2. Otherwise: closest RB by distance to its CE
   let closest = null;
   let minDist = Infinity;
   for (const rb of ranked) {
@@ -195,7 +195,7 @@ export function findActiveRb(rbs, currentPrice) {
 }
 
 // ============================================================
-// VERDICT — runs on the active RB
+// VERDICT
 // ============================================================
 export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
   const high = parseFloat(rbHigh);
@@ -331,6 +331,257 @@ export function strengthInfo(strength) {
     },
   };
   return map[strength] || map.weak;
+}
+
+// ============================================================
+// EMA 50 FILTER
+// ============================================================
+// User enters EMA 50 price and prior price.
+// Direction = rising / falling / flat.
+// Position = where the close sits vs the EMA 50 line.
+// ============================================================
+export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
+  const c = parseFloat(emaPrice);
+  const p = parseFloat(emaPrior);
+  const close = parseFloat(closePrice);
+
+  if (isNaN(c) || isNaN(p)) {
+    return {
+      direction: "unknown",
+      position: "unknown",
+      change: 0,
+      aligned: null,
+    };
+  }
+
+  const change = ((c - p) / (p || 1)) * 100;
+
+  let direction;
+  if (change > 0.02) direction = "rising";
+  else if (change < -0.02) direction = "falling";
+  else direction = "flat";
+
+  let position = "unknown";
+  if (!isNaN(close)) {
+    const tolerance = Math.abs(c) * 0.0001;
+    if (Math.abs(close - c) <= tolerance) position = "at";
+    else position = close > c ? "above" : "below";
+  }
+
+  return { direction, position, change, emaPrice: c, emaPrior: p };
+}
+
+export function emaInfo({ direction, position }) {
+  const dirMap = {
+    rising: { label: "Rising", emoji: "📈", color: "text-green-300" },
+    falling: { label: "Falling", emoji: "📉", color: "text-red-300" },
+    flat: { label: "Flat", emoji: "➡️", color: "text-blue-300" },
+    unknown: { label: "Unknown", emoji: "⚪", color: "text-gray-400" },
+  };
+
+  const posMap = {
+    above: { label: "Above", color: "text-green-300" },
+    below: { label: "Below", color: "text-red-300" },
+    at: { label: "At EMA", color: "text-yellow-300" },
+    unknown: { label: "—", color: "text-gray-400" },
+  };
+
+  return {
+    direction: dirMap[direction] || dirMap.unknown,
+    position: posMap[position] || posMap.unknown,
+  };
+}
+
+export function emaAlignment({ direction, position, verdict }) {
+  if (!verdict || verdict === "WAIT") return null;
+  if (direction === "unknown" || position === "unknown") return null;
+
+  if (verdict === "BUY") {
+    if (direction === "rising" && position === "above") {
+      return {
+        key: "aligned",
+        label: "EMA 50 aligned ✅",
+        color: "bg-green-900/40 text-green-300",
+        description: "BUY aligned with rising EMA 50, price above.",
+      };
+    }
+    if (direction === "falling" || position === "below") {
+      return {
+        key: "counter",
+        label: "Counter-trend ⚠️",
+        color: "bg-yellow-900/40 text-yellow-300",
+        description: "BUY against EMA 50 — reduced conviction.",
+      };
+    }
+  }
+
+  if (verdict === "SELL") {
+    if (direction === "falling" && position === "below") {
+      return {
+        key: "aligned",
+        label: "EMA 50 aligned ✅",
+        color: "bg-green-900/40 text-green-300",
+        description: "SELL aligned with falling EMA 50, price below.",
+      };
+    }
+    if (direction === "rising" || position === "above") {
+      return {
+        key: "counter",
+        label: "Counter-trend ⚠️",
+        color: "bg-yellow-900/40 text-yellow-300",
+        description: "SELL against EMA 50 — reduced conviction.",
+      };
+    }
+  }
+
+  return {
+    key: "neutral",
+    label: "EMA 50 neutral",
+    color: "bg-blue-900/40 text-blue-300",
+    description: "EMA 50 flat — no directional bias.",
+  };
+}
+
+// ============================================================
+// CONDITIONS ABOVE & BELOW
+// ============================================================
+// BUY  → examine RBs above the active RB
+// SELL → examine RBs below the active RB
+// Per adjacent RB: confirmed / caution / blocked based on close vs CE
+// ============================================================
+export function checkConditions({
+  activeRb,
+  allRbs,
+  closePrice,
+  verdict,
+}) {
+  if (!activeRb || !verdict || verdict === "WAIT") {
+    return { above: [], below: [] };
+  }
+
+  const close = parseFloat(closePrice);
+  if (isNaN(close)) return { above: [], below: [] };
+
+  const activeHigh = parseFloat(activeRb.high);
+  const activeLow = parseFloat(activeRb.low);
+
+  const above = [];
+  const below = [];
+
+  for (const rb of allRbs) {
+    if (rb.id === activeRb.id) continue;
+
+    const high = parseFloat(rb.high);
+    const low = parseFloat(rb.low);
+    if (isNaN(high) || isNaN(low)) continue;
+
+    const ce = Math.round(((high + low) / 2) * 100) / 100;
+
+    // Determine tier for each side
+    let tier;
+    if (close > high) {
+      tier = {
+        key: "confirmed",
+        label: "Confirmed",
+        emoji: "✅",
+        color: "bg-green-900/40 text-green-300 border-green-700",
+        description: "Close has broken through this RB cleanly.",
+      };
+    } else if (close >= ce) {
+      tier = {
+        key: "caution",
+        label: "Caution",
+        emoji: "⚪",
+        color: "bg-blue-900/40 text-blue-300 border-blue-700",
+        description: "Close sits between CE and high — still inside.",
+      };
+    } else if (close >= low) {
+      tier = {
+        key: "caution",
+        label: "Caution",
+        emoji: "⚪",
+        color: "bg-blue-900/40 text-blue-300 border-blue-700",
+        description: "Close sits between low and CE — still inside.",
+      };
+    } else {
+      tier = {
+        key: "blocked",
+        label: "Blocked",
+        emoji: "⚠️",
+        color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
+        description: "Close is below this RB — it is a wall above.",
+      };
+    }
+
+    const entry = {
+      id: rb.id,
+      high,
+      low,
+      ce,
+      tier,
+      close,
+    };
+
+    // Assign to above or below bucket based on RB position vs active RB
+    if (low > activeHigh) above.push(entry);
+    else if (high < activeLow) below.push(entry);
+  }
+
+  // Sort: above ascending by low (nearest first), below descending by high (nearest first)
+  above.sort((a, b) => a.low - b.low);
+  below.sort((a, b) => b.high - a.high);
+
+  // If verdict is SELL, only return below; if BUY, only return above
+  if (verdict === "BUY") return { above, below: [] };
+  if (verdict === "SELL") return { above: [], below };
+  return { above, below };
+}
+
+export function conditionSummary(conditions, verdict) {
+  const list = verdict === "BUY" ? conditions.above : conditions.below;
+  if (!list || list.length === 0) {
+    return {
+      key: "none",
+      label: "No adjacent RB",
+      emoji: "⚪",
+      color: "bg-gray-900/40 text-gray-300 border-gray-700",
+      description:
+        verdict === "BUY"
+          ? "No RBs above the active RB — clear path upward."
+          : "No RBs below the active RB — clear path downward.",
+    };
+  }
+
+  const blocked = list.filter((x) => x.tier.key === "blocked").length;
+  const confirmed = list.filter((x) => x.tier.key === "confirmed").length;
+
+  if (blocked > 0 && confirmed === 0) {
+    return {
+      key: "blocked",
+      label: `${blocked} RB${blocked === 1 ? "" : "s"} above ⚠️`,
+      emoji: "⚠️",
+      color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
+      description: "Price must clear these RBs to reach the target.",
+    };
+  }
+
+  if (confirmed > 0 && blocked === 0) {
+    return {
+      key: "clear",
+      label: "Path clear ✅",
+      emoji: "✅",
+      color: "bg-green-900/40 text-green-300 border-green-700",
+      description: "Close has already broken through the RBs in the path.",
+    };
+  }
+
+  return {
+    key: "mixed",
+    label: "Mixed conditions",
+    emoji: "⚪",
+    color: "bg-blue-900/40 text-blue-300 border-blue-700",
+    description: "Some RBs confirmed, some still ahead.",
+  };
 }
 
 // ============================================================
