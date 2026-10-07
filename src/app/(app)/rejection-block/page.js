@@ -23,6 +23,7 @@ import {
   conditionSummary,
   detectAllRbsFlipped,
   allFlippedInfo,
+  checkRbCompleteness,
   detectReversal,
   computeNextOpportunityTrade,
   atrFilter,
@@ -31,11 +32,7 @@ import {
 import PairPicker from "@/components/PairPicker";
 
 function emptyRb() {
-  return {
-    id: Math.random().toString(36).slice(2),
-    high: "",
-    low: "",
-  };
+  return { id: Math.random().toString(36).slice(2), high: "", low: "" };
 }
 
 export default function RejectionBlockPage() {
@@ -44,7 +41,10 @@ export default function RejectionBlockPage() {
   const supabase = createClient();
 
   const editId = searchParams?.get("edit") || null;
+  const visitId = searchParams?.get("visit") || null;
   const isEdit = !!editId;
+  const isVisit = !!visitId;
+  const isLoadExisting = isEdit || isVisit;
 
   const [form, setForm] = useState({
     pair: "Volatility 80",
@@ -62,7 +62,6 @@ export default function RejectionBlockPage() {
   });
 
   const [rbs, setRbs] = useState([emptyRb()]);
-
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -71,7 +70,7 @@ export default function RejectionBlockPage() {
   const [existingDetailId, setExistingDetailId] = useState(null);
 
   // ============================================================
-  // Load profile + existing setup
+  // Load
   // ============================================================
   useEffect(() => {
     async function load() {
@@ -87,13 +86,15 @@ export default function RejectionBlockPage() {
         .single();
       setProfile(prof);
 
-      if (!isEdit) return;
+      if (!isLoadExisting) return;
+
+      const lookupId = isEdit ? editId : visitId;
 
       setLoadingEdit(true);
       const { data: setupData, error: setupErr } = await supabase
         .from("setups")
         .select("*")
-        .eq("id", editId)
+        .eq("id", lookupId)
         .single();
 
       if (setupErr || !setupData) {
@@ -105,7 +106,7 @@ export default function RejectionBlockPage() {
       const { data: detailData } = await supabase
         .from("rejection_block_setups")
         .select("*")
-        .eq("setup_id", editId)
+        .eq("setup_id", lookupId)
         .single();
 
       setForm((f) => ({
@@ -115,19 +116,20 @@ export default function RejectionBlockPage() {
         zoneType: detailData?.zone_type || f.zoneType,
         zoneHigh: detailData?.zone_high?.toString() || "",
         zoneLow: detailData?.zone_low?.toString() || "",
-        ema50Price: detailData?.ema50_price?.toString() || "",
-        ema50Prior: detailData?.ema50_prior?.toString() || "",
-        closePrice: detailData?.close_price?.toString() || "",
-        priorClose: detailData?.prior_close?.toString() || "",
-        atrCurrent: detailData?.atr_current?.toString() || "",
-        atrPrior: detailData?.atr_prior?.toString() || "",
-        notes: setupData.notes || "",
+        // In visit mode, do not prefill EMA / close — those are the new visit's data
+        ema50Price: isEdit ? detailData?.ema50_price?.toString() || "" : "",
+        ema50Prior: isEdit ? detailData?.ema50_prior?.toString() || "" : "",
+        closePrice: isEdit ? detailData?.close_price?.toString() || "" : "",
+        priorClose: isEdit ? detailData?.prior_close?.toString() || "" : "",
+        atrCurrent: isEdit ? detailData?.atr_current?.toString() || "" : "",
+        atrPrior: isEdit ? detailData?.atr_prior?.toString() || "" : "",
+        notes: isEdit ? setupData.notes || "" : "",
       }));
 
       const { data: rbsData } = await supabase
         .from("rejection_block_rbs")
         .select("*")
-        .eq("setup_id", editId)
+        .eq("setup_id", lookupId)
         .order("created_at", { ascending: false });
 
       if (rbsData && rbsData.length > 0) {
@@ -154,28 +156,25 @@ export default function RejectionBlockPage() {
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId]);
+  }, [editId, visitId]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
-
   function updateRb(id, field, value) {
     setRbs((prev) =>
       prev.map((rb) => (rb.id === id ? { ...rb, [field]: value } : rb))
     );
   }
-
   function addRb() {
     setRbs((prev) => [...prev, emptyRb()]);
   }
-
   function removeRb(id) {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
 
   // ============================================================
-  // Live computations
+  // Computations
   // ============================================================
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
 
@@ -188,7 +187,6 @@ export default function RejectionBlockPage() {
         addedAt: rb.addedAt || new Date().toISOString(),
       }))
       .filter((rb) => !isNaN(rb.high) && !isNaN(rb.low));
-
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
@@ -255,7 +253,15 @@ export default function RejectionBlockPage() {
   );
   const flippedInfo = allFlippedInfo(flipped);
 
-  // Next opportunity (reversal after trade)
+  const completeness = useMemo(
+    () =>
+      checkRbCompleteness({
+        rankedRbs,
+        atr: parseFloat(form.atrCurrent) || 0,
+      }),
+    [rankedRbs, form.atrCurrent]
+  );
+
   const reversal = useMemo(() => {
     if (!negotiation || negotiation.verdict === "WAIT") return null;
     const list =
@@ -318,6 +324,71 @@ export default function RejectionBlockPage() {
       return;
     }
 
+    // ---- VISIT MODE: create a new visit row, do not touch parent ----
+    if (isVisit) {
+      // Find the rb id on the parent that matches the active one
+      const { data: parentRbs } = await supabase
+        .from("rejection_block_rbs")
+        .select("*")
+        .eq("setup_id", visitId);
+
+      let activeRbRowId = null;
+      if (parentRbs && activeRb) {
+        const match = parentRbs.find(
+          (r) =>
+            parseFloat(r.rb_high) === parseFloat(activeRb.high) &&
+            parseFloat(r.rb_low) === parseFloat(activeRb.low)
+        );
+        activeRbRowId = match?.id || null;
+      }
+
+      const visitPayload = {
+        user_id: user.id,
+        setup_id: visitId,
+        rb_id: activeRbRowId,
+        rb_high: activeRb.high,
+        rb_low: activeRb.low,
+        rb_ce: negotiation.ce,
+        close_price: form.closePrice ? parseFloat(form.closePrice) : null,
+        prior_close: form.priorClose ? parseFloat(form.priorClose) : null,
+        verdict: negotiation.verdict,
+        strength: negotiation.strength,
+        premium_discount: negotiation.side,
+        rb_broken: negotiation.rbBroken,
+        ema50_direction: ema.direction,
+        ema50_position: ema.position,
+        ema50_aligned: alignment?.key === "aligned",
+        conditions_above: conditions.above,
+        conditions_below: conditions.below,
+        all_rbs_flipped: flipped.allFlipped,
+        all_rbs_flipped_direction: flipped.direction,
+        reversal_detected: !!reversal,
+        reversal_direction: reversal?.newDirection || null,
+        entry: trade?.entry || null,
+        sl: trade?.sl || null,
+        tp: trade?.tp || null,
+        lot_size: trade?.lotSize || null,
+        risk_amount: trade?.riskAmount || null,
+        notes: form.notes,
+      };
+
+      const { error: visitErr } = await supabase
+        .from("rejection_block_visits")
+        .insert(visitPayload);
+
+      if (visitErr) {
+        setError(visitErr.message);
+        setSaving(false);
+        return;
+      }
+
+      setSaving(false);
+      setSaved(true);
+      setTimeout(() => router.push(`/setups/${visitId}`), 800);
+      return;
+    }
+
+    // ---- NEW or EDIT mode ----
     const setupPayload = {
       user_id: user.id,
       pair: form.pair,
@@ -445,7 +516,6 @@ export default function RejectionBlockPage() {
         rbHigh: rb.high,
         rbLow: rb.low,
       });
-
       return {
         user_id: user.id,
         setup_id: setup.id,
@@ -462,7 +532,6 @@ export default function RejectionBlockPage() {
     const { error: rbErr } = await supabase
       .from("rejection_block_rbs")
       .insert(rbRows);
-
     if (rbErr) {
       setError(rbErr.message);
       setSaving(false);
@@ -476,16 +545,11 @@ export default function RejectionBlockPage() {
 
   function handleSaveAsNewSetup() {
     if (!nextTrade || !reversal) return;
-    // Navigate back to the same page in "new draft" mode with a hint
-    // that a reversal candidate was detected
     const params = new URLSearchParams();
     params.set("prefill_pair", form.pair);
     params.set("prefill_timeframe", form.timeframe);
     params.set("prefill_close", form.closePrice || "");
     params.set("prefill_prior", form.priorClose || "");
-    params.set("prefill_ema50", form.ema50Price || "");
-    params.set("prefill_ema50_prior", form.ema50Prior || "");
-    params.set("prefill_atr", form.atrCurrent || "");
     router.push(`/rejection-block?${params.toString()}`);
   }
 
@@ -504,14 +568,28 @@ export default function RejectionBlockPage() {
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
           <h1 className="text-2xl font-bold">
-            {isEdit
+            {isVisit
+              ? "Log Visit — Rejection Block Zone"
+              : isEdit
               ? "Edit Rejection Block Setup"
               : "Rejection Block Negotiation"}
           </h1>
           <p className="text-gray-400 text-sm">
-            Zones hold orders. Rejection Blocks make decisions.
+            {isVisit
+              ? "Same zone, same RBs — new reaction"
+              : "Zones hold orders. Rejection Blocks make decisions."}
           </p>
         </div>
+
+        {/* Visit-mode banner */}
+        {isVisit && (
+          <div className="p-3 rounded-lg bg-purple-950/30 border border-purple-700">
+            <p className="text-xs text-purple-200">
+              🔄 <strong>Visit mode</strong> — logging a new reaction on the
+              existing zone. The parent setup and its RBs are unchanged.
+            </p>
+          </div>
+        )}
 
         {/* Context */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -528,7 +606,8 @@ export default function RejectionBlockPage() {
               <select
                 value={form.timeframe}
                 onChange={(e) => update("timeframe", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                disabled={isVisit}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm disabled:opacity-50"
               >
                 <option value="D1">D1</option>
                 <option value="H4">H4</option>
@@ -553,7 +632,8 @@ export default function RejectionBlockPage() {
             <select
               value={form.zoneType}
               onChange={(e) => update("zoneType", e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              disabled={isVisit}
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm disabled:opacity-50"
             >
               {ZONE_TYPES.map((z) => (
                 <option key={z.key} value={z.key}>
@@ -573,8 +653,9 @@ export default function RejectionBlockPage() {
                 step="any"
                 value={form.zoneLow}
                 onChange={(e) => update("zoneLow", e.target.value)}
+                disabled={isVisit}
                 placeholder="e.g. 209400"
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm disabled:opacity-50"
               />
             </div>
             <div>
@@ -586,8 +667,9 @@ export default function RejectionBlockPage() {
                 step="any"
                 value={form.zoneHigh}
                 onChange={(e) => update("zoneHigh", e.target.value)}
+                disabled={isVisit}
                 placeholder="e.g. 209600"
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm disabled:opacity-50"
               />
             </div>
           </div>
@@ -669,17 +751,38 @@ export default function RejectionBlockPage() {
                 Rejection Blocks (multiple)
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Add every RB around the zone. Price approaches one — that
-                becomes the active RB.
+                List every RB around the zone — none should be left off.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={addRb}
-              className="text-xs px-3 py-1.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/40"
-            >
-              + Add RB
-            </button>
+            {!isVisit && (
+              <button
+                type="button"
+                onClick={addRb}
+                className="text-xs px-3 py-1.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/40"
+              >
+                + Add RB
+              </button>
+            )}
+          </div>
+
+          {/* Completeness check */}
+          <div className={`p-3 rounded-lg border ${completeness.color}`}>
+            <p className="text-xs font-semibold">
+              {completeness.emoji} {completeness.label}
+            </p>
+            <p className="text-xs opacity-90 mt-1">
+              {completeness.description}
+            </p>
+            {completeness.gaps && completeness.gaps.length > 0 && (
+              <ul className="text-xs opacity-80 mt-2 list-disc ml-4 space-y-0.5">
+                {completeness.gaps.map((g, i) => (
+                  <li key={i}>
+                    Gap of {g.gap} between {g.from.low}–{g.from.high} and{" "}
+                    {g.to.low}–{g.to.high}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -733,7 +836,8 @@ export default function RejectionBlockPage() {
                       step="any"
                       value={rb.low}
                       onChange={(e) => updateRb(rb.id, "low", e.target.value)}
-                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                      disabled={isVisit}
+                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs disabled:opacity-50"
                     />
                   </div>
                   <div className="col-span-4">
@@ -745,11 +849,12 @@ export default function RejectionBlockPage() {
                       step="any"
                       value={rb.high}
                       onChange={(e) => updateRb(rb.id, "high", e.target.value)}
-                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                      disabled={isVisit}
+                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs disabled:opacity-50"
                     />
                   </div>
                   <div className="col-span-1 text-right">
-                    {rbs.length > 1 && (
+                    {!isVisit && rbs.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removeRb(rb.id)}
@@ -770,7 +875,7 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* Close + prior close + ATR */}
+        {/* Close + ATR */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             The Verdict &amp; Volatility
@@ -897,7 +1002,7 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
-        {/* Conditions Above/Below */}
+        {/* Conditions */}
         {negotiation && negotiation.verdict !== "WAIT" && condSummary && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -920,19 +1025,16 @@ export default function RejectionBlockPage() {
                 </span>
               </div>
             </div>
-
             <p className="text-xs text-gray-500">
               {flippedInfo
                 ? flippedInfo.description
                 : condSummary.description}
             </p>
-
             {(() => {
               const list =
                 negotiation.verdict === "BUY"
                   ? conditions.above
                   : conditions.below;
-
               if (list.length === 0) {
                 return (
                   <p className="text-xs text-gray-400 py-2">
@@ -940,7 +1042,6 @@ export default function RejectionBlockPage() {
                   </p>
                 );
               }
-
               return (
                 <div className="space-y-2">
                   {list.map((c, i) => (
@@ -967,7 +1068,7 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
-        {/* Next Opportunity — Reversal after trade */}
+        {/* Next Opportunity */}
         {reversal && nextTrade && (
           <div className="p-4 rounded-lg bg-gray-900 border-2 border-purple-700 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -984,9 +1085,7 @@ export default function RejectionBlockPage() {
                 {nextTrade.direction}
               </span>
             </div>
-
             <p className="text-xs text-purple-200">{reversal.reason}</p>
-
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-500">New RB</p>
@@ -1005,9 +1104,6 @@ export default function RejectionBlockPage() {
                 <p className="font-bold tabular-nums text-red-400">
                   {formatPrice(nextTrade.sl)}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  sweep {formatPrice(reversal.sweepLevel)}
-                </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Take Profit (2R)</p>
@@ -1015,40 +1111,16 @@ export default function RejectionBlockPage() {
                   {formatPrice(nextTrade.tp)}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk</p>
-                <p className="font-bold tabular-nums">
-                  {nextTrade.risk.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Lot Size</p>
-                <p className="font-bold tabular-nums">
-                  {nextTrade.lotSize.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk ($)</p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  ${nextTrade.riskAmount.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">RR</p>
-                <p className="font-bold tabular-nums">1:2</p>
-              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={handleSaveAsNewSetup}
-              className="w-full py-3 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
-            >
-              🔄 Save as New Setup
-            </button>
-            <p className="text-xs text-gray-500 text-center">
-              Suggestion only — you confirm before any new setup is created.
-            </p>
+            {!isVisit && (
+              <button
+                type="button"
+                onClick={handleSaveAsNewSetup}
+                className="w-full py-3 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
+              >
+                🔄 Save as New Setup
+              </button>
+            )}
           </div>
         )}
 
@@ -1078,7 +1150,6 @@ export default function RejectionBlockPage() {
                 </span>
               </div>
             </div>
-
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-500">Entry (CE)</p>
@@ -1090,11 +1161,6 @@ export default function RejectionBlockPage() {
                 <p className="text-xs text-gray-500">Stop Loss</p>
                 <p className="font-bold tabular-nums text-red-400">
                   {formatPrice(trade.sl)}
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {trade.slSource === "wick+buffer"
-                    ? "wick + buffer"
-                    : "wick only"}
                 </p>
               </div>
               <div>
@@ -1155,7 +1221,9 @@ export default function RejectionBlockPage() {
 
         {saved && (
           <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
-            ✅ {isEdit ? "Updated" : "Saved"} — redirecting to setup...
+            ✅{" "}
+            {isVisit ? "Visit logged" : isEdit ? "Updated" : "Saved"} —
+            redirecting...
           </div>
         )}
 
@@ -1169,7 +1237,9 @@ export default function RejectionBlockPage() {
             !activeRb
           }
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
-            isEdit
+            isVisit
+              ? "bg-purple-800 hover:bg-purple-700"
+              : isEdit
               ? "bg-blue-700 hover:bg-blue-600"
               : negotiation?.verdict === "BUY"
               ? "bg-green-700 hover:bg-green-600"
@@ -1179,9 +1249,9 @@ export default function RejectionBlockPage() {
           }`}
         >
           {saving
-            ? isEdit
-              ? "Updating..."
-              : "Saving..."
+            ? "Saving..."
+            : isVisit
+            ? "📍 Log Visit"
             : isEdit
             ? "✏️ Update Setup"
             : negotiation?.verdict === "BUY"
@@ -1190,46 +1260,6 @@ export default function RejectionBlockPage() {
             ? "🔴 Save SELL Setup"
             : "Fill zone + RB + close to enable"}
         </button>
-
-        {/* Info card */}
-        <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
-          <h3 className="text-xs font-semibold text-blue-300 mb-2">
-            💡 How the Rejection Block Works
-          </h3>
-          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
-            <li>
-              <strong>Zones hold orders</strong> — FVG, OB, Liquidity, MSS, BOS
-            </li>
-            <li>
-              <strong>Multiple RBs</strong> — inside, above, or below the zone
-            </li>
-            <li>
-              <strong>Active RB</strong> — the one price is approaching
-            </li>
-            <li>
-              <strong>EMA 50</strong> — rising + price above = BUY aligned
-            </li>
-            <li>
-              <strong>Conditions panel</strong> — RBs in the trade's path
-            </li>
-            <li>
-              <strong>All flipped</strong> — close has cleared every listed RB
-            </li>
-            <li>
-              <strong>Next Opportunity</strong> — reversal after a swept
-              condition RB
-            </li>
-            <li>
-              <strong>Entry</strong> — CE of the active RB (50%)
-            </li>
-            <li>
-              <strong>SL</strong> — beyond the active RB wick + ATR buffer
-            </li>
-            <li>
-              <strong>TP</strong> — 2R from entry
-            </li>
-          </ul>
-        </div>
       </div>
     </main>
   );

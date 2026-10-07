@@ -33,12 +33,11 @@ const SYSTEM_PATHS = {
 
 export default function SetupsListPage() {
   const supabase = createClient();
-
   const [setups, setSetups] = useState([]);
+  const [visitCounts, setVisitCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Filters
   const [filterSystem, setFilterSystem] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPair, setFilterPair] = useState("");
@@ -55,44 +54,57 @@ export default function SetupsListPage() {
 
       if (error) {
         setError(error.message);
-      } else {
-        setSetups(data || []);
+        setLoading(false);
+        return;
       }
+      setSetups(data || []);
+
+      // Fetch visit counts for rejection_block setups
+      const rbIds = (data || [])
+        .filter((s) => s.setup_type === "rejection_block")
+        .map((s) => s.id);
+
+      if (rbIds.length > 0) {
+        const { data: visits } = await supabase
+          .from("rejection_block_visits")
+          .select("setup_id")
+          .in("setup_id", rbIds);
+
+        const counts = {};
+        (visits || []).forEach((v) => {
+          counts[v.setup_id] = (counts[v.setup_id] || 0) + 1;
+        });
+        setVisitCounts(counts);
+      }
+
       setLoading(false);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Unique pairs for the pair filter dropdown
   const uniquePairs = useMemo(() => {
     const s = new Set();
     setups.forEach((x) => x.pair && s.add(x.pair));
     return Array.from(s).sort();
   }, [setups]);
 
-  // Filtered list
   const filtered = useMemo(() => {
     return setups.filter((s) => {
       if (filterSystem !== "all" && s.setup_type !== filterSystem) return false;
-
       if (filterStatus === "open" && (s.taken || s.closed)) return false;
       if (filterStatus === "taken" && (!s.taken || s.closed)) return false;
       if (filterStatus === "closed" && !s.closed) return false;
-
       if (filterPair && s.pair !== filterPair) return false;
-
       if (search) {
         const q = search.toLowerCase();
         const hay = `${s.pair || ""} ${s.notes || ""} ${s.setup_type || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-
       return true;
     });
   }, [setups, filterSystem, filterStatus, filterPair, search]);
 
-  // Stats
   const stats = useMemo(() => {
     const total = setups.length;
     const open = setups.filter((s) => !s.taken && !s.closed).length;
@@ -139,16 +151,14 @@ export default function SetupsListPage() {
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-5xl mx-auto space-y-5">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">My Setups</h1>
-            <p className="text-gray-400 text-sm">
-              All systems in one place — filter, review, edit
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold">My Setups</h1>
+          <p className="text-gray-400 text-sm">
+            All systems in one place — filter, review, edit
+          </p>
         </div>
 
-        {/* Stats bar */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3 rounded-lg bg-gray-900 border border-gray-800">
             <p className="text-xs text-gray-500">Total</p>
@@ -199,7 +209,6 @@ export default function SetupsListPage() {
                 <option value="rejection_block">Rejection Block</option>
               </select>
             </div>
-
             <div>
               <label className="block text-xs mb-1 text-gray-400">
                 Status
@@ -215,11 +224,8 @@ export default function SetupsListPage() {
                 <option value="closed">Closed</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                Pair
-              </label>
+              <label className="block text-xs mb-1 text-gray-400">Pair</label>
               <select
                 value={filterPair}
                 onChange={(e) => setFilterPair(e.target.value)}
@@ -233,7 +239,6 @@ export default function SetupsListPage() {
                 ))}
               </select>
             </div>
-
             <div>
               <label className="block text-xs mb-1 text-gray-400">
                 Search
@@ -247,13 +252,12 @@ export default function SetupsListPage() {
               />
             </div>
           </div>
-
           <p className="text-xs text-gray-500">
             Showing {filtered.length} of {setups.length}
           </p>
         </div>
 
-        {/* Table */}
+        {/* List */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           {loading ? (
             <p className="text-gray-400 text-sm py-6 text-center">
@@ -270,11 +274,11 @@ export default function SetupsListPage() {
                 const outcome = outcomeBadge(s);
                 const sysLabel = SYSTEM_LABELS[s.setup_type] || s.setup_type;
                 const sysColor =
-                  SYSTEM_COLORS[s.setup_type] ||
-                  "bg-gray-800 text-gray-300";
+                  SYSTEM_COLORS[s.setup_type] || "bg-gray-800 text-gray-300";
                 const editPath = SYSTEM_PATHS[s.setup_type]
                   ? `${SYSTEM_PATHS[s.setup_type]}?edit=${s.id}`
                   : null;
+                const visits = visitCounts[s.id] || 0;
 
                 return (
                   <div
@@ -307,32 +311,25 @@ export default function SetupsListPage() {
                               {outcome.label}
                             </span>
                           )}
+                          {visits > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-900/40 text-purple-300 font-semibold">
+                              📍 {visits} visit{visits === 1 ? "" : "s"}
+                            </span>
+                          )}
                         </div>
-
                         <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
                           <span>
                             {new Date(s.created_at).toLocaleDateString()}
                           </span>
                           {s.htf_bias && (
-                            <span className="capitalize">
-                              {s.htf_bias}
-                            </span>
+                            <span className="capitalize">{s.htf_bias}</span>
                           )}
                           {s.ce_price && (
                             <span className="tabular-nums">
                               CE {formatPrice(s.ce_price)}
                             </span>
                           )}
-                          {s.checklist_score !== null &&
-                            s.checklist_score !== undefined &&
-                            s.checklist_score > 0 && (
-                              <span>
-                                {s.checklist_score}/10{" "}
-                                {s.checklist_passed ? "✅" : "⚠️"}
-                              </span>
-                            )}
                         </div>
-
                         {s.notes && (
                           <p className="text-xs text-gray-400 mt-1 truncate">
                             {s.notes}

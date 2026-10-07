@@ -3,45 +3,15 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// Zones (FVG / OB / Liquidity / MSS / BOS) are containers of
-// institutional orders. Price goes into a zone to fill them.
-// After the orders are filled, the Rejection Block decides.
-//
-// MULTIPLE RBs
-//   Multiple RBs can sit inside, above, or below the zone.
-//   RBs are ranked by freshness (current → previous → oldest).
-//   The "active RB" is the one price is approaching.
-//
-// VERDICT (RB is the dealing range)
-//   Close ABOVE RB high → BUY  (strong) — RB broken ↑
-//   Close BELOW RB low  → SELL (strong) — RB broken ↓
-//   Close in PREMIUM (above CE, inside RB) → SELL (normal)
-//   Close in DISCOUNT (below CE, inside RB) → BUY  (normal)
-//   Close = CE → WAIT
-//
-// EMA 50 FILTER
-//   EMA 50 value + prior → direction (rising / falling / flat)
-//   Close vs EMA 50 → position (above / below / at)
-//
-// CONDITIONS ABOVE & BELOW (direction-aware)
-//   BUY  → RBs above:  close > high = confirmed
-//   SELL → RBs below:  close < low  = confirmed
-//
-// ALL RBs FLIPPED
-//   The current close tells us everything.
-//   For each listed RB:
-//     close > high → flipped up
-//     close < low  → flipped down
-//     else         → not flipped
-//   If EVERY listed RB is flipped the SAME direction → "All flipped"
-//
-// NEXT OPPORTUNITY (Reversal after trade)
-//   When price sweeps a condition RB and closes back → reversal
-//   candidate. Suggestion only — user confirms.
-//
-// ENTRY = CE of the active RB.
-// SL    = beyond the RB wick extreme + ATR buffer.
-// TP    = 2R from entry.
+// MULTIPLE RBs — all must be listed for correct verdicts.
+// ACTIVE RB — the one price is approaching.
+// VERDICT — close above/below the active RB decides direction.
+// EMA 50 FILTER — aligns trade with higher-tf trend.
+// CONDITIONS ABOVE/BELOW — direction-aware confirm/block tiers.
+// ALL RBs FLIPPED — close beyond every listed RB = max continuation.
+// NEXT OPPORTUNITY — reversal after a swept condition RB.
+// ZONE LIFECYCLE — a zone can give entries for weeks.
+//   Each visit logs a new reaction on the same RBs.
 // ============================================================
 
 // ============================================================
@@ -60,7 +30,7 @@ export function zoneTypeInfo(key) {
 }
 
 // ============================================================
-// CE — 50% of any range
+// CE
 // ============================================================
 export function computeCe(high, low) {
   const h = parseFloat(high);
@@ -70,7 +40,7 @@ export function computeCe(high, low) {
 }
 
 // ============================================================
-// RB POSITION vs ZONE
+// RB vs ZONE
 // ============================================================
 export function detectRbVsZone({ zoneHigh, zoneLow, rbHigh, rbLow }) {
   const zH = parseFloat(zoneHigh);
@@ -221,7 +191,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
         "Closed ABOVE the RB high — buyers broke through. Strong continuation up.",
     };
   }
-
   if (close < low) {
     return {
       verdict: "SELL",
@@ -235,7 +204,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
   }
 
   const tolerance = Math.abs(ce) * 0.0001;
-
   if (Math.abs(close - ce) <= tolerance) {
     return {
       verdict: "WAIT",
@@ -246,7 +214,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
       reason: "Price closed at the CE — indecision. Wait for a clear close.",
     };
   }
-
   if (close > ce) {
     return {
       verdict: "SELL",
@@ -257,7 +224,6 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
       reason: "Closed in the PREMIUM (above CE, inside RB) — sellers defended.",
     };
   }
-
   return {
     verdict: "BUY",
     side: "discount",
@@ -339,7 +305,7 @@ export function strengthInfo(strength) {
 }
 
 // ============================================================
-// EMA 50 FILTER
+// EMA 50
 // ============================================================
 export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
   const c = parseFloat(emaPrice);
@@ -347,16 +313,10 @@ export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
   const close = parseFloat(closePrice);
 
   if (isNaN(c) || isNaN(p)) {
-    return {
-      direction: "unknown",
-      position: "unknown",
-      change: 0,
-      aligned: null,
-    };
+    return { direction: "unknown", position: "unknown", change: 0, aligned: null };
   }
 
   const change = ((c - p) / (p || 1)) * 100;
-
   let direction;
   if (change > 0.02) direction = "rising";
   else if (change < -0.02) direction = "falling";
@@ -379,14 +339,12 @@ export function emaInfo({ direction, position }) {
     flat: { label: "Flat", emoji: "➡️", color: "text-blue-300" },
     unknown: { label: "Unknown", emoji: "⚪", color: "text-gray-400" },
   };
-
   const posMap = {
     above: { label: "Above", color: "text-green-300" },
     below: { label: "Below", color: "text-red-300" },
     at: { label: "At EMA", color: "text-yellow-300" },
     unknown: { label: "—", color: "text-gray-400" },
   };
-
   return {
     direction: dirMap[direction] || dirMap.unknown,
     position: posMap[position] || posMap.unknown,
@@ -415,7 +373,6 @@ export function emaAlignment({ direction, position, verdict }) {
       };
     }
   }
-
   if (verdict === "SELL") {
     if (direction === "falling" && position === "below") {
       return {
@@ -434,7 +391,6 @@ export function emaAlignment({ direction, position, verdict }) {
       };
     }
   }
-
   return {
     key: "neutral",
     label: "EMA 50 neutral",
@@ -444,13 +400,12 @@ export function emaAlignment({ direction, position, verdict }) {
 }
 
 // ============================================================
-// CONDITIONS ABOVE & BELOW (direction-aware)
+// CONDITIONS
 // ============================================================
 export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
   if (!activeRb || !verdict || verdict === "WAIT") {
     return { above: [], below: [] };
   }
-
   const close = parseFloat(closePrice);
   if (isNaN(close)) return { above: [], below: [] };
 
@@ -465,11 +420,9 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
 
   for (const rb of allRbs) {
     if (rb.id === activeRb.id) continue;
-
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
     if (isNaN(high) || isNaN(low)) continue;
-
     const ce = Math.round(((high + low) / 2) * 100) / 100;
 
     let bucket = null;
@@ -478,81 +431,45 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
     else continue;
 
     let tier;
-
     if (bucket === "above") {
       if (close > high) {
-        tier = {
-          key: "confirmed",
-          label: "Confirmed",
-          emoji: "✅",
+        tier = { key: "confirmed", label: "Confirmed", emoji: "✅",
           color: "bg-green-900/40 text-green-300 border-green-700",
-          description: "Close has broken above this RB — path is open.",
-        };
+          description: "Close has broken above this RB — path is open." };
       } else if (close >= ce) {
-        tier = {
-          key: "caution",
-          label: "Caution",
-          emoji: "⚪",
+        tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the upper half — still inside this RB.",
-        };
+          description: "Close sits in the upper half — still inside this RB." };
       } else if (close >= low) {
-        tier = {
-          key: "caution",
-          label: "Caution",
-          emoji: "⚪",
+        tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the lower half — still inside this RB.",
-        };
+          description: "Close sits in the lower half — still inside this RB." };
       } else {
-        tier = {
-          key: "blocked",
-          label: "Blocked",
-          emoji: "⚠️",
+        tier = { key: "blocked", label: "Blocked", emoji: "⚠️",
           color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
-          description:
-            "Close is below this RB — it is a wall above. Price must clear it.",
-        };
+          description: "Close is below this RB — it is a wall above. Price must clear it." };
       }
     } else {
       if (close < low) {
-        tier = {
-          key: "confirmed",
-          label: "Confirmed",
-          emoji: "✅",
+        tier = { key: "confirmed", label: "Confirmed", emoji: "✅",
           color: "bg-green-900/40 text-green-300 border-green-700",
-          description: "Close has broken below this RB — path is open.",
-        };
+          description: "Close has broken below this RB — path is open." };
       } else if (close <= ce) {
-        tier = {
-          key: "caution",
-          label: "Caution",
-          emoji: "⚪",
+        tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the lower half — still inside this RB.",
-        };
+          description: "Close sits in the lower half — still inside this RB." };
       } else if (close <= high) {
-        tier = {
-          key: "caution",
-          label: "Caution",
-          emoji: "⚪",
+        tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the upper half — still inside this RB.",
-        };
+          description: "Close sits in the upper half — still inside this RB." };
       } else {
-        tier = {
-          key: "blocked",
-          label: "Blocked",
-          emoji: "⚠️",
+        tier = { key: "blocked", label: "Blocked", emoji: "⚠️",
           color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
-          description:
-            "Close is above this RB — it is a wall below. Price must clear it.",
-        };
+          description: "Close is above this RB — it is a wall below. Price must clear it." };
       }
     }
 
     const entry = { id: rb.id, high, low, ce, tier, close };
-
     if (bucket === "above") above.push(entry);
     else below.push(entry);
   }
@@ -598,7 +515,6 @@ export function conditionSummary(conditions, verdict) {
           : "Price must clear these RBs to reach the target below.",
     };
   }
-
   if (confirmed > 0 && blocked === 0 && caution === 0) {
     return {
       key: "clear",
@@ -611,7 +527,6 @@ export function conditionSummary(conditions, verdict) {
           : "Close has already broken below the RBs in the path.",
     };
   }
-
   return {
     key: "mixed",
     label: "Mixed conditions",
@@ -624,18 +539,10 @@ export function conditionSummary(conditions, verdict) {
 // ============================================================
 // ALL RBs FLIPPED
 // ============================================================
-// The current close tells us everything.
-// For each listed RB:
-//   close > high → flipped up
-//   close < low  → flipped down
-//   else         → not flipped
-// If EVERY listed RB is flipped the same direction → allFlipped = true
-// ============================================================
 export function detectAllRbsFlipped({ rankedRbs, closePrice }) {
   if (!Array.isArray(rankedRbs) || rankedRbs.length === 0) {
     return { allFlipped: false, direction: null, count: 0, flippedCount: 0 };
   }
-
   const close = parseFloat(closePrice);
   if (isNaN(close)) {
     return { allFlipped: false, direction: null, count: 0, flippedCount: 0 };
@@ -643,19 +550,13 @@ export function detectAllRbsFlipped({ rankedRbs, closePrice }) {
 
   let upCount = 0;
   let downCount = 0;
-  let notFlipped = 0;
 
   for (const rb of rankedRbs) {
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
-    if (isNaN(high) || isNaN(low)) {
-      notFlipped++;
-      continue;
-    }
-
+    if (isNaN(high) || isNaN(low)) continue;
     if (close > high) upCount++;
     else if (close < low) downCount++;
-    else notFlipped++;
   }
 
   const total = rankedRbs.length;
@@ -669,26 +570,23 @@ export function detectAllRbsFlipped({ rankedRbs, closePrice }) {
     flippedCount: upCount + downCount,
     upCount,
     downCount,
-    notFlipped,
   };
 }
 
 export function allFlippedInfo(flipped) {
   if (!flipped || !flipped.allFlipped) return null;
-
   if (flipped.direction === "up") {
     return {
       key: "up",
-      label: `All RBs flipped ↑`,
+      label: "All RBs flipped ↑",
       emoji: "🔥",
       color: "bg-green-900/50 text-green-200 border-green-600",
       description: `Every listed RB (${flipped.count}) is flipped up — maximum bullish continuation.`,
     };
   }
-
   return {
     key: "down",
-    label: `All RBs flipped ↓`,
+    label: "All RBs flipped ↓",
     emoji: "🔥",
     color: "bg-red-900/50 text-red-200 border-red-600",
     description: `Every listed RB (${flipped.count}) is flipped down — maximum bearish continuation.`,
@@ -696,21 +594,82 @@ export function allFlippedInfo(flipped) {
 }
 
 // ============================================================
+// RB COMPLETENESS CHECK (NEW)
+// ============================================================
+// Warns if too few RBs are listed or if there's an obvious gap
+// between adjacent RBs (possible missing RB).
+// ============================================================
+export function checkRbCompleteness({ rankedRbs, atr }) {
+  if (!Array.isArray(rankedRbs) || rankedRbs.length === 0) {
+    return {
+      complete: false,
+      level: "error",
+      label: "No RBs listed",
+      emoji: "🚫",
+      color: "bg-red-950/40 border-red-700 text-red-200",
+      description: "Add every RB around the zone. At minimum, one inside and one above or below.",
+      gaps: [],
+    };
+  }
+
+  const gaps = [];
+  const sorted = [...rankedRbs].sort((a, b) => a.low - b.low);
+  const atrVal = parseFloat(atr) || 0;
+
+  if (atrVal > 0) {
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const gap = sorted[i + 1].low - sorted[i].high;
+      if (gap > atrVal * 2) {
+        gaps.push({
+          from: { high: sorted[i].high, low: sorted[i].low },
+          to: { high: sorted[i + 1].high, low: sorted[i + 1].low },
+          gap: Math.round(gap * 100) / 100,
+        });
+      }
+    }
+  }
+
+  if (rankedRbs.length < 2) {
+    return {
+      complete: false,
+      level: "warning",
+      label: `${rankedRbs.length} RB listed`,
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description:
+        "Only one RB is listed. List every RB around the zone — the system needs them all for a correct verdict.",
+      gaps: [],
+    };
+  }
+
+  if (gaps.length > 0) {
+    return {
+      complete: false,
+      level: "warning",
+      label: `${gaps.length} possible gap${gaps.length === 1 ? "" : "s"}`,
+      emoji: "⚠️",
+      color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
+      description:
+        "Large gap between adjacent RBs — an RB may be missing in the path.",
+      gaps,
+    };
+  }
+
+  return {
+    complete: true,
+    level: "ok",
+    label: "Coverage looks complete",
+    emoji: "✅",
+    color: "bg-green-950/30 border-green-800 text-green-200",
+    description: `${rankedRbs.length} RBs listed — spacing looks consistent.`,
+    gaps: [],
+  };
+}
+
+// ============================================================
 // NEXT OPPORTUNITY — Reversal after trade
 // ============================================================
-// Trigger:
-//   SELL → price closed below a condition RB's low, then closed back above it
-//   BUY  → price closed above a condition RB's high, then closed back below it
-//
-// Result: the condition RB becomes the new active RB, direction flips.
-// Suggestion only — user confirms.
-// ============================================================
-export function detectReversal({
-  verdict,
-  conditionRbs,
-  closePrice,
-  priorClose,
-}) {
+export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }) {
   if (!verdict || verdict === "WAIT") return null;
   if (!Array.isArray(conditionRbs) || conditionRbs.length === 0) return null;
 
@@ -718,16 +677,12 @@ export function detectReversal({
   const prior = parseFloat(priorClose);
   if (isNaN(close)) return null;
 
-  // SELL → look for reversal to BUY (sweep below low, close back above)
   if (verdict === "SELL") {
     for (const rb of conditionRbs) {
       const low = parseFloat(rb.low);
       if (isNaN(low)) continue;
-
-      // Prior close was below the low (swept), current close back above
       const swept = !isNaN(prior) && prior < low;
       const reclaimed = close > low;
-
       if (swept && reclaimed) {
         return {
           detected: true,
@@ -738,9 +693,7 @@ export function detectReversal({
             "Price swept below the condition RB low and closed back above — buyers rejected the sweep. BUY reversal candidate.",
         };
       }
-
-      // Fallback: current close already reclaimed the low without prior
-      if (!isNaN(close) && close > low && close < rb.high) {
+      if (close > low && close < rb.high) {
         return {
           detected: true,
           newDirection: "BUY",
@@ -753,15 +706,12 @@ export function detectReversal({
     }
   }
 
-  // BUY → look for reversal to SELL (sweep above high, close back below)
   if (verdict === "BUY") {
     for (const rb of conditionRbs) {
       const high = parseFloat(rb.high);
       if (isNaN(high)) continue;
-
       const swept = !isNaN(prior) && prior > high;
       const reclaimed = close < high;
-
       if (swept && reclaimed) {
         return {
           detected: true,
@@ -772,8 +722,7 @@ export function detectReversal({
             "Price swept above the condition RB high and closed back below — sellers rejected the sweep. SELL reversal candidate.",
         };
       }
-
-      if (!isNaN(close) && close < high && close > rb.low) {
+      if (close < high && close > rb.low) {
         return {
           detected: true,
           newDirection: "SELL",
@@ -806,10 +755,8 @@ export function computeNextOpportunityTrade({
 
   const ce = Math.round(((high + low) / 2) * 100) / 100;
   const isBull = newDirection === "BUY";
-
   const entry = ce;
 
-  // SL beyond the sweep level + buffer
   const sweep = parseFloat(sweepLevel);
   const buffer = atr > 0 ? atr * bufferMultiplier : 0;
   const sl = isBull
@@ -843,6 +790,88 @@ export function computeNextOpportunityTrade({
 }
 
 // ============================================================
+// ZONE LIFECYCLE HELPERS (NEW)
+// ============================================================
+// Aggregates visit outcomes for a zone.
+// visits: array of { outcome: 'win'|'loss'|'breakeven'|null, ... }
+// ============================================================
+export function zoneStats(visits) {
+  if (!Array.isArray(visits) || visits.length === 0) {
+    return {
+      total: 0,
+      wins: 0,
+      losses: 0,
+      be: 0,
+      pending: 0,
+      winRate: null,
+    };
+  }
+
+  let wins = 0,
+    losses = 0,
+    be = 0,
+    pending = 0;
+
+  for (const v of visits) {
+    if (v.outcome === "win") wins++;
+    else if (v.outcome === "loss") losses++;
+    else if (v.outcome === "breakeven") be++;
+    else pending++;
+  }
+
+  const closed = wins + losses + be;
+  const winRate = closed > 0 ? Math.round((wins / closed) * 100) : null;
+
+  return {
+    total: visits.length,
+    wins,
+    losses,
+    be,
+    pending,
+    winRate,
+  };
+}
+
+export function zoneLifecycleLabel(setup, visits) {
+  if (!setup) return null;
+
+  const created = setup.created_at
+    ? new Date(setup.created_at).getTime()
+    : null;
+  const days = created
+    ? Math.floor((Date.now() - created) / (1000 * 60 * 60 * 24))
+    : null;
+
+  if (setup.closed) {
+    return {
+      key: "invalidated",
+      label: "Zone invalidated",
+      emoji: "❌",
+      color: "bg-red-900/40 text-red-300 border-red-700",
+      description: "This zone is no longer being tracked.",
+    };
+  }
+
+  if (!visits || visits.length === 0) {
+    return {
+      key: "new",
+      label: "Zone live — no visits yet",
+      emoji: "🆕",
+      color: "bg-blue-900/40 text-blue-300 border-blue-700",
+      description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
+    };
+  }
+
+  return {
+    key: "active",
+    label: `Zone live — ${visits.length} visit${visits.length === 1 ? "" : "s"}`,
+    emoji: "🟢",
+    color: "bg-green-900/40 text-green-300 border-green-700",
+    description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
+  };
+}
+
+// ============================================================
 // ATR FILTER
 // ============================================================
 export function atrFilter(atrCurrent, atrPrior) {
@@ -858,7 +887,6 @@ export function atrFilter(atrCurrent, atrPrior) {
       tradeable: false,
     };
   }
-
   const change = ((c - p) / (p || 1)) * 100;
 
   if (change > 2) {
@@ -877,9 +905,7 @@ export function atrFilter(atrCurrent, atrPrior) {
       label: "ATR Falling",
       emoji: "📉",
       color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
-      description: `Volatility contracting (${change.toFixed(
-        1
-      )}%) — wait for expansion.`,
+      description: `Volatility contracting (${change.toFixed(1)}%) — wait for expansion.`,
       tradeable: false,
     };
   }
@@ -912,7 +938,6 @@ export function computeRejectionBlockTrade({
 
   const ce = Math.round(((high + low) / 2) * 100) / 100;
   const isBull = verdict === "BUY";
-
   const entry = ce;
   const wickExtreme = isBull ? low : high;
   const buffer = atr > 0 ? atr * bufferMultiplier : 0;

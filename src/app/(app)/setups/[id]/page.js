@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
+import { zoneStats, zoneLifecycleLabel } from "@/lib/rejectionBlockEngine";
 
 const SYSTEM_LABELS = {
   negotiation: "Negotiation (Reversal)",
@@ -31,6 +32,7 @@ export default function SetupDetailPage() {
 
   const [setup, setSetup] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,6 @@ export default function SetupDetailPage() {
       setSetup(data);
       setTradeNotes(data.trade_notes || "");
 
-      // Fetch the matching detail record for rejection_block
       if (data.setup_type === "rejection_block") {
         const { data: det } = await supabase
           .from("rejection_block_setups")
@@ -64,6 +65,13 @@ export default function SetupDetailPage() {
           .eq("setup_id", id)
           .single();
         setDetail(det);
+
+        const { data: v } = await supabase
+          .from("rejection_block_visits")
+          .select("*")
+          .eq("setup_id", id)
+          .order("created_at", { ascending: false });
+        setVisits(v || []);
       }
 
       setLoading(false);
@@ -81,7 +89,6 @@ export default function SetupDetailPage() {
       .eq("id", id)
       .select()
       .single();
-
     if (error) setError(error.message);
     else setSetup(data);
     setBusy(false);
@@ -94,7 +101,6 @@ export default function SetupDetailPage() {
       taken_at: next ? new Date().toISOString() : null,
     });
   }
-
   async function toggleClosed() {
     const next = !setup.closed;
     await updateField({
@@ -103,9 +109,19 @@ export default function SetupDetailPage() {
       outcome: next ? setup.outcome || "win" : null,
     });
   }
-
   async function setOutcome(value) {
     await updateField({ outcome: value });
+  }
+  async function handleInvalidateZone() {
+    const ok = window.confirm(
+      "Invalidate this zone? It will be marked closed and stop being tracked."
+    );
+    if (!ok) return;
+    await updateField({
+      closed: true,
+      closed_at: new Date().toISOString(),
+      outcome: setup.outcome || "breakeven",
+    });
   }
 
   async function handleSaveNotes() {
@@ -118,7 +134,6 @@ export default function SetupDetailPage() {
       .eq("id", id)
       .select()
       .single();
-
     if (error) setError(error.message);
     else {
       setSetup(data);
@@ -138,14 +153,12 @@ export default function SetupDetailPage() {
       "Delete this setup? It will be hidden from all views."
     );
     if (!ok) return;
-
     setBusy(true);
     setError("");
     const { error } = await supabase
       .from("setups")
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", id);
-
     if (error) {
       setError(error.message);
       setBusy(false);
@@ -179,6 +192,10 @@ export default function SetupDetailPage() {
   const editPath = SYSTEM_PATHS[setup.setup_type]
     ? `${SYSTEM_PATHS[setup.setup_type]}?edit=${setup.id}`
     : null;
+  const visitPath =
+    setup.setup_type === "rejection_block"
+      ? `/rejection-block?visit=${setup.id}`
+      : null;
 
   const statusBadge = setup.closed
     ? { label: "Closed", color: "bg-gray-800 text-gray-300 border-gray-700" }
@@ -195,6 +212,9 @@ export default function SetupDetailPage() {
       ? { label: "BE", color: "bg-gray-800 text-gray-300" }
       : null;
 
+  const stats = zoneStats(visits);
+  const lifecycle = zoneLifecycleLabel(setup, visits);
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -203,6 +223,13 @@ export default function SetupDetailPage() {
             ← My Setups
           </Link>
           <div className="flex items-center gap-2">
+            {lifecycle && (
+              <span
+                className={`text-xs px-2 py-1 rounded-full border font-semibold ${lifecycle.color}`}
+              >
+                {lifecycle.emoji} {lifecycle.label}
+              </span>
+            )}
             <span
               className={`text-xs px-2 py-1 rounded-full border font-semibold ${statusBadge.color}`}
             >
@@ -258,6 +285,126 @@ export default function SetupDetailPage() {
           </div>
         </div>
 
+        {/* Zone Activity — only for rejection_block */}
+        {setup.setup_type === "rejection_block" && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 className="text-sm font-semibold text-blue-400">
+                📍 Zone Activity
+              </h2>
+              {visitPath && !setup.closed && (
+                <Link
+                  href={visitPath}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
+                >
+                  + Log new visit
+                </Link>
+              )}
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-2 rounded bg-black border border-gray-800">
+                <p className="text-xs text-gray-500">Visits</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {stats.total}
+                </p>
+              </div>
+              <div className="p-2 rounded bg-black border border-green-900/50">
+                <p className="text-xs text-gray-500">Wins</p>
+                <p className="text-lg font-bold tabular-nums text-green-300">
+                  {stats.wins}
+                </p>
+              </div>
+              <div className="p-2 rounded bg-black border border-red-900/50">
+                <p className="text-xs text-gray-500">Losses</p>
+                <p className="text-lg font-bold tabular-nums text-red-300">
+                  {stats.losses}
+                </p>
+              </div>
+              <div className="p-2 rounded bg-black border border-gray-700">
+                <p className="text-xs text-gray-500">Win %</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {stats.winRate !== null ? `${stats.winRate}%` : "—"}
+                </p>
+              </div>
+            </div>
+
+            {visits.length === 0 ? (
+              <p className="text-xs text-gray-500 py-2">
+                No visits logged yet. This zone can give entries for weeks —
+                log each reaction.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {visits.map((v) => (
+                  <div
+                    key={v.id}
+                    className="p-3 rounded-lg bg-black border border-gray-800"
+                  >
+                    <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                      <span className="text-gray-500">
+                        {new Date(v.created_at).toLocaleString()}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full font-bold ${
+                          v.verdict === "BUY"
+                            ? "bg-green-900/40 text-green-300"
+                            : v.verdict === "SELL"
+                            ? "bg-red-900/40 text-red-300"
+                            : "bg-gray-800 text-gray-300"
+                        }`}
+                      >
+                        {v.verdict || "—"}
+                      </span>
+                      {v.outcome && (
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-bold ${
+                            v.outcome === "win"
+                              ? "bg-green-900/40 text-green-300"
+                              : v.outcome === "loss"
+                              ? "bg-red-900/40 text-red-300"
+                              : "bg-gray-800 text-gray-300"
+                          }`}
+                        >
+                          {v.outcome.toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-400 flex-wrap">
+                      <span className="tabular-nums">
+                        RB {v.rb_low} – {v.rb_high}
+                      </span>
+                      {v.close_price && (
+                        <span className="tabular-nums">
+                          Close {formatPrice(v.close_price)}
+                        </span>
+                      )}
+                      {v.entry && (
+                        <span className="tabular-nums">
+                          Entry {formatPrice(v.entry)}
+                        </span>
+                      )}
+                      {v.all_rbs_flipped && (
+                        <span className="text-orange-300">
+                          🔥 All flipped {v.all_rbs_flipped_direction === "up" ? "↑" : "↓"}
+                        </span>
+                      )}
+                      {v.reversal_detected && (
+                        <span className="text-purple-300">
+                          🔄 Reversal {v.reversal_direction}
+                        </span>
+                      )}
+                    </div>
+                    {v.notes && (
+                      <p className="text-xs text-gray-400 mt-1">{v.notes}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* All RBs flipped banner */}
         {detail?.all_rbs_flipped && detail?.all_rbs_flipped_direction && (
           <div
@@ -272,8 +419,7 @@ export default function SetupDetailPage() {
               {detail.all_rbs_flipped_direction === "up" ? "↑" : "↓"}
             </p>
             <p className="text-sm opacity-90 mt-1">
-              Every listed RB was flipped at the time of this setup — maximum
-              continuation in that direction.
+              Every listed RB was flipped at the time of this setup.
             </p>
           </div>
         )}
@@ -295,7 +441,6 @@ export default function SetupDetailPage() {
                 {detail.reversal_direction}
               </span>
             </div>
-
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
               {detail.reversal_rb_low && detail.reversal_rb_high && (
                 <div>
@@ -321,38 +466,7 @@ export default function SetupDetailPage() {
                   </p>
                 </div>
               )}
-              {detail.reversal_entry && (
-                <div>
-                  <p className="text-xs text-gray-500">Suggested Entry</p>
-                  <p className="font-bold tabular-nums text-yellow-400">
-                    {formatPrice(detail.reversal_entry)}
-                  </p>
-                </div>
-              )}
-              {detail.reversal_sl && (
-                <div>
-                  <p className="text-xs text-gray-500">Suggested SL</p>
-                  <p className="font-bold tabular-nums text-red-400">
-                    {formatPrice(detail.reversal_sl)}
-                  </p>
-                </div>
-              )}
-              {detail.reversal_tp && (
-                <div>
-                  <p className="text-xs text-gray-500">Suggested TP</p>
-                  <p className="font-bold tabular-nums text-green-400">
-                    {formatPrice(detail.reversal_tp)}
-                  </p>
-                </div>
-              )}
             </div>
-
-            <Link
-              href={`/rejection-block`}
-              className="block w-full text-center py-3 rounded-lg bg-purple-800 hover:bg-purple-700 font-bold"
-            >
-              Open Rejection Block page to take this setup
-            </Link>
           </div>
         )}
 
@@ -368,12 +482,11 @@ export default function SetupDetailPage() {
           </div>
         )}
 
-        {/* Status controls */}
+        {/* Status */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             Trade Status
           </h2>
-
           <button
             type="button"
             onClick={toggleTaken}
@@ -386,7 +499,6 @@ export default function SetupDetailPage() {
           >
             {setup.taken ? "✅ Taken" : "Mark as Taken"}
           </button>
-
           <button
             type="button"
             onClick={toggleClosed}
@@ -399,7 +511,6 @@ export default function SetupDetailPage() {
           >
             {setup.closed ? "↩ Reopen" : "Mark as Closed"}
           </button>
-
           {setup.closed && (
             <div>
               <label className="block text-xs mb-2 text-gray-400">
@@ -428,6 +539,16 @@ export default function SetupDetailPage() {
               </div>
             </div>
           )}
+          {setup.setup_type === "rejection_block" && !setup.closed && (
+            <button
+              type="button"
+              onClick={handleInvalidateZone}
+              disabled={busy}
+              className="w-full py-3 rounded-lg bg-red-900/60 hover:bg-red-800 font-semibold disabled:opacity-50"
+            >
+              ❌ Invalidate zone (stop tracking)
+            </button>
+          )}
         </div>
 
         {/* Trade Notes */}
@@ -438,7 +559,7 @@ export default function SetupDetailPage() {
                 📝 Trade Notes
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Per-setup journal — observations, lessons, follow-ups
+                Per-setup journal
               </p>
             </div>
             {notesDirty && !notesSaved && (
@@ -452,7 +573,6 @@ export default function SetupDetailPage() {
               </span>
             )}
           </div>
-
           <textarea
             value={tradeNotes}
             onChange={(e) => {
@@ -464,7 +584,6 @@ export default function SetupDetailPage() {
             placeholder="Write whatever you observed on this trade..."
             className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none resize-none text-sm"
           />
-
           <button
             type="button"
             onClick={handleSaveNotes}
@@ -480,7 +599,6 @@ export default function SetupDetailPage() {
           <h2 className="text-sm font-semibold text-blue-400 mb-2">
             Actions
           </h2>
-
           {editPath && (
             <Link
               href={editPath}
@@ -489,7 +607,6 @@ export default function SetupDetailPage() {
               ✏️ Edit Setup
             </Link>
           )}
-
           <button
             type="button"
             onClick={handleDelete}
