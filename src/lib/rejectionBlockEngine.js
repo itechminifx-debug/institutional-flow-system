@@ -60,10 +60,8 @@ export function computePips({ entry, sl, tp, pipSize = PIP_SIZE_DEFAULT }) {
 }
 
 // ============================================================
-// VALIDATION HELPERS — NEW
+// VALIDATION HELPERS
 // ============================================================
-// Check if a prior value looks sane compared to current.
-// If prior is missing or wildly off, we treat the metric as unknown.
 export function validatePrior(current, prior, limit = PRIOR_DEVIATION_LIMIT) {
   const c = parseFloat(current);
   const p = parseFloat(prior);
@@ -81,12 +79,9 @@ export function validatePrior(current, prior, limit = PRIOR_DEVIATION_LIMIT) {
   return { valid: true, deviation };
 }
 
-// Check the verdict close is inside at least one listed RB.
 export function validateCloseInsideRbs(closePrice, rankedRbs) {
   const close = parseFloat(closePrice);
-  if (isNaN(close)) {
-    return { valid: false, reason: "missing" };
-  }
+  if (isNaN(close)) return { valid: false, reason: "missing" };
   if (!Array.isArray(rankedRbs) || rankedRbs.length === 0) {
     return { valid: false, reason: "no-rbs" };
   }
@@ -101,7 +96,6 @@ export function validateCloseInsideRbs(closePrice, rankedRbs) {
   return { valid: false, reason: "not-inside" };
 }
 
-// Full validation gate for Save.
 export function validateSetupInputs({
   closePrice,
   rankedRbs,
@@ -121,7 +115,6 @@ export function validateSetupInputs({
       message: "Verdict close is required.",
     });
   } else {
-    // Must sit inside a listed RB
     const inside = validateCloseInsideRbs(close, rankedRbs);
     if (!inside.valid) {
       if (inside.reason === "no-rbs") {
@@ -138,7 +131,6 @@ export function validateSetupInputs({
     }
   }
 
-  // At least 2 RBs
   if (!Array.isArray(rankedRbs) || rankedRbs.length < 2) {
     errors.push({
       field: "rbs",
@@ -146,7 +138,6 @@ export function validateSetupInputs({
     });
   }
 
-  // EMA 50 validation (warning only — doesn't block)
   if (emaCurrent) {
     const emaCheck = validatePrior(emaCurrent, emaPrior);
     if (!emaCheck.valid) {
@@ -160,7 +151,6 @@ export function validateSetupInputs({
     }
   }
 
-  // ATR validation (warning only)
   if (atrCurrent) {
     const atrCheck = validatePrior(atrCurrent, atrPrior);
     if (!atrCheck.valid) {
@@ -460,7 +450,6 @@ export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
     };
   }
 
-  // NEW: sanity check
   const priorCheck = validatePrior(c, p);
   if (!priorCheck.valid) {
     return {
@@ -812,7 +801,7 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 }
 
 // ============================================================
-// TWO-CANDLE RB DETECTION
+// TWO-CANDLE RB DETECTION — SWEEP + RECLAIM
 // ============================================================
 export function detectRbFromTwoCandles({ candle1, candle2 }) {
   const c1h = parseFloat(candle1?.high);
@@ -831,6 +820,7 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
 
   const rbs = [];
 
+  // RESISTANCE RB
   if (c2h > c1h && c2c < c1h) {
     const rbLow = Math.round(c1h * 100) / 100;
     const rbHigh = Math.round(c2h * 100) / 100;
@@ -846,6 +836,7 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
     });
   }
 
+  // SUPPORT RB
   if (c2l < c1l && c2c > c1l) {
     const rbLow = Math.round(c2l * 100) / 100;
     const rbHigh = Math.round(c1l * 100) / 100;
@@ -1029,7 +1020,6 @@ export function detectRbsInPath({
     const low = parseFloat(rb.low);
     if (isNaN(high) || isNaN(low)) continue;
 
-    // RB must sit between entry and TP
     if (isBull) {
       if (low <= e) continue;
       if (low >= t) continue;
@@ -1038,9 +1028,7 @@ export function detectRbsInPath({
       if (high <= t) continue;
     }
 
-    // CORRECTED distance signs:
-    // For BUY: "to entry" = rbLow − entry ; "to TP" = TP − rbHigh
-    // For SELL: "to entry" = entry − rbHigh ; "to TP" = rbLow − TP
+    // Corrected distance signs
     const toEntryPrice = isBull ? low - e : e - high;
     const toTpPrice = isBull ? t - high : low - t;
 
@@ -1048,7 +1036,6 @@ export function detectRbsInPath({
     const distanceToTpPips = Math.round((toTpPrice / p) * 100) / 100;
     const ratio = fullRange > 0 ? toEntryPrice / fullRange : 0;
 
-    // Safe TP = just before the near edge of the RB
     const safeTp = isBull ? low : high;
 
     pathRbs.push({
@@ -1064,7 +1051,6 @@ export function detectRbsInPath({
     });
   }
 
-  // Sort: nearest to entry first
   if (isBull) pathRbs.sort((a, b) => a.low - b.low);
   else pathRbs.sort((a, b) => b.high - a.high);
 
@@ -1083,9 +1069,12 @@ export function detectRbsInPath({
   };
 }
 
+// ============================================================
+// BLOCKER INFO — 15% threshold
+// ============================================================
 export function blockerInfo({ direction, nearest, distanceRatio }) {
   if (!nearest) return null;
-  if (distanceRatio !== undefined && distanceRatio < 0.25) {
+  if (distanceRatio !== undefined && distanceRatio < 0.15) {
     return {
       key: "weak",
       label: "Blocked early",
@@ -1093,8 +1082,8 @@ export function blockerInfo({ direction, nearest, distanceRatio }) {
       color: "bg-red-950/40 border-red-700 text-red-200",
       description:
         direction === "BUY"
-          ? "An RB sits in the first quarter of the path — the BUY may reject early."
-          : "An RB sits in the first quarter of the path — the SELL may reject early.",
+          ? "An RB sits in the first 15% of the path — the BUY may reject early."
+          : "An RB sits in the first 15% of the path — the SELL may reject early.",
     };
   }
   return {
@@ -1303,7 +1292,6 @@ export function atrFilter(atrCurrent, atrPrior) {
     };
   }
 
-  // NEW: sanity check
   const priorCheck = validatePrior(c, p);
   if (!priorCheck.valid) {
     return {

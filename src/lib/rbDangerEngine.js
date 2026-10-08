@@ -4,9 +4,11 @@
 // Scores every RB in a trade path by how likely it is to
 // reject the trade. 0–10 + tier + reason.
 //
-// HARD RULES:
-//   Price currently INSIDE a path RB → 9/10 minimum (Critical)
-//   Price within 25% of path from a path RB → 7/10 minimum (High)
+// HARD FLOORS (graduated by distance to entry):
+//   Price INSIDE a path RB            → 9.0 minimum (Critical)
+//   RB within 10% of path from entry  → 8.5 minimum (Critical)
+//   RB within 20% of path from entry  → 7.5 minimum (High)
+//   RB within 30% of path from entry  → 6.0 minimum (High)
 // ============================================================
 
 export const DEFAULT_DANGER_WEIGHTS = {
@@ -77,7 +79,9 @@ export function dangerTierFor(score) {
   return DANGER_TIERS.clear;
 }
 
-// helpers
+// ============================================================
+// HELPERS
+// ============================================================
 function clamp01(x) {
   if (isNaN(x)) return 0;
   if (x < 0) return 0;
@@ -138,6 +142,24 @@ function alreadyFlippedSignal(close, rbLow, rbHigh, verdict) {
 }
 
 // ============================================================
+// GRADUATED FLOOR — NEW
+// ============================================================
+// Returns the minimum danger score based on distance-to-entry ratio.
+//   inside RB           → 9.0
+//   distanceRatio <= 0.10 → 8.5
+//   distanceRatio <= 0.20 → 7.5
+//   distanceRatio <= 0.30 → 6.0
+//   beyond 0.30          → 0 (no floor)
+export function graduatedFloor(distanceRatio, isInsideNow) {
+  if (isInsideNow) return 9.0;
+  if (distanceRatio < 0) return 0; // RB is behind entry — not in path
+  if (distanceRatio <= 0.10) return 8.5;
+  if (distanceRatio <= 0.20) return 7.5;
+  if (distanceRatio <= 0.30) return 6.0;
+  return 0;
+}
+
+// ============================================================
 // SCORE ONE RB
 // ============================================================
 export function scoreRbDanger({
@@ -152,7 +174,7 @@ export function scoreRbDanger({
   zonePosition = "inside",
   ema = { direction: "unknown", position: "unknown" },
   weights = DEFAULT_DANGER_WEIGHTS,
-  isInsideNow = false, // NEW: price currently inside this RB
+  isInsideNow = false,
 }) {
   if (!rb || !verdict || !entry || !tp) return null;
 
@@ -167,7 +189,7 @@ export function scoreRbDanger({
   const fullPathPips = fullPathPrice / pipSize;
   const isBull = verdict === "BUY";
 
-  // CORRECTED distances
+  // distances
   const toEntryPrice = isBull ? rbLow - e : e - rbHigh;
   const toTpPrice = isBull ? t - rbHigh : rbLow - t;
   const distanceToEntryR =
@@ -198,11 +220,10 @@ export function scoreRbDanger({
   const normalized = totalWeight > 0 ? raw / totalWeight : 0;
   let score = Math.round(Math.max(0, Math.min(10, normalized * 10)) * 10) / 10;
 
-  // HARD FLOORS
-  if (isInsideNow) {
-    score = Math.max(score, 9.0);
-  } else if (distanceToEntryR >= 0 && distanceToEntryR <= 0.25) {
-    score = Math.max(score, 7.0);
+  // Graduated floor
+  const floor = graduatedFloor(distanceToEntryR, isInsideNow);
+  if (floor > 0) {
+    score = Math.max(score, floor);
   }
 
   const tier = dangerTierFor(score);
@@ -217,7 +238,8 @@ export function scoreRbDanger({
   if (s.ema50Agreement > 0.7) reasons.push("against EMA 50");
   if (s.reclaimDepth > 0.4) reasons.push("deep reclaim");
   if (s.alreadyFlipped > 0.5) reasons.push("already flipped → weaker");
-  const reason = reasons.length > 0 ? reasons.join(" · ") : "Standard resistance";
+  const reason =
+    reasons.length > 0 ? reasons.join(" · ") : "Standard resistance";
 
   return {
     rbId: rb.id,
@@ -266,8 +288,7 @@ export function scorePathDanger({
     .map((rb) => {
       const low = parseFloat(rb.low);
       const high = parseFloat(rb.high);
-      const isInsideNow =
-        !isNaN(c) && c >= low && c <= high;
+      const isInsideNow = !isNaN(c) && c >= low && c <= high;
 
       return scoreRbDanger({
         rb,
