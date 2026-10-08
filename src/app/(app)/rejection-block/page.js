@@ -35,11 +35,9 @@ import {
   computeRejectionBlockTrade,
   computePips,
   PIP_SIZE_DEFAULT,
+  validateSetupInputs,
 } from "@/lib/rejectionBlockEngine";
-import {
-  scorePathDanger,
-  pathDangerBanner,
-} from "@/lib/rbDangerEngine";
+import { scorePathDanger, pathDangerBanner } from "@/lib/rbDangerEngine";
 import PairPicker from "@/components/PairPicker";
 
 function emptyRb() {
@@ -88,6 +86,9 @@ export default function RejectionBlockPage() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingDetailId, setExistingDetailId] = useState(null);
 
+  // ============================================================
+  // LOAD PROFILE + EXISTING SETUP
+  // ============================================================
   useEffect(() => {
     async function load() {
       const {
@@ -185,6 +186,9 @@ export default function RejectionBlockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId, visitId]);
 
+  // ============================================================
+  // FORM HELPERS
+  // ============================================================
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
@@ -206,6 +210,9 @@ export default function RejectionBlockPage() {
     setCandle2((c) => ({ ...c, [field]: value }));
   }
 
+  // ============================================================
+  // RB LIST
+  // ============================================================
   const rankedRbs = useMemo(() => {
     const cleaned = rbs
       .map((rb) => ({
@@ -218,6 +225,9 @@ export default function RejectionBlockPage() {
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
+  // ============================================================
+  // TWO-CANDLE DETECTION
+  // ============================================================
   const detection = useMemo(
     () => detectRbFromTwoCandles({ candle1, candle2 }),
     [candle1, candle2]
@@ -247,6 +257,9 @@ export default function RejectionBlockPage() {
     setAddedRbIds((prev) => [...prev, rb.id]);
   }
 
+  // ============================================================
+  // CORE COMPUTATIONS
+  // ============================================================
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
 
   const activeRb = useMemo(() => {
@@ -278,6 +291,7 @@ export default function RejectionBlockPage() {
   const verdict = premiumDiscountVerdict(negotiation);
   const strength = negotiation ? strengthInfo(negotiation.strength) : null;
 
+  // EMA 50 (with validation)
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     emaPrior: form.ema50Prior,
@@ -292,6 +306,7 @@ export default function RejectionBlockPage() {
       })
     : null;
 
+  // Conditions
   const conditions = useMemo(() => {
     if (!activeRb || !negotiation) return { above: [], below: [] };
     return checkConditions({
@@ -321,6 +336,7 @@ export default function RejectionBlockPage() {
     [rankedRbs, form.atrCurrent]
   );
 
+  // Reversal
   const reversal = useMemo(() => {
     if (!negotiation || negotiation.verdict === "WAIT") return null;
     const list =
@@ -377,7 +393,7 @@ export default function RejectionBlockPage() {
   }, [trade, negotiation, rankedRbs, form.pipSize]);
 
   // ============================================================
-  // DANGER ENGINE — compute danger score for the whole path
+  // DANGER ENGINE
   // ============================================================
   const zonePositionMap = useMemo(() => {
     const map = {};
@@ -427,7 +443,9 @@ export default function RejectionBlockPage() {
     ema,
   ]);
 
-  const dangerBanner = pathDanger ? pathDangerBanner(pathDanger, trade?.direction) : null;
+  const dangerBanner = pathDanger
+    ? pathDangerBanner(pathDanger, trade?.direction)
+    : null;
 
   const pathBlockerBadge = pathInfo.nearest
     ? blockerInfo({
@@ -449,9 +467,39 @@ export default function RejectionBlockPage() {
 
   const zoneInfo = zoneTypeInfo(form.zoneType);
 
+  // ============================================================
+  // VALIDATION
+  // ============================================================
+  const validation = useMemo(
+    () =>
+      validateSetupInputs({
+        closePrice: form.closePrice,
+        rankedRbs,
+        emaCurrent: form.ema50Price,
+        emaPrior: form.ema50Prior,
+        atrCurrent: form.atrCurrent,
+        atrPrior: form.atrPrior,
+      }),
+    [
+      form.closePrice,
+      form.ema50Price,
+      form.ema50Prior,
+      form.atrCurrent,
+      form.atrPrior,
+      rankedRbs,
+    ]
+  );
+
+  // ============================================================
+  // SAVE
+  // ============================================================
   async function handleSave() {
     if (!negotiation || !activeRb) {
       setError("Fill in the zone, at least one RB, and close price first.");
+      return;
+    }
+    if (!validation.ok) {
+      setError("Fix the validation errors before saving.");
       return;
     }
 
@@ -467,6 +515,7 @@ export default function RejectionBlockPage() {
       return;
     }
 
+    // --- VISIT MODE ---
     if (isVisit) {
       const { data: parentRbs } = await supabase
         .from("rejection_block_rbs")
@@ -532,6 +581,7 @@ export default function RejectionBlockPage() {
       return;
     }
 
+    // --- NEW or EDIT ---
     const setupPayload = {
       user_id: user.id,
       pair: form.pair,
@@ -645,7 +695,6 @@ export default function RejectionBlockPage() {
       safe_tp: pathInfo.safeTp,
       safe_tp_pips: pathInfo.safeTpPips,
       has_blockers: pathInfo.hasBlockers,
-      // NEW: danger engine
       path_danger_score: pathDanger?.topScore || null,
       path_danger_tier: pathDanger?.topTier?.key || null,
       path_danger_summary: pathDanger?.summary || null,
@@ -710,6 +759,7 @@ export default function RejectionBlockPage() {
       return;
     }
 
+    // Auto-create journal trade
     if (!isEdit) {
       await createTradeFromSetup({
         supabase,
@@ -727,7 +777,9 @@ export default function RejectionBlockPage() {
           ce_price: negotiation.ce,
           used_ce_entry: true,
           rb_verdict: negotiation.verdict,
-          rb_verdict_price: form.closePrice ? parseFloat(form.closePrice) : null,
+          rb_verdict_price: form.closePrice
+            ? parseFloat(form.closePrice)
+            : null,
           rb_verdict_flipped: negotiation.verdict === "SELL",
         },
       });
@@ -746,6 +798,9 @@ export default function RejectionBlockPage() {
     );
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -867,8 +922,8 @@ export default function RejectionBlockPage() {
               Detect RB from Two Candles (Sweep + Reclaim)
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Candle 2 sweeps beyond Candle 1's wick — body closes back inside.
-              OHLC only.
+              Candle 2 sweeps beyond Candle 1's wick — body closes back
+              inside. OHLC only.
             </p>
           </div>
 
@@ -997,6 +1052,38 @@ export default function RejectionBlockPage() {
           )}
         </div>
 
+        {/* Validation Panel */}
+        {(validation.errors.length > 0 || validation.warnings.length > 0) && (
+          <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/30 space-y-2">
+            <p className="text-sm font-bold text-red-200">
+              ⚠️ Fix these before saving
+            </p>
+            {validation.errors.length > 0 && (
+              <ul className="text-xs text-red-200 space-y-1 list-disc ml-4">
+                {validation.errors.map((e, i) => (
+                  <li key={i}>
+                    <strong>{e.field}:</strong> {e.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {validation.warnings.length > 0 && (
+              <div className="pt-2 border-t border-red-800/50">
+                <p className="text-xs font-semibold text-yellow-200">
+                  Warnings (non-blocking)
+                </p>
+                <ul className="text-xs text-yellow-200 space-y-1 list-disc ml-4 mt-1">
+                  {validation.warnings.map((w, i) => (
+                    <li key={i}>
+                      <strong>{w.field}:</strong> {w.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Detection vs Verdict Close */}
         {detectionVsClose && (
           <div
@@ -1010,7 +1097,8 @@ export default function RejectionBlockPage() {
                 {detectionVsClose.rbType === "resistance"
                   ? "🔺 Resistance"
                   : "🔻 Support"}{" "}
-                · {detectionVsClose.distancePips > 0
+                ·{" "}
+                {detectionVsClose.distancePips > 0
                   ? `${detectionVsClose.distancePips} pips from edge`
                   : "inside range"}
               </span>
@@ -1388,7 +1476,7 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
-        {/* Path to Target — now with danger tiers */}
+        {/* Path to Target */}
         {trade && pathInfo.hasBlockers && pathInfo.nearest && pathDanger && (
           <div className="p-4 rounded-lg bg-gray-900 border-2 border-yellow-700 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1548,7 +1636,8 @@ export default function RejectionBlockPage() {
             saving ||
             !negotiation ||
             negotiation.verdict === "WAIT" ||
-            !activeRb
+            !activeRb ||
+            !validation.ok
           }
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             isVisit
@@ -1575,6 +1664,12 @@ export default function RejectionBlockPage() {
             : "Fill zone + RB + close to enable"}
         </button>
 
+        {!validation.ok && (
+          <p className="text-xs text-red-300 text-center">
+            Fix the errors above to enable Save.
+          </p>
+        )}
+
         {/* Info card */}
         <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
           <h3 className="text-xs font-semibold text-blue-300 mb-2">
@@ -1586,7 +1681,8 @@ export default function RejectionBlockPage() {
               beyond Candle 1's wick, closes back inside)
             </li>
             <li>
-              <strong>Multiple RBs</strong> — inside, above, or below the zone
+              <strong>Multiple RBs</strong> — inside, above, or below the
+              zone
             </li>
             <li>
               <strong>Active RB</strong> — the one price is approaching
