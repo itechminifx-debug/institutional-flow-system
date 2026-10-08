@@ -57,7 +57,7 @@ export async function createTradeFromSetup({
   userId,
   setupId,
   pair,
-  direction, // 'buy' | 'sell'
+  direction,
   entry,
   sl,
   tp,
@@ -141,7 +141,7 @@ export async function syncTradeOutcome({ supabase, tradeId }) {
 
   if (sErr) return { ok: false, error: sErr };
 
-  // 4. If the setup is a rejection_block, try to update a visit
+  // 4. If the setup is a rejection_block, update the latest visit
   const { data: setupRow } = await supabase
     .from("setups")
     .select("setup_type")
@@ -149,13 +149,22 @@ export async function syncTradeOutcome({ supabase, tradeId }) {
     .single();
 
   if (setupRow?.setup_type === "rejection_block" && trade.closed_at) {
-    // Find the closest visit to when this trade opened
-    await supabase
+    // Find the latest visit first
+    const { data: latestVisit } = await supabase
       .from("rejection_block_visits")
-      .update({ outcome: setupOutcome })
+      .select("id")
       .eq("setup_id", trade.setup_id)
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
+
+    // Then update it by id
+    if (latestVisit?.id) {
+      await supabase
+        .from("rejection_block_visits")
+        .update({ outcome: setupOutcome })
+        .eq("id", latestVisit.id);
+    }
   }
 
   return { ok: true };
