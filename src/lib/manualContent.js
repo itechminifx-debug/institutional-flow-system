@@ -158,10 +158,87 @@ export const MANUAL_PARTS = [
         number: 72,
         title: "The Next RB Target — Where 2R Lands",
       },
+         {
+      key: "ch73",
+      number: 73,
+      title: "The Battle Zone — MSS vs RB",
+    },
+    ],
+  },
+  {
+    key: "part11",
+    number: 11,
+    title: "The Rejection Block System — Deep Dive",
+    chapters: [
       {
-        key: "ch73",
-        number: 73,
-        title: "The Battle Zone — MSS vs RB",
+        key: "ch74",
+        number: 74,
+        title: "The Rejection Block — Deep Dive",
+      },
+      {
+        key: "ch75",
+        number: 75,
+        title: "Two-Candle Detection — Sweep + Reclaim",
+      },
+      {
+        key: "ch76",
+        number: 76,
+        title: "Multiple RBs & The Active RB",
+      },
+      {
+        key: "ch77",
+        number: 77,
+        title: "The Verdict — Premium / Discount / RB Broken",
+      },
+      {
+        key: "ch78",
+        number: 78,
+        title: "EMA 50 — First-Class Signal",
+      },
+      {
+        key: "ch79",
+        number: 79,
+        title: "ATR Validation & Input Safety",
+      },
+      {
+        key: "ch80",
+        number: 80,
+        title: "Conditions Above & Below",
+      },
+      {
+        key: "ch81",
+        number: 81,
+        title: "All RBs Flipped",
+      },
+      {
+        key: "ch82",
+        number: 82,
+        title: "The Danger Engine — Path Scoring",
+      },
+      {
+        key: "ch83",
+        number: 83,
+        title: "Next Opportunity — Reversal Detection",
+      },
+      {
+        key: "ch84",
+        number: 84,
+        title: "Zone Lifecycle — Visits & Stats",
+      },
+      {
+        key: "ch85",
+        number: 85,
+        title: "The RB Auto-Scanner",
+      },
+      {
+        key: "ch86",
+        number: 86,
+        title: "Journal Integration — Auto-Trades",
+      },
+      {
+        key: "ch87",
+        number: 87,
+        title: "The Complete RB Rulebook",
       },
     ],
   },
@@ -6843,10 +6920,1099 @@ The battle structure works regardless of where the RB sits:
 *End of Part 10 — The Institutional Flow System now has 73 chapters across 10 Parts.*
     `,
   },
+
+  // ==========================================================
+  // PART 11 — THE REJECTION BLOCK SYSTEM (DEEP DIVE)
+  // ==========================================================
+
+  ch74: {
+    title: "The Rejection Block — Deep Dive",
+    content: `
+## The Rejection Block — Deep Dive
+
+Zones hold orders. **Rejection Blocks make decisions.**
+
+This is the core of the entire system. Every other zone — FVG, Order Block, Liquidity, MSS, BOS — just points toward the Rejection Block. The RB is where the market actually decides.
+
+### The Distinction
+
+Most traders treat every zone the same. They mark a Fair Value Gap and enter on it. They mark an Order Block and buy it. They mark a liquidity level and trade it.
+
+**That is retail.**
+
+Professionals understand that zones are **containers** — where institutional orders sit. The zone tells you where price *might* react. But it doesn't tell you *who* will win.
+
+**The Rejection Block tells you who won.**
+
+### What Makes an RB Different
+
+| Zone Type | Role |
+|---|---|
+| FVG | Where price fed (imbalance) |
+| Order Block | Where institutions built (base) |
+| Liquidity Zone | Where stops pooled (fuel) |
+| MSS / BOS | Where structure shifted (context) |
+| **Rejection Block** | **Where the decision was made** |
+
+**The RB is not just another zone. It is the verdict zone.**
+
+### Where It Lives
+
+The RB can form **anywhere** — but it must have:
+- A **sweep** (liquidity taken)
+- A **close back inside** (rejection confirmed)
+- A **dominant wick** (institutional defence)
+
+It can form inside a zone, above a zone, or below a zone. Its position doesn't matter for direction — only its **close** decides.
+
+### The Three Levels
+
+Every RB has three key prices:
+
+1. **Zone High** — top of the wick
+2. **Zone Low** — the body close
+3. **CE (50%)** — the midpoint — where you enter
+
+**The CE is your entry. Always.**
+
+### The Golden Rule
+
+> "Zones hold orders. The Rejection Block makes decisions. Trade the decision — not the zone."
+
+---
+
+*Continue to Chapter 75 →*
+    `,
+  },
+
+  ch75: {
+    title: "Two-Candle Detection — Sweep + Reclaim",
+    content: `
+## Two-Candle Detection — Sweep + Reclaim
+
+The exact rule that identifies a valid Rejection Block.
+
+### The Core Pattern
+
+**Two candles. Any type. Any body size. Ignore the bodies entirely for range.**
+
+Only the wick tips matter — and the second candle's close.
+
+### The Rule — Resistance RB
+
+- **Candle 2's wick tip > Candle 1's wick tip** (sweep up)
+- **Candle 2's close < Candle 1's wick tip** (close back inside)
+
+→ **Resistance RB** from Candle 1's tip to Candle 2's tip.
+
+### The Rule — Support RB
+
+- **Candle 2's wick tip < Candle 1's wick tip** (sweep down)
+- **Candle 2's close > Candle 1's wick tip** (close back inside)
+
+→ **Support RB** from Candle 2's tip to Candle 1's tip.
+
+### The Invalidation Rules
+
+The RB is **invalid** if any of these is true:
+
+- ❌ **Wicks are equal** — no sweep, no RB
+- ❌ **Candle 2 closes beyond the level** — above Candle 1's high for resistance, below Candle 1's low for support
+- ❌ **Candle 2's wick doesn't exceed Candle 1's wick** — no sweep happened
+
+### The Dual Sweep — Dead Candle
+
+If **Candle 2 sweeps BOTH sides** — above Candle 1's high AND below Candle 1's low — and **closes inside** the range:
+
+→ **BOTH RBs are valid.** Take both. This is the "dead candle" — maximum indecision = maximum rejection.
+
+### What the Body Tells You
+
+The body only matters for **validity**:
+- If Candle 2 closes back inside → valid
+- If Candle 2 closes beyond → invalid
+
+**The body doesn't affect the RB range. Only the wick tips do.**
+
+### OHLC Inputs
+
+The system uses full OHLC for both candles:
+- **Candle 1:** high, low
+- **Candle 2:** high, low, close
+
+Open is optional context.
+
+### The Golden Rule
+
+> "The second candle must sweep beyond the first candle's wick — but its body must close back inside. If the body confirms the sweep, the RB is invalid."
+
+---
+
+*Continue to Chapter 76 →*
+    `,
+  },
+
+  ch76: {
+    title: "Multiple RBs & The Active RB",
+    content: `
+## Multiple RBs & The Active RB
+
+There is rarely one Rejection Block. There are usually **several** — stacked above, below, and inside the zone.
+
+**You must list every RB.** Missing one means missing the real trade.
+
+### Why Multiple RBs Matter
+
+- A zone has **multiple rejected wicks** — each is a candidate RB
+- Each RB has its own **high, low, and CE**
+- Each one is a **different target**
+- **Price will interact with the ONE that matters most**
+
+If you list only one RB, you're blind to the others.
+
+### The Hierarchy
+
+RBs are ranked by **freshness**:
+
+| Rank | Meaning |
+|---|---|
+| 🎯 **Current** | Freshest — the first target |
+| 🟡 **Previous** | Older — still valid |
+| ⚪ **Oldest** | Weakest — least likely to react |
+
+**Always start with the current. Move to previous if the current is ignored.**
+
+### The Active RB
+
+The **active RB** is the one price is currently approaching. The system finds it automatically:
+
+1. **If price is inside an RB** → that RB is active
+2. **If price is not inside any RB** → the RB whose CE is closest to price is active
+
+**Everything downstream uses the active RB:**
+- The verdict (close vs CE)
+- The trade parameters (entry = CE)
+- The path danger (RBs ahead)
+- The reversal candidates
+
+### How to Find the Active RB Manually
+
+1. Enter all RBs (high/low for each)
+2. Enter the verdict close
+3. The system marks the active RB with a **green ring** and "active" label
+
+### Why Position Doesn't Matter
+
+The RB can sit:
+- **Above the zone** → defence stacked above
+- **Inside the zone** → defence within
+- **Below the zone** → defence stacked below
+
+**The position doesn't affect direction. Only the BOS direction sets that.**
+
+### The RB Direction Rule
+
+For an RB to be valid, its **direction must match the BOS direction**:
+- Bullish BOS → bullish RB (support)
+- Bearish BOS → bearish RB (resistance)
+
+The position is just *where* price pulled back to.
+
+### The Golden Rule
+
+> "List every RB. Trust the ranking. Trade the active one."
+
+---
+
+*Continue to Chapter 77 →*
+    `,
+  },
+
+  ch77: {
+    title: "The Verdict — Premium / Discount / RB Broken",
+    content: `
+## The Verdict — Premium / Discount / RB Broken
+
+The close is the verdict. The wick is not.
+
+### The Verdict Logic
+
+For the **active RB**, compare the verdict close to three prices:
+
+- **RB High**
+- **RB CE (50%)**
+- **RB Low**
+
+### The Four Verdicts
+
+| Close Position | Verdict | Strength |
+|---|---|---|
+| **Above RB High** | 🟢 **BUY** — RB broken up | **Strong** |
+| **Between CE and RB High** | 🔴 **SELL** — closed in premium | Normal |
+| **Between RB Low and CE** | 🟢 **BUY** — closed in discount | Normal |
+| **Below RB Low** | 🔴 **SELL** — RB broken down | **Strong** |
+| **Exactly at CE** | ⚠️ **WAIT** — indecision | Weak |
+
+### Why the RB is the Dealing Range
+
+The RB itself is the range. Its CE (50%) is the pivot.
+
+- **Above CE** → premium → sellers' territory
+- **Below CE** → discount → buyers' territory
+- **Beyond the RB edges** → the RB has been broken — strong signal
+
+**Institutions entered at the CE. So did you.**
+
+### The Premium / Discount Model
+
+- **Premium** (above CE) = expensive → sellers act → **SELL**
+- **Discount** (below CE) = cheap → buyers act → **BUY**
+
+**Both are valid.** The close tells you which side won that moment.
+
+### The Strong Verdicts
+
+When price closes **beyond the RB** — above the high or below the low — the RB is broken:
+
+- **Break up** → buyers fully took over → **strong BUY**
+- **Break down** → sellers fully took over → **strong SELL**
+
+**These are the highest-conviction signals.**
+
+### The WAIT Verdict
+
+When the close lands **exactly at the CE** (within 0.01% tolerance):
+- No side won
+- **Wait for a decisive close**
+- The Save button stays disabled
+
+### How It Feeds the Rest
+
+Once the verdict is set:
+- **EMA 50 modifier** adjusts the strength
+- **All RBs Flipped check** adds a bonus signal
+- **Danger Engine** scores the path
+- **Conditions Above/Below** scores the obstacles
+- **Trade calculator** produces entry/SL/TP
+
+### The Golden Rule
+
+> "The close is the verdict. Above the RB = broke up. Below = broke down. Above CE = premium. Below CE = discount. Trade the side that won."
+
+---
+
+*Continue to Chapter 78 →*
+    `,
+  },
+
+  ch78: {
+    title: "EMA 50 — First-Class Signal",
+    content: `
+## EMA 50 — First-Class Signal
+
+The EMA 50 is not a decorative line. It is the higher-timeframe trend compass — and it **adjusts your verdict strength**.
+
+### What It Tells You
+
+Only one thing matters: **where price sits relative to the EMA**.
+
+- **Price above EMA** → bullish bias → BUY aligned, SELL counter
+- **Price below EMA** → bearish bias → SELL aligned, BUY counter
+
+**No prior value needed.** The current EMA price and the current close give you everything.
+
+### The Strength Modifier
+
+The EMA **adjusts the verdict strength up or down**:
+
+| Verdict | EMA Alignment | Strength Change |
+|---|---|---|
+| BUY | Price above EMA | +1 tier (bump up) |
+| BUY | Price below EMA | -1 tier (bump down) |
+| SELL | Price below EMA | +1 tier (bump up) |
+| SELL | Price above EMA | -1 tier (bump down) |
+
+**Tiers:** Weak → Normal → Strong
+
+So a **Normal SELL** with EMA alignment becomes a **Strong SELL**.
+A **Normal SELL** against EMA becomes a **Weak SELL**.
+
+### How to Enter It
+
+- Open the RB page
+- Enter only **"EMA 50 (current price of the line)"**
+- The system reads the current close automatically
+- The bias (Bullish / Bearish) shows instantly
+
+### The Badges You'll See
+
+- **📈 Bullish** — price above EMA
+- **📉 Bearish** — price below EMA
+- **EMA 50 aligned ✅** — the trade direction matches the bias
+- **Counter-trend ⚠️** — the trade is against the bias
+
+### Why This Matters
+
+Most traders ignore the EMA until it "looks wrong." By then, they've taken counter-trend trades.
+
+**Making it a first-class signal forces you to align with the higher-timeframe trend** — the same way institutions do.
+
+### The Missing Value Guard
+
+If you enter an EMA value that doesn't look right — e.g., way off from the close — the system:
+- Marks it as **unknown**
+- Skips the strength modifier
+- Never shows a false "counter-trend" flag from stale data
+
+### The Golden Rule
+
+> "The EMA 50 tells you which side the trend is on. Aligned trades get stronger. Counter-trend trades get weaker. Trade with the trend — or trade weakly."
+
+---
+
+*Continue to Chapter 79 →*
+    `,
+  },
+
+  ch79: {
+    title: "ATR Validation & Input Safety",
+    content: `
+## ATR Validation & Input Safety
+
+Stale or invalid inputs cause wrong verdicts. The system protects you.
+
+### The Problem
+
+If you leave an old value in a field — e.g., EMA prior from a previous pair — the system computes nonsense:
+- It thinks the EMA is rising when it's flat
+- It flags a correct trade as counter-trend
+- It produces a wrong danger score
+
+**This is not your fault — it's a UX problem.** The system fixes it for you.
+
+### The Validation Gates
+
+Before you can save a setup, the system checks:
+
+1. **Verdict close is entered** — required
+2. **Verdict close sits inside a listed RB** — required
+3. **At least 2 RBs are listed** — required
+4. **EMA 50 value is valid** — if entered, warning only
+5. **ATR current + prior are consistent** — if entered, warning only
+
+### What "Valid" Means
+
+For **EMA 50** and **ATR prior**:
+- If the value is **more than 20% off** the current value → invalid
+- Invalid values are treated as **unknown**, not used
+
+**Example:**
+- EMA current = 189,885
+- EMA prior = 50 — looks wrong
+- → The system marks EMA as "unknown" and skips the strength modifier
+
+### The Red Validation Panel
+
+If any required field is missing, you see:
+
+> ⚠️ **Fix these before saving**
+> - **closePrice:** Verdict close is required.
+> - **rbs:** List every RB around the zone — at least 2.
+> - **ema50Prior:** EMA 50 prior (50) looks invalid vs current (189885) — filter disabled.
+
+**The Save button is disabled** until the errors are fixed.
+
+Warnings show but don't block.
+
+### The "Close Inside an RB" Rule
+
+The verdict close **must** sit inside at least one listed RB. If it doesn't:
+
+> ⚠️ **Verdict close (185,432) doesn't sit inside any listed RB.** Check your inputs or add the RB that contains it.
+
+**This is the most common stale-input bug.** It catches it instantly.
+
+### Why This Matters
+
+Your 2-month test depends on **clean data**. A single stale value can:
+- Flip a verdict
+- Break a danger score
+- Corrupt a journal entry
+- Skew your stats
+
+**The system refuses to save bad data.** This is the guard.
+
+### The Golden Rule
+
+> "Clean inputs produce clean verdicts. If the system flags a value as invalid, it's protecting you from a wrong trade."
+
+---
+
+*Continue to Chapter 80 →*
+    `,
+  },
+
+  ch80: {
+    title: "Conditions Above & Below",
+    content: `
+## Conditions Above & Below
+
+The verdict tells you the direction. The conditions tell you what's in the way.
+
+### The Concept
+
+After the verdict fires (BUY or SELL), the system scans the **other RBs** — those above and below the active RB — and grades them.
+
+**For a BUY** → check the RBs **above** (the trade's path)
+**For a SELL** → check the RBs **below** (the trade's path)
+
+Each RB gets a **tier** based on where the close sits relative to it.
+
+### The Tiers — Direction-Aware
+
+**For a BUY** (RBs above the active RB):
+
+| Close Position | Tier | Meaning |
+|---|---|---|
+| Above the RB high | ✅ **Confirmed** | Broke through cleanly — path open |
+| Inside upper half | ⚪ **Caution** | Still inside — deciding |
+| Inside lower half | ⚪ **Caution** | Still inside — deciding |
+| Below the RB low | ⚠️ **Blocked** | Wall above — must clear it |
+
+**For a SELL** (RBs below the active RB):
+
+| Close Position | Tier | Meaning |
+|---|---|---|
+| Below the RB low | ✅ **Confirmed** | Broke through cleanly — path open |
+| Inside lower half | ⚪ **Caution** | Still inside — deciding |
+| Inside upper half | ⚪ **Caution** | Still inside — deciding |
+| Above the RB high | ⚠️ **Blocked** | Wall below — must clear it |
+
+### The Summary Badge
+
+The system rolls the tiers into a summary:
+
+- ✅ **Path clear** — all RBs in the path are confirmed
+- ⚪ **Mixed conditions** — some confirmed, some ahead
+- ⚠️ **Blocked** — one or more RBs are still walls
+
+### Why This Matters
+
+Knowing the direction is only half the trade. You also need to know:
+
+- **How many RBs sit between entry and target**
+- **Which ones are already cleared**
+- **Which ones will block the trade**
+
+**The conditions panel answers all three.**
+
+### Direction-Aware Logic
+
+This is crucial — the tiers **invert based on direction**:
+
+- A SELL checks RBs **below** and uses SELL rules
+- A BUY checks RBs **above** and uses BUY rules
+
+Using BUY rules on a SELL path produces wrong verdicts. The system handles this automatically.
+
+### The Golden Rule
+
+> "The verdict tells you the direction. The conditions tell you the obstacles. Trade the path, not just the entry."
+
+---
+
+*Continue to Chapter 81 →*
+    `,
+  },
+
+  ch81: {
+    title: "All RBs Flipped",
+    content: `
+## All RBs Flipped
+
+When every listed RB sits behind the current close — that's a maximum continuation signal.
+
+### The Concept
+
+If you've listed **every RB** on the chart — all the ones above and below the active RB — and the close is **beyond all of them in one direction**, then:
+
+- **All RBs flipped up** → buyers cleared everything → **maximum bullish continuation**
+- **All RBs flipped down** → sellers cleared everything → **maximum bearish continuation**
+
+**This is the strongest signal in the system.**
+
+### The Rule
+
+For each listed RB:
+
+- If close is **greater than** RB high → flipped up
+- If close is **less than** RB low → flipped down
+- Otherwise → not flipped
+
+**All RBs flipped up** requires every single RB to satisfy: close greater than RB high.
+**All RBs flipped down** requires every single RB to satisfy: close less than RB low.
+
+If even one RB is **not flipped**, the badge doesn't fire.
+
+### The Badge
+
+When all RBs flip:
+
+- **All RBs flipped up** — green badge
+- **All RBs flipped down** — red badge
+
+It appears:
+- On the verdict card
+- In the conditions panel
+- On the setup detail page
+- Saved to the database
+
+### Why This Matters
+
+Most traders take a trade and hope. This badge tells you:
+
+**The market has cleared every listed obstacle in the direction of your trade.**
+
+That's not hope. That's confirmation.
+
+### The Journal Value
+
+Every setup saves all_rbs_flipped and all_rbs_flipped_direction. After 2 months, you can check:
+
+- Did all-flipped trades win more often?
+- Did they win more pips?
+- Which direction (up or down) is more reliable?
+
+**The data will prove or disprove the signal.**
+
+### The Golden Rule
+
+> "When every listed RB has been flipped in one direction, the market has committed. Trade with maximum conviction."
+
+---
+
+*Continue to Chapter 82 →*
+    `,
+  },
+
+  ch82: {
+    title: "The Danger Engine — Path Scoring",
+    content: `
+## The Danger Engine — Path Scoring
+
+Every RB in your trade's path gets a **0 to 10 danger score** — how likely it is to reject your trade.
+
+### What It Scores
+
+For every RB **between entry and TP**:
+
+- **Size vs ATR** — big RB = real wall
+- **Freshness** — current RBs are defended harder
+- **Distance to entry** — closer = more dangerous
+- **Distance to TP** — irrelevant if past target
+- **Position vs zone** — inside-zone RBs are stronger
+- **EMA 50 agreement** — counter-trend RBs are stronger walls
+- **Reclaim depth** — deeper reclaim = stronger rejection
+- **Already-flipped check** — flipped RBs are weaker
+
+### The Graduated Floors
+
+The score never drops below a floor that scales with distance:
+
+| Condition | Minimum Score |
+|---|---|
+| Price **inside** an RB right now | **9.0** (Critical) |
+| RB **within 10%** of path from entry | **8.5** (Critical) |
+| RB **within 20%** | **7.5** (High) |
+| RB **within 30%** | **6.0** (High) |
+
+**If price is inside an RB right now, the score is 9 or higher — period.**
+
+### The Tier Badges
+
+| Score | Tier | Meaning |
+|---|---|---|
+| 8 to 10 | 🔴 **Critical** | Exit before it — Safe TP required |
+| 6 to 8 | 🟠 **High** | Consider Safe TP |
+| 4 to 6 | 🟡 **Medium** | Monitor |
+| 2 to 4 | 🟢 **Low** | Likely clears |
+| 0 to 2 | ⚪ **Clear** | No meaningful resistance |
+
+### The Path Danger Banner
+
+When the top score hits 6 or higher:
+
+- **6 to 8**: 🟠 "RB likely to reject" — consider Safe TP
+- **8 or higher**: 🚨 "High-risk path" — take Safe TP or skip
+
+### The Safe TP
+
+For every dangerous RB in the path, the system shows a **Safe TP**:
+
+- For a BUY → just **below** the nearest blocking RB's low
+- For a SELL → just **above** the nearest blocking RB's high
+
+**This is where you take profit before the wall.**
+
+### The Trade Card Shows the Score
+
+The Trade Card shows:
+- **Path score** — e.g., 8.5 out of 10 — with tier color
+- Distance to the nearest danger RB
+- Whether Safe TP is recommended
+
+### How to Use It
+
+Before clicking Save:
+
+1. Check the **path danger score**
+2. If **Critical** → plan the Safe TP
+3. If **High** → consider reducing target
+4. If **Medium or below** → trade the full 2R
+
+### The Golden Rule
+
+> "Not all RBs are equal. Score the path. Exit before the wall."
+
+---
+
+*Continue to Chapter 83 →*
+    `,
+  },
+
+  ch83: {
+    title: "Next Opportunity — Reversal Detection",
+    content: `
+## Next Opportunity — Reversal Detection
+
+After a trade completes — win, loss, or BE — the system looks for the **next trade**.
+
+### The Concept
+
+Price doesn't stop at your target. It often **sweeps the next level** and rejects from there.
+
+**The sweep is your next setup.**
+
+### The Trigger
+
+For a **SELL** that hit TP:
+
+1. Price continued past the condition RB below
+2. Swept its low — took the liquidity
+3. Then **closed back above** that low
+
+→ **Reversal candidate — BUY.**
+
+For a **BUY** that hit TP:
+
+1. Price continued past the condition RB above
+2. Swept its high
+3. Then **closed back below** that high
+
+→ **Reversal candidate — SELL.**
+
+### What the Engine Returns
+
+- **New direction** — BUY or SELL
+- **New RB** — the swept condition RB becomes the new active RB
+- **Sweep level** — the exact price that was swept
+- **Suggested entry** = the CE of the new RB
+- **Suggested SL** = beyond the sweep level
+- **Suggested TP** = 2R from entry
+
+### The Card
+
+When a reversal is detected, a purple card appears:
+
+> 🔄 **Next Opportunity — Reversal**
+> Direction: BUY
+> New RB: 192,410 to 192,692
+> Entry: 192,551
+> SL: 192,173
+> TP: 193,307
+
+**Suggestion only — you confirm before any new setup is created.**
+
+### Why This Matters
+
+A closed trade isn't the end. It's often the beginning of the next one.
+
+**Most traders take profit and walk away. Professionals see the trap already forming.**
+
+### The Golden Rule
+
+> "The trade ends. The next one is already forming. Watch for the sweep — the reversal is coming."
+
+---
+
+*Continue to Chapter 84 →*
+    `,
+  },
+
+  ch84: {
+    title: "Zone Lifecycle — Visits & Stats",
+    content: `
+## Zone Lifecycle — Visits & Stats
+
+A single zone can give entries for **weeks**. Not one trade. Multiple.
+
+### The Concept
+
+Each Rejection Block zone doesn't expire after one trade. It stays live:
+
+- Price returns
+- Sweeps another RB
+- Rejects again
+- **New entry**
+
+**This is why tracking visits matters.**
+
+### What a Visit Is
+
+Every time price returns to the zone and reacts, that's a **visit**.
+
+Each visit logs:
+- **Which RB** was tested
+- **Close price**
+- **Verdict** — BUY, SELL, or WAIT
+- **EMA direction + position**
+- **All RBs flipped?**
+- **Reversal detected?**
+- **Entry / SL / TP**
+- **Outcome** — win, loss, or BE — filled in later
+
+### How to Log a Visit
+
+1. Open a saved setup
+2. Click **"Log new visit to this zone"**
+3. Jump to the RB page in **Visit mode**
+4. The zone + RBs are pre-filled
+5. Enter the new close / EMA / ATR
+6. Save → a new row is added to rejection_block_visits
+
+**The parent setup is unchanged. Only the visit log grows.**
+
+### The Zone Activity Card
+
+On the setup detail page, you see:
+
+- **Visits count**
+- **Wins / Losses / Win rate**
+- **A log of each visit** with its details
+
+### When to Invalidate the Zone
+
+The zone stays live until:
+- The BOS is broken against you
+- The RB structure changes significantly
+- You decide it's no longer relevant
+
+Click **"Invalidate zone"** to mark it closed. It stops appearing in the active list.
+
+### The Long-Term Value
+
+After 2 months, you'll see:
+- **Which zones produced the most entries**
+- **Which zones had the highest win rate**
+- **How many visits a "typical" zone gets**
+- **The average hold time between visits**
+
+**This turns a single setup into a tracked, measurable edge.**
+
+### The Golden Rule
+
+> "A zone isn't a trade. A zone is a session. Log every visit — the history teaches you."
+
+---
+
+*Continue to Chapter 85 →*
+    `,
+  },
+
+  ch85: {
+    title: "The RB Auto-Scanner",
+    content: `
+## The RB Auto-Scanner
+
+Paste candles. The algorithm finds every Rejection Block. No manual scanning required.
+
+### What It Does
+
+The scanner:
+
+1. **Parses** a list of candles — OHLC
+2. **Checks** every adjacent pair of candles
+3. **Detects** RBs using the sweep and reclaim rule
+4. **Ranks** them by freshness and score
+5. **Scores** each with the Danger Engine
+6. **Presents** the best RB with full trade parameters
+
+**In one click.**
+
+### The Input
+
+Paste candles as CSV — one candle per line.
+
+**Format:** time,open,high,low,close
+
+**Example lines:**
+
+- 2026-10-07 00:00, 209300, 209500, 209250, 209450
+- 2026-10-07 04:00, 209450, 209700, 209400, 209500
+- 2026-10-07 08:00, 209500, 209550, 209100, 209200
+- 2026-10-07 12:00, 209200, 209400, 209000, 209350
+- 2026-10-07 16:00, 209350, 209600, 209300, 209550
+- 2026-10-07 20:00, 209550, 209850, 209500, 209800
+
+Time is optional. Minimum: open,high,low,close.
+
+### What It Detects
+
+For every **adjacent pair** — Candle 1, Candle 2:
+
+- If **Candle 2's high is greater than Candle 1's high** AND **Candle 2's close is less than Candle 1's high** → Resistance RB
+- If **Candle 2's low is less than Candle 1's low** AND **Candle 2's close is greater than Candle 1's low** → Support RB
+
+Each valid pair produces a candidate RB. The scanner builds a **full list**.
+
+### The Output
+
+**Scan summary:**
+- Candles parsed
+- RBs found
+- Resistance vs support split
+
+**Ranked RB list:**
+- ⭐ **Best** — top-scoring RB
+- 🎯 **Current** / 🟡 **Previous** / ⚪ **Oldest** — freshness
+- 🔺 Resistance / 🔻 Support
+- Close price used
+
+**Detail view — click any RB:**
+- Full verdict — BUY or SELL
+- Trade parameters — Entry, SL, TP
+- Pips
+- Reversal candidate if applicable
+- **"Save this RB as a Setup"** button
+
+### The Save
+
+Clicking Save:
+
+1. Creates a setups row — setup_type equals rejection_block
+2. Creates a rejection_block_setups row
+3. Creates a rejection_block_rbs row
+4. Auto-creates a linked trades row — journal
+
+**From paste to setup to trade in one flow.**
+
+### When to Use It
+
+- **Fast scanning** — check a pair in 10 seconds
+- **Multiple timeframes** — paste H1, H4, D1 separately
+- **After a big move** — new RBs everywhere
+- **Backtesting** — paste historical candles
+
+### The Limits
+
+The scanner is **only as good as the candles you give it.** It doesn't fetch live data — yet. It doesn't know context — zone type, bias.
+
+**You still decide which RB to trade.**
+
+### The Golden Rule
+
+> "The scanner finds the RBs. You find the trade."
+
+---
+
+*Continue to Chapter 86 →*
+    `,
+  },
+
+  ch86: {
+    title: "Journal Integration — Auto-Trades",
+    content: `
+## Journal Integration — Auto-Trades
+
+Every setup you save **automatically appears in the journal**. No manual entry.
+
+### The Flow
+
+1. Save a setup
+2. Creates rows in setups + rejection_block_setups + rejection_block_rbs
+3. Auto-creates a linked trades row
+4. Appears in /journal
+
+**One save. One linked trade. One place to review.**
+
+### What Gets Created
+
+When you save a setup, the system creates a trades row with:
+
+- **setup_id** — link to the source setup
+- **pair** — same as the setup
+- **direction** — from the verdict — BUY becomes buy, SELL becomes sell
+- **entry** — CE
+- **sl and tp** — from the trade calculator
+- **lot_size and risk_percent**
+- **status** — "open" by default
+- **opened_at** — now
+
+### The Journal Page
+
+`/journal` now shows:
+- **Every trade** — across all 5 systems
+- **System badge** per trade — Rejection Block, BOS+RB, etc.
+- **Filter by system**
+- **Win rate per system**
+
+### The Sync Back
+
+When you close a trade — WON, LOST, or BE — the system **syncs the outcome back**:
+
+- The linked **setup** is marked closed with the matching outcome
+- If the setup is a **rejection_block** with visits, the latest visit gets the outcome
+
+**One click closes the loop.**
+
+### Why This Matters
+
+Most traders keep **two separate logs**:
+
+1. A journal of trades
+2. A list of setups
+
+**They never connect.** The setup says one thing. The trade says another. The stats are split.
+
+**This system links them automatically.**
+
+### The Stats You Can Now See
+
+After 2 months:
+
+- **Win rate by system** — which one is your edge?
+- **Win rate by zone type** — FVG vs OB vs Liquidity
+- **Win rate when EMA aligned vs counter**
+- **Win rate when All RBs Flipped**
+- **Win rate when path danger was Critical**
+
+**Every feature you've built has a trackable outcome.**
+
+### The Golden Rule
+
+> "Every setup is a trade. Every trade is data. The journal ties them together — so your stats actually mean something."
+
+---
+
+*Continue to Chapter 87 →*
+    `,
+  },
+
+  ch87: {
+    title: "The Complete RB Rulebook",
+    content: `
+## The Complete RB Rulebook
+
+Every rule of the Rejection Block system, in one place.
+
+### Detection
+
+1. The RB requires **two candles**
+2. **Candle 2 must sweep** Candle 1's wick
+3. **Candle 2 must close back inside** the swept level
+4. **Wicks must be different** — equal = invalid
+5. **Candle 1's wick must NOT exceed Candle 2's** — no sweep, no RB
+6. **Dual sweep** = both RBs valid — dead candle
+7. Use **full OHLC** — the body only matters for validity
+
+### The RB Range
+
+8. **RB Low** = the lower wick tip
+9. **RB High** = the higher wick tip
+10. **CE** = 50% midpoint — entry
+
+### Multiple RBs
+
+11. **List every RB** — none should be left off
+12. **Rank by freshness** — current, previous, oldest
+13. The **active RB** is the one price is approaching
+14. **Position doesn't affect direction** — only BOS direction does
+
+### Verdict
+
+15. **Above RB high** → BUY — strong
+16. **Below RB low** → SELL — strong
+17. **Above CE, inside RB** → SELL — premium
+18. **Below CE, inside RB** → BUY — discount
+19. **At CE** → WAIT
+
+### EMA 50
+
+20. **Price above EMA** → bullish bias
+21. **Price below EMA** → bearish bias
+22. **Aligned** → strength plus one tier
+23. **Counter** → strength minus one tier
+24. **No prior needed** — only the current EMA price
+
+### Conditions Above / Below
+
+25. **Direction-aware** — BUY checks above, SELL checks below
+26. **Confirmed** = close beyond the RB
+27. **Caution** = close inside the RB
+28. **Blocked** = RB is still a wall
+
+### All RBs Flipped
+
+29. Requires **every listed RB** to be flipped
+30. **All up** → max bullish continuation
+31. **All down** → max bearish continuation
+32. **One unflipped** → badge doesn't fire
+
+### Danger Engine
+
+33. **Every RB in the path is scored** 0 to 10
+34. **Graduated floors** — inside RB equals 9, within 10% equals 8.5, etc.
+35. **Critical — 8 or higher** → plan the Safe TP
+36. **High — 6 or higher** → consider reducing target
+37. **Safe TP** = just before the nearest blocking RB
+
+### Next Opportunity
+
+38. **After a trade completes**, watch for the sweep
+39. **Swept condition RB** → reversal candidate
+40. **Suggestion only** — you confirm before saving
+
+### Zone Lifecycle
+
+41. **A zone gives multiple entries**
+42. **Log every visit**
+43. **Invalidate** only when the zone is truly dead
+
+### Journal
+
+44. **Every setup auto-creates a trade**
+45. **Close the trade** → setup outcome syncs
+46. **System badges** in the journal list
+47. **Per-system win rate** visible
+
+### Input Validation
+
+48. **Verdict close must be entered**
+49. **Close must sit inside a listed RB**
+50. **At least 2 RBs listed**
+51. **Invalid EMA / ATR values** treated as unknown
+52. **Save disabled** until errors are fixed
+
+### The Golden Rule
+
+> "Zones hold orders. Rejection Blocks make decisions. Trade the decision — never the zone."
+
+---
+
+*End of Part 11 — The Institutional Flow System now has 87 chapters across 11 Parts.*
+    `,
+  },
 };
-
-
-
 
 // ============================================================
 // HELPERS
