@@ -7860,7 +7860,7 @@ When you save a setup, the system creates a trades row with:
 
 ### The Journal Page
 
-`/journal` now shows:
+The /journal page now shows:
 - **Every trade** — across all 5 systems
 - **System badge** per trade — Rejection Block, BOS+RB, etc.
 - **Filter by system**
