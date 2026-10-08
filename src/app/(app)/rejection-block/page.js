@@ -1,10 +1,10 @@
 "use client";
 
-import { createTradeFromSetup } from "@/lib/journalEngine";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
+import { createTradeFromSetup } from "@/lib/journalEngine";
 import {
   ZONE_TYPES,
   zoneTypeInfo,
@@ -42,7 +42,7 @@ function emptyRb() {
   return { id: Math.random().toString(36).slice(2), high: "", low: "" };
 }
 function emptyCandle() {
-  return { type: "green", open: "", close: "", wickTip: "" };
+  return { open: "", high: "", low: "", close: "" };
 }
 
 export default function RejectionBlockPage() {
@@ -75,7 +75,7 @@ export default function RejectionBlockPage() {
   const [rbs, setRbs] = useState([emptyRb()]);
   const [candle1, setCandle1] = useState(emptyCandle());
   const [candle2, setCandle2] = useState(emptyCandle());
-  const [detectedAdded, setDetectedAdded] = useState(false);
+  const [addedRbIds, setAddedRbIds] = useState([]);
 
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -142,18 +142,18 @@ export default function RejectionBlockPage() {
       const savedC2 = detailData?.candle_2;
       if (savedC1) {
         setCandle1({
-          type: savedC1.type || "green",
           open: savedC1.open?.toString() || "",
+          high: savedC1.high?.toString() || "",
+          low: savedC1.low?.toString() || "",
           close: savedC1.close?.toString() || "",
-          wickTip: savedC1.wickTip?.toString() || "",
         });
       }
       if (savedC2) {
         setCandle2({
-          type: savedC2.type || "green",
           open: savedC2.open?.toString() || "",
+          high: savedC2.high?.toString() || "",
+          low: savedC2.low?.toString() || "",
           close: savedC2.close?.toString() || "",
-          wickTip: savedC2.wickTip?.toString() || "",
         });
       }
 
@@ -214,17 +214,13 @@ export default function RejectionBlockPage() {
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
+  // Detection now returns { detected, rbs: [...], reason }
   const detection = useMemo(
-    () =>
-      detectRbFromTwoCandles({
-        candle1,
-        candle2,
-        currentClose: form.closePrice,
-      }),
-    [candle1, candle2, form.closePrice]
+    () => detectRbFromTwoCandles({ candle1, candle2 }),
+    [candle1, candle2]
   );
 
-  // NEW — instant cross-check close vs detected RB
+  // Detection vs close
   const detectionVsClose = useMemo(
     () =>
       checkDetectionVsClose({
@@ -235,18 +231,18 @@ export default function RejectionBlockPage() {
     [detection, form.closePrice, form.pipSize]
   );
 
-  function addDetectedToRbs() {
-    if (!detection.detected || detectedAdded) return;
+  function addDetectedToRbs(rb) {
+    if (!rb || addedRbIds.includes(rb.id)) return;
     setRbs((prev) => [
       ...prev,
       {
         id: Math.random().toString(36).slice(2),
-        high: detection.rbHigh.toString(),
-        low: detection.rbLow.toString(),
+        high: rb.rbHigh.toString(),
+        low: rb.rbLow.toString(),
         addedAt: new Date().toISOString(),
       },
     ]);
-    setDetectedAdded(true);
+    setAddedRbIds((prev) => [...prev, rb.id]);
   }
 
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
@@ -574,26 +570,21 @@ export default function RejectionBlockPage() {
       reversal_sl: nextTrade?.sl || null,
       reversal_tp: nextTrade?.tp || null,
       candle_1: {
-        type: candle1.type,
         open: candle1.open ? parseFloat(candle1.open) : null,
+        high: candle1.high ? parseFloat(candle1.high) : null,
+        low: candle1.low ? parseFloat(candle1.low) : null,
         close: candle1.close ? parseFloat(candle1.close) : null,
-        wickTip: candle1.wickTip ? parseFloat(candle1.wickTip) : null,
       },
       candle_2: {
-        type: candle2.type,
         open: candle2.open ? parseFloat(candle2.open) : null,
+        high: candle2.high ? parseFloat(candle2.high) : null,
+        low: candle2.low ? parseFloat(candle2.low) : null,
         close: candle2.close ? parseFloat(candle2.close) : null,
-        wickTip: candle2.wickTip ? parseFloat(candle2.wickTip) : null,
       },
       detection_result: detection.detected
         ? {
-            rbLow: detection.rbLow,
-            rbHigh: detection.rbHigh,
-            ce: detection.ce,
-            autoType: detection.autoType,
-            autoTypeMethod: detection.autoTypeMethod,
-            wickType: detection.wickType,
-            swingSize: detection.swingSize,
+            rbs: detection.rbs,
+            reason: detection.reason,
           }
         : null,
       detection_vs_close_status: detectionVsClose?.status || null,
@@ -654,41 +645,40 @@ export default function RejectionBlockPage() {
     });
 
     const { error: rbErr } = await supabase
-  .from("rejection_block_rbs")
-  .insert(rbRows);
-if (rbErr) {
-  setError(rbErr.message);
-  setSaving(false);
-  return;
-}
+      .from("rejection_block_rbs")
+      .insert(rbRows);
+    if (rbErr) {
+      setError(rbErr.message);
+      setSaving(false);
+      return;
+    }
 
-// Auto-create a linked trade in the journal
-if (!isEdit) {
-  await createTradeFromSetup({
-    supabase,
-    userId: user.id,
-    setupId: setup.id,
-    pair: form.pair,
-    direction: negotiation.verdict === "BUY" ? "buy" : "sell",
-    entry: trade?.entry,
-    sl: trade?.sl,
-    tp: trade?.tp,
-    lotSize: trade?.lotSize,
-    riskPercent: profile?.risk_percent || 1,
-    rr: 2,
-    extra: {
-      ce_price: negotiation.ce,
-      used_ce_entry: true,
-      rb_verdict: negotiation.verdict,
-      rb_verdict_price: form.closePrice ? parseFloat(form.closePrice) : null,
-      rb_verdict_flipped: negotiation.verdict === "SELL",
-    },
-  });
-}
+    if (!isEdit) {
+      await createTradeFromSetup({
+        supabase,
+        userId: user.id,
+        setupId: setup.id,
+        pair: form.pair,
+        direction: negotiation.verdict === "BUY" ? "buy" : "sell",
+        entry: trade?.entry,
+        sl: trade?.sl,
+        tp: trade?.tp,
+        lotSize: trade?.lotSize,
+        riskPercent: profile?.risk_percent || 1,
+        rr: 2,
+        extra: {
+          ce_price: negotiation.ce,
+          used_ce_entry: true,
+          rb_verdict: negotiation.verdict,
+          rb_verdict_price: form.closePrice ? parseFloat(form.closePrice) : null,
+          rb_verdict_flipped: negotiation.verdict === "SELL",
+        },
+      });
+    }
 
-setSaving(false);
-setSaved(true);
-setTimeout(() => router.push(`/setups/${setup.id}`), 800);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => router.push(`/setups/${setup.id}`), 800);
   }
 
   if (loadingEdit) {
@@ -817,25 +807,17 @@ setTimeout(() => router.push(`/setups/${setup.id}`), 800);
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-blue-400">
-              Detect RB from Two Candles
+              Detect RB from Two Candles (Sweep + Reclaim)
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Rule: Candle 1 tip LOW, Candle 2 tip HIGHER → RB forms between
-              the tips.
+              Candle 2 must sweep beyond Candle 1's wick — but its body must
+              close back inside. OHLC only — bodies don't define the RB.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-lg bg-black border border-gray-800 space-y-2">
               <p className="text-xs font-semibold text-gray-400">Candle 1</p>
-              <select
-                value={candle1.type}
-                onChange={(e) => updateC1("type", e.target.value)}
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              >
-                <option value="green">🟢 Green</option>
-                <option value="red">🔴 Red</option>
-              </select>
               <input
                 type="number"
                 step="any"
@@ -847,31 +829,31 @@ setTimeout(() => router.push(`/setups/${setup.id}`), 800);
               <input
                 type="number"
                 step="any"
-                value={candle1.close}
-                onChange={(e) => updateC1("close", e.target.value)}
-                placeholder="Close"
+                value={candle1.high}
+                onChange={(e) => updateC1("high", e.target.value)}
+                placeholder="High"
                 className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
               />
               <input
                 type="number"
                 step="any"
-                value={candle1.wickTip}
-                onChange={(e) => updateC1("wickTip", e.target.value)}
-                placeholder="Wick tip"
+                value={candle1.low}
+                onChange={(e) => updateC1("low", e.target.value)}
+                placeholder="Low"
+                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+              />
+              <input
+                type="number"
+                step="any"
+                value={candle1.close}
+                onChange={(e) => updateC1("close", e.target.value)}
+                placeholder="Close"
                 className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
               />
             </div>
 
             <div className="p-3 rounded-lg bg-black border border-gray-800 space-y-2">
               <p className="text-xs font-semibold text-gray-400">Candle 2</p>
-              <select
-                value={candle2.type}
-                onChange={(e) => updateC2("type", e.target.value)}
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              >
-                <option value="green">🟢 Green</option>
-                <option value="red">🔴 Red</option>
-              </select>
               <input
                 type="number"
                 step="any"
@@ -883,89 +865,112 @@ setTimeout(() => router.push(`/setups/${setup.id}`), 800);
               <input
                 type="number"
                 step="any"
-                value={candle2.close}
-                onChange={(e) => updateC2("close", e.target.value)}
-                placeholder="Close"
+                value={candle2.high}
+                onChange={(e) => updateC2("high", e.target.value)}
+                placeholder="High"
                 className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
               />
               <input
                 type="number"
                 step="any"
-                value={candle2.wickTip}
-                onChange={(e) => updateC2("wickTip", e.target.value)}
-                placeholder="Wick tip"
+                value={candle2.low}
+                onChange={(e) => updateC2("low", e.target.value)}
+                placeholder="Low"
+                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+              />
+              <input
+                type="number"
+                step="any"
+                value={candle2.close}
+                onChange={(e) => updateC2("close", e.target.value)}
+                placeholder="Close"
                 className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
               />
             </div>
           </div>
 
+          {/* Detected RBs */}
           {detection.detected ? (
-            <div
-              className={`p-3 rounded-lg border ${
-                detection.autoType === "resistance"
-                  ? "bg-purple-950/30 border-purple-700"
-                  : detection.autoType === "support"
-                  ? "bg-orange-950/30 border-orange-700"
-                  : "bg-blue-950/30 border-blue-700"
-              }`}
-            >
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm font-bold">
-                  ✅{" "}
-                  {detection.autoType === "resistance"
-                    ? "🔺 Resistance RB detected"
-                    : detection.autoType === "support"
-                    ? "🔻 Support RB detected"
-                    : "🎯 RB detected"}
-                </p>
-                <span className="text-xs text-gray-400">
-                  via {detection.autoTypeMethod}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
-                <div>
-                  <p className="text-gray-500">RB Low</p>
-                  <p className="font-bold tabular-nums text-orange-300">
-                    {detection.rbLow}
+            <div className="space-y-2">
+              {detection.rbs.length === 2 && (
+                <div className="p-3 rounded-lg bg-purple-950/30 border border-purple-700">
+                  <p className="text-sm font-bold text-purple-200">
+                    ⚡ Dual sweep — dead candle
+                  </p>
+                  <p className="text-xs text-purple-300 mt-1">
+                    {detection.reason}
                   </p>
                 </div>
-                <div>
-                  <p className="text-gray-500">RB High</p>
-                  <p className="font-bold tabular-nums text-purple-300">
-                    {detection.rbHigh}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">CE</p>
-                  <p className="font-bold tabular-nums text-blue-300">
-                    {detection.ce}
-                  </p>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 mt-2">{detection.reason}</p>
+              )}
 
-              <button
-                type="button"
-                onClick={addDetectedToRbs}
-                disabled={detectedAdded}
-                className={`w-full mt-3 py-2 rounded-lg font-bold ${
-                  detectedAdded
-                    ? "bg-gray-800 text-gray-500 cursor-not-allowed"
-                    : "bg-green-800 hover:bg-green-700"
-                }`}
-              >
-                {detectedAdded
-                  ? "✓ Already added to RBs"
-                  : "+ Add to Rejection Blocks"}
-              </button>
+              {detection.rbs.map((rb) => {
+                const alreadyAdded = addedRbIds.includes(rb.id);
+                const isResistance = rb.type === "resistance";
+                return (
+                  <div
+                    key={rb.id}
+                    className={`p-3 rounded-lg border ${
+                      isResistance
+                        ? "bg-purple-950/30 border-purple-700"
+                        : "bg-orange-950/30 border-orange-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <p className="text-sm font-bold">
+                        {isResistance
+                          ? "🔺 Resistance RB detected"
+                          : "🔻 Support RB detected"}
+                      </p>
+                      <span className="text-xs text-gray-400">
+                        sweep {rb.sweepSize}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                      <div>
+                        <p className="text-gray-500">RB Low</p>
+                        <p className="font-bold tabular-nums text-orange-300">
+                          {rb.rbLow}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">RB High</p>
+                        <p className="font-bold tabular-nums text-purple-300">
+                          {rb.rbHigh}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">CE</p>
+                        <p className="font-bold tabular-nums text-blue-300">
+                          {rb.ce}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">{rb.reason}</p>
+
+                    <button
+                      type="button"
+                      onClick={() => addDetectedToRbs(rb)}
+                      disabled={alreadyAdded}
+                      className={`w-full mt-3 py-2 rounded-lg font-bold ${
+                        alreadyAdded
+                          ? "bg-gray-800 text-gray-500 cursor-not-allowed"
+                          : "bg-green-800 hover:bg-green-700"
+                      }`}
+                    >
+                      {alreadyAdded
+                        ? "✓ Already added to RBs"
+                        : "+ Add to Rejection Blocks"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            (candle1.open ||
-              candle1.close ||
-              candle1.wickTip ||
-              candle2.open ||
-              candle2.close ||
-              candle2.wickTip) && (
+            (candle1.high ||
+              candle1.low ||
+              candle2.high ||
+              candle2.low ||
+              candle2.close) && (
               <div className="p-3 rounded-lg bg-red-950/30 border border-red-800">
                 <p className="text-xs text-red-300 font-semibold">
                   ❌ Not a valid RB
@@ -978,7 +983,7 @@ setTimeout(() => router.push(`/setups/${setup.id}`), 800);
           )}
         </div>
 
-        {/* NEW — Detection vs Verdict Close */}
+        {/* Detection vs Verdict Close */}
         {detectionVsClose && (
           <div
             className={`p-4 rounded-lg border-2 space-y-2 ${detectionVsClose.color}`}
@@ -988,8 +993,11 @@ setTimeout(() => router.push(`/setups/${setup.id}`), 800);
                 {detectionVsClose.emoji} {detectionVsClose.label}
               </p>
               <span className="text-xs opacity-80">
-                {detectionVsClose.distancePips > 0
-                  ? `${detectionVsClose.distancePips} pips from nearest edge`
+                {detectionVsClose.rbType === "resistance"
+                  ? "🔺 Resistance"
+                  : "🔻 Support"}{" "}
+                · {detectionVsClose.distancePips > 0
+                  ? `${detectionVsClose.distancePips} pips from edge`
                   : "inside range"}
               </span>
             </div>
@@ -1441,6 +1449,53 @@ setTimeout(() => router.push(`/setups/${setup.id}`), 800);
                   </span>
                 )}
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Next Opportunity */}
+        {reversal && nextTrade && (
+          <div className="p-4 rounded-lg bg-gray-900 border-2 border-purple-700 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 className="text-sm font-bold text-purple-300">
+                🔄 Next Opportunity — Reversal
+              </h2>
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-bold ${
+                  nextTrade.direction === "BUY"
+                    ? "bg-green-900/40 text-green-300"
+                    : "bg-red-900/40 text-red-300"
+                }`}
+              >
+                {nextTrade.direction}
+              </span>
+            </div>
+            <p className="text-xs text-purple-200">{reversal.reason}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-gray-500">New RB</p>
+                <p className="font-bold tabular-nums">
+                  {nextTrade.newRbLow} – {nextTrade.newRbHigh}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">New CE</p>
+                <p className="font-bold tabular-nums text-yellow-400">
+                  {formatPrice(nextTrade.entry)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Stop Loss</p>
+                <p className="font-bold tabular-nums text-red-400">
+                  {formatPrice(nextTrade.sl)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Take Profit (2R)</p>
+                <p className="font-bold tabular-nums text-green-400">
+                  {formatPrice(nextTrade.tp)}
+                </p>
+              </div>
             </div>
           </div>
         )}

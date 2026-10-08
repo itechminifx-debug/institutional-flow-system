@@ -3,20 +3,23 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// TWO-CANDLE RB DETECTION
-//   User enters two candles (color, open, close, wick tip).
+// TWO-CANDLE RB DETECTION — SWEEP + RECLAIM
+// ------------------------------------------------------------
+// For each candle: OHLC.
 //
-//   Rule:
-//     Candle 1 tip LOW, Candle 2 tip HIGHER → Resistance RB (rising)
-//     Candle 1 tip LOW, Candle 2 tip LOWER  → Support RB   (falling)
-//     Both candles share the SAME starting direction (tip 1 low).
-//     The swing direction determines the RB type.
+// RESISTANCE RB:
+//   candle2.high > candle1.high   (sweep up)
+//   candle2.close < candle1.high  (close back inside)
+//   → RB from candle1.high to candle2.high
 //
-// DETECTION vs VERDICT CLOSE
-//   Instantly check the close price against the detected RB.
+// SUPPORT RB:
+//   candle2.low < candle1.low     (sweep down)
+//   candle2.close > candle1.low   (close back inside)
+//   → RB from candle2.low to candle1.low
 //
-// RB-IN-PATH:  Safe TP before the nearest blocking RB.
-// PIPS:        2 decimals → pip size = 0.01 (Headway Volatility)
+// If BOTH are valid → return both (dead candle).
+//
+// PIPS: 2 decimals → 0.01
 // ============================================================
 
 export const PIP_SIZE_DEFAULT = 0.01;
@@ -677,96 +680,99 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 }
 
 // ============================================================
-// TWO-CANDLE RB DETECTION — CORRECTED
+// TWO-CANDLE RB DETECTION — SWEEP + RECLAIM  (CORRECTED)
 // ============================================================
-// Rule:
-//   Candle 1 tip LOW, Candle 2 tip HIGHER → Resistance RB (rising)
-//   Candle 1 tip LOW, Candle 2 tip LOWER  → Support RB   (falling)
-//   Candle 1 tip == Candle 2 tip → invalid
+// Returns: { detected, rbs: [...], reason }
 //
-// Swing direction determines the RB type.
+// RESISTANCE RB:
+//   candle2.high > candle1.high   (swept up)
+//   candle2.close < candle1.high  (closed back inside)
+//   → RB from candle1.high to candle2.high
+//
+// SUPPORT RB:
+//   candle2.low < candle1.low     (swept down)
+//   candle2.close > candle1.low   (closed back inside)
+//   → RB from candle2.low to candle1.low
+//
+// Both can be valid (dead candle) — return both.
 // ============================================================
-export function detectRbFromTwoCandles({
-  candle1,
-  candle2,
-  currentClose,
-  minSwing = 0,
-}) {
-  const c1o = parseFloat(candle1?.open);
-  const c1c = parseFloat(candle1?.close);
-  const c1t = parseFloat(candle1?.wickTip);
-  const c2o = parseFloat(candle2?.open);
+export function detectRbFromTwoCandles({ candle1, candle2 }) {
+  const c1h = parseFloat(candle1?.high);
+  const c1l = parseFloat(candle1?.low);
+  const c2h = parseFloat(candle2?.high);
+  const c2l = parseFloat(candle2?.low);
   const c2c = parseFloat(candle2?.close);
-  const c2t = parseFloat(candle2?.wickTip);
-  const close = parseFloat(currentClose);
 
-  if (
-    isNaN(c1o) ||
-    isNaN(c1c) ||
-    isNaN(c1t) ||
-    isNaN(c2o) ||
-    isNaN(c2c) ||
-    isNaN(c2t)
-  ) {
+  if (isNaN(c1h) || isNaN(c1l) || isNaN(c2h) || isNaN(c2l) || isNaN(c2c)) {
     return {
       detected: false,
-      reason: "Enter both candles fully (color, open, close, wick tip).",
+      rbs: [],
+      reason: "Enter both candles with OHLC (high, low, close required).",
     };
   }
 
-  // CORRECTED: only skip if the two tips are identical.
-  // Both rising and falling swings are valid RBs.
-  if (c1t === c2t) {
-    return {
-      detected: false,
-      reason: `Candle 1 tip (${c1t}) and Candle 2 tip (${c2t}) are equal — no swing, no RB.`,
-    };
+  const rbs = [];
+
+  // ---- RESISTANCE RB ----
+  if (c2h > c1h && c2c < c1h) {
+    const rbLow = Math.round(c1h * 100) / 100;
+    const rbHigh = Math.round(c2h * 100) / 100;
+    const ce = Math.round(((rbLow + rbHigh) / 2) * 100) / 100;
+
+    rbs.push({
+      id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: "resistance",
+      rbLow,
+      rbHigh,
+      ce,
+      sweepSize: Math.round((c2h - c1h) * 100) / 100,
+      reason: `Resistance RB — Candle 2 swept above ${c1h} (to ${c2h}) and closed back below at ${c2c}.`,
+    });
   }
 
-  const swingSize = Math.round(Math.abs(c2t - c1t) * 100) / 100;
-  if (swingSize < (parseFloat(minSwing) || 0)) {
-    return {
-      detected: false,
-      reason: `Swing too small (${swingSize}) — below the minimum.`,
-    };
+  // ---- SUPPORT RB ----
+  if (c2l < c1l && c2c > c1l) {
+    const rbLow = Math.round(c2l * 100) / 100;
+    const rbHigh = Math.round(c1l * 100) / 100;
+    const ce = Math.round(((rbLow + rbHigh) / 2) * 100) / 100;
+
+    rbs.push({
+      id: `sup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: "support",
+      rbLow,
+      rbHigh,
+      ce,
+      sweepSize: Math.round((c1l - c2l) * 100) / 100,
+      reason: `Support RB — Candle 2 swept below ${c1l} (to ${c2l}) and closed back above at ${c2c}.`,
+    });
   }
 
-  // Swing direction determines RB type
-  const swingDirection = c1t < c2t ? "up" : "down";
-  const autoType = swingDirection === "up" ? "resistance" : "support";
-
-  const rbLow = Math.round(Math.min(c1t, c2t) * 100) / 100;
-  const rbHigh = Math.round(Math.max(c1t, c2t) * 100) / 100;
-  const ce = Math.round(((rbLow + rbHigh) / 2) * 100) / 100;
-
-  // Wick type per candle (for context — how the tip sits vs the body)
-  const c1Upper = c1t > Math.max(c1o, c1c);
-  const c1Lower = c1t < Math.min(c1o, c1c);
-  const c2Upper = c2t > Math.max(c2o, c2c);
-  const c2Lower = c2t < Math.min(c2o, c2c);
-
-  let wickType = "unknown";
-  if (c1Upper && c2Upper) wickType = "upper";
-  else if (c1Lower && c2Lower) wickType = "lower";
-  else if (c1Upper || c2Upper) wickType = "upper";
-  else if (c1Lower || c2Lower) wickType = "lower";
+  // ---- SUMMARY REASON ----
+  let reason = "";
+  if (rbs.length === 0) {
+    // Diagnose what went wrong
+    if (c2h === c1h && c2l === c1l) {
+      reason = "Invalid — wicks are equal.";
+    } else if (c2h > c1h && c2c >= c1h) {
+      reason = `Invalid resistance — Candle 2 closed at/above Candle 1's high (${c2c} ≥ ${c1h}). Sweep confirmed, no rejection.`;
+    } else if (c2l < c1l && c2c <= c1l) {
+      reason = `Invalid support — Candle 2 closed at/below Candle 1's low (${c2c} ≤ ${c1l}). Sweep confirmed, no rejection.`;
+    } else if (c2h <= c1h && c2l >= c1l) {
+      reason = "Invalid — Candle 2 did not sweep either of Candle 1's wicks.";
+    } else {
+      reason = "No valid RB — check the sweep and close rules.";
+    }
+  } else if (rbs.length === 2) {
+    reason =
+      "⚡ Dual sweep — Candle 2 swept both sides and closed inside. Both RBs valid (dead candle).";
+  } else if (rbs.length === 1) {
+    reason = rbs[0].reason;
+  }
 
   return {
-    detected: true,
-    reason:
-      swingDirection === "up"
-        ? `Valid Resistance RB — Candle 1 tip ${c1t} is lower than Candle 2 tip ${c2t}. Rising swing.`
-        : `Valid Support RB — Candle 1 tip ${c1t} is higher than Candle 2 tip ${c2t}. Falling swing.`,
-    rbLow,
-    rbHigh,
-    ce,
-    swingSize,
-    swingDirection,
-    wickType,
-    autoType,
-    autoTypeMethod: "by-swing-direction",
-    candle1Wick: c1Upper ? "upper" : c1Lower ? "lower" : "unknown",
-    candle2Wick: c2Upper ? "upper" : c2Lower ? "lower" : "unknown",
+    detected: rbs.length > 0,
+    rbs,
+    reason,
   };
 }
 
@@ -778,8 +784,11 @@ export function checkDetectionVsClose({
   closePrice,
   pipSize = PIP_SIZE_DEFAULT,
   bufferPips = NEAR_EDGE_BUFFER_PIPS,
+  activeRbIndex = 0,
 }) {
-  if (!detection || !detection.detected) return null;
+  if (!detection || !detection.detected || !detection.rbs?.length) return null;
+  const rb = detection.rbs[activeRbIndex] || detection.rbs[0];
+  if (!rb) return null;
 
   const close = parseFloat(closePrice);
   if (isNaN(close)) return null;
@@ -787,13 +796,11 @@ export function checkDetectionVsClose({
   const p = parseFloat(pipSize) || PIP_SIZE_DEFAULT;
   const buffer = (parseFloat(bufferPips) || NEAR_EDGE_BUFFER_PIPS) * p;
 
-  const rbLow = parseFloat(detection.rbLow);
-  const rbHigh = parseFloat(detection.rbHigh);
+  const rbLow = parseFloat(rb.rbLow);
+  const rbHigh = parseFloat(rb.rbHigh);
 
-  // Inside the RB
   if (close >= rbLow && close <= rbHigh) {
-    const ce = detection.ce;
-    const side = close > ce ? "premium" : close < ce ? "discount" : "at-ce";
+    const side = close > rb.ce ? "premium" : close < rb.ce ? "discount" : "at-ce";
     return {
       status: "inside",
       level: "warning",
@@ -807,14 +814,13 @@ export function checkDetectionVsClose({
       action: "wait",
       rbLow,
       rbHigh,
-      ce,
+      ce: rb.ce,
+      rbType: rb.type,
     };
   }
 
-  // Above the RB
   if (close > rbHigh) {
     const distancePips = Math.round(((close - rbHigh) / p) * 100) / 100;
-
     if (close - rbHigh <= buffer) {
       return {
         status: "near-edge-above",
@@ -823,16 +829,16 @@ export function checkDetectionVsClose({
         emoji: "🟠",
         color: "bg-orange-950/40 border-orange-700 text-orange-200",
         description:
-          "The close is just above the detected RB's upper edge. Momentum is weak — the RB may reject the entry. Consider waiting for more distance.",
+          "The close is just above the detected RB's upper edge. Momentum is weak — the RB may reject the entry.",
         distancePips,
         side: "above",
         action: "wait",
         rbLow,
         rbHigh,
-        ce: detection.ce,
+        ce: rb.ce,
+        rbType: rb.type,
       };
     }
-
     return {
       status: "beyond-up",
       level: "ok",
@@ -840,20 +846,19 @@ export function checkDetectionVsClose({
       emoji: "✅",
       color: "bg-green-950/40 border-green-700 text-green-200",
       description:
-        "The close has cleared the detected RB upward. This confirms a bullish break of the RB — the entry may proceed.",
+        "The close has cleared the detected RB upward — bullish break of the RB.",
       distancePips,
       side: "above",
       action: "confirmed",
       rbLow,
       rbHigh,
-      ce: detection.ce,
+      ce: rb.ce,
+      rbType: rb.type,
     };
   }
 
-  // Below the RB
   if (close < rbLow) {
     const distancePips = Math.round(((rbLow - close) / p) * 100) / 100;
-
     if (rbLow - close <= buffer) {
       return {
         status: "near-edge-below",
@@ -862,16 +867,16 @@ export function checkDetectionVsClose({
         emoji: "🟠",
         color: "bg-orange-950/40 border-orange-700 text-orange-200",
         description:
-          "The close is just below the detected RB's lower edge. Momentum is weak — the RB may reject the entry. Consider waiting for more distance.",
+          "The close is just below the detected RB's lower edge. Momentum is weak — the RB may reject the entry.",
         distancePips,
         side: "below",
         action: "wait",
         rbLow,
         rbHigh,
-        ce: detection.ce,
+        ce: rb.ce,
+        rbType: rb.type,
       };
     }
-
     return {
       status: "beyond-down",
       level: "ok",
@@ -879,13 +884,14 @@ export function checkDetectionVsClose({
       emoji: "✅",
       color: "bg-green-950/40 border-green-700 text-green-200",
       description:
-        "The close has cleared the detected RB downward. This confirms a bearish break of the RB — the entry may proceed.",
+        "The close has cleared the detected RB downward — bearish break of the RB.",
       distancePips,
       side: "below",
       action: "confirmed",
       rbLow,
       rbHigh,
-      ce: detection.ce,
+      ce: rb.ce,
+      rbType: rb.type,
     };
   }
 
