@@ -36,6 +36,10 @@ import {
   computePips,
   PIP_SIZE_DEFAULT,
 } from "@/lib/rejectionBlockEngine";
+import {
+  scorePathDanger,
+  pathDangerBanner,
+} from "@/lib/rbDangerEngine";
 import PairPicker from "@/components/PairPicker";
 
 function emptyRb() {
@@ -214,13 +218,11 @@ export default function RejectionBlockPage() {
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
-  // Detection now returns { detected, rbs: [...], reason }
   const detection = useMemo(
     () => detectRbFromTwoCandles({ candle1, candle2 }),
     [candle1, candle2]
   );
 
-  // Detection vs close
   const detectionVsClose = useMemo(
     () =>
       checkDetectionVsClose({
@@ -373,6 +375,59 @@ export default function RejectionBlockPage() {
       pipSize: parseFloat(form.pipSize) || PIP_SIZE_DEFAULT,
     });
   }, [trade, negotiation, rankedRbs, form.pipSize]);
+
+  // ============================================================
+  // DANGER ENGINE — compute danger score for the whole path
+  // ============================================================
+  const zonePositionMap = useMemo(() => {
+    const map = {};
+    rankedRbs.forEach((rb) => {
+      const pos = detectRbVsZone({
+        zoneHigh: form.zoneHigh,
+        zoneLow: form.zoneLow,
+        rbHigh: rb.high,
+        rbLow: rb.low,
+      });
+      map[rb.id] = pos || "inside";
+    });
+    return map;
+  }, [rankedRbs, form.zoneHigh, form.zoneLow]);
+
+  const rankMap = useMemo(() => {
+    const map = {};
+    rankedRbs.forEach((rb) => {
+      map[rb.id] = rb.rank;
+    });
+    return map;
+  }, [rankedRbs]);
+
+  const pathDanger = useMemo(() => {
+    if (!trade || !negotiation || !pathInfo.hasBlockers) return null;
+    return scorePathDanger({
+      pathRbs: pathInfo.pathRbs,
+      verdict: trade.direction,
+      entry: trade.entry,
+      tp: trade.tp,
+      close: form.closePrice ? parseFloat(form.closePrice) : null,
+      atr: parseFloat(form.atrCurrent) || 0,
+      pipSize: parseFloat(form.pipSize) || PIP_SIZE_DEFAULT,
+      zonePositionMap,
+      rankMap,
+      ema: { direction: ema.direction, position: ema.position },
+    });
+  }, [
+    trade,
+    negotiation,
+    pathInfo,
+    form.closePrice,
+    form.atrCurrent,
+    form.pipSize,
+    zonePositionMap,
+    rankMap,
+    ema,
+  ]);
+
+  const dangerBanner = pathDanger ? pathDangerBanner(pathDanger, trade?.direction) : null;
 
   const pathBlockerBadge = pathInfo.nearest
     ? blockerInfo({
@@ -582,10 +637,7 @@ export default function RejectionBlockPage() {
         close: candle2.close ? parseFloat(candle2.close) : null,
       },
       detection_result: detection.detected
-        ? {
-            rbs: detection.rbs,
-            reason: detection.reason,
-          }
+        ? { rbs: detection.rbs, reason: detection.reason }
         : null,
       detection_vs_close_status: detectionVsClose?.status || null,
       detection_vs_close_level: detectionVsClose?.level || null,
@@ -593,6 +645,11 @@ export default function RejectionBlockPage() {
       safe_tp: pathInfo.safeTp,
       safe_tp_pips: pathInfo.safeTpPips,
       has_blockers: pathInfo.hasBlockers,
+      // NEW: danger engine
+      path_danger_score: pathDanger?.topScore || null,
+      path_danger_tier: pathDanger?.topTier?.key || null,
+      path_danger_summary: pathDanger?.summary || null,
+      nearest_danger_rb: pathDanger?.rbs?.[0] || null,
       notes: form.notes,
     };
 
@@ -810,86 +867,43 @@ export default function RejectionBlockPage() {
               Detect RB from Two Candles (Sweep + Reclaim)
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Candle 2 must sweep beyond Candle 1's wick — but its body must
-              close back inside. OHLC only — bodies don't define the RB.
+              Candle 2 sweeps beyond Candle 1's wick — body closes back inside.
+              OHLC only.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-lg bg-black border border-gray-800 space-y-2">
               <p className="text-xs font-semibold text-gray-400">Candle 1</p>
-              <input
-                type="number"
-                step="any"
-                value={candle1.open}
-                onChange={(e) => updateC1("open", e.target.value)}
-                placeholder="Open"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
-              <input
-                type="number"
-                step="any"
-                value={candle1.high}
-                onChange={(e) => updateC1("high", e.target.value)}
-                placeholder="High"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
-              <input
-                type="number"
-                step="any"
-                value={candle1.low}
-                onChange={(e) => updateC1("low", e.target.value)}
-                placeholder="Low"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
-              <input
-                type="number"
-                step="any"
-                value={candle1.close}
-                onChange={(e) => updateC1("close", e.target.value)}
-                placeholder="Close"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
+              {["open", "high", "low", "close"].map((f) => (
+                <input
+                  key={f}
+                  type="number"
+                  step="any"
+                  value={candle1[f]}
+                  onChange={(e) => updateC1(f, e.target.value)}
+                  placeholder={f.charAt(0).toUpperCase() + f.slice(1)}
+                  className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                />
+              ))}
             </div>
 
             <div className="p-3 rounded-lg bg-black border border-gray-800 space-y-2">
               <p className="text-xs font-semibold text-gray-400">Candle 2</p>
-              <input
-                type="number"
-                step="any"
-                value={candle2.open}
-                onChange={(e) => updateC2("open", e.target.value)}
-                placeholder="Open"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
-              <input
-                type="number"
-                step="any"
-                value={candle2.high}
-                onChange={(e) => updateC2("high", e.target.value)}
-                placeholder="High"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
-              <input
-                type="number"
-                step="any"
-                value={candle2.low}
-                onChange={(e) => updateC2("low", e.target.value)}
-                placeholder="Low"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
-              <input
-                type="number"
-                step="any"
-                value={candle2.close}
-                onChange={(e) => updateC2("close", e.target.value)}
-                placeholder="Close"
-                className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
-              />
+              {["open", "high", "low", "close"].map((f) => (
+                <input
+                  key={f}
+                  type="number"
+                  step="any"
+                  value={candle2[f]}
+                  onChange={(e) => updateC2(f, e.target.value)}
+                  placeholder={f.charAt(0).toUpperCase() + f.slice(1)}
+                  className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                />
+              ))}
             </div>
           </div>
 
-          {/* Detected RBs */}
           {detection.detected ? (
             <div className="space-y-2">
               {detection.rbs.length === 2 && (
@@ -1004,26 +1018,6 @@ export default function RejectionBlockPage() {
             <p className="text-sm opacity-90">
               {detectionVsClose.description}
             </p>
-            <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-white/10">
-              <div>
-                <p className="opacity-70">RB Low</p>
-                <p className="font-bold tabular-nums">
-                  {detectionVsClose.rbLow}
-                </p>
-              </div>
-              <div>
-                <p className="opacity-70">RB High</p>
-                <p className="font-bold tabular-nums">
-                  {detectionVsClose.rbHigh}
-                </p>
-              </div>
-              <div>
-                <p className="opacity-70">CE</p>
-                <p className="font-bold tabular-nums">
-                  {detectionVsClose.ce}
-                </p>
-              </div>
-            </div>
             <p className="text-xs uppercase tracking-wider font-bold">
               Action:{" "}
               {detectionVsClose.action === "wait"
@@ -1299,6 +1293,18 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
+        {/* Danger Banner */}
+        {dangerBanner && (
+          <div
+            className={`p-4 rounded-lg border-2 space-y-2 ${dangerBanner.color}`}
+          >
+            <p className="text-sm font-bold">
+              {dangerBanner.emoji} {dangerBanner.label}
+            </p>
+            <p className="text-sm opacity-90">{dangerBanner.description}</p>
+          </div>
+        )}
+
         {/* Trade Card */}
         {trade && (
           <div className="p-4 rounded-lg bg-gray-900 border border-blue-800 space-y-3">
@@ -1307,6 +1313,13 @@ export default function RejectionBlockPage() {
                 Trade Parameters
               </h2>
               <div className="flex items-center gap-2">
+                {pathDanger && pathDanger.topScore > 0 && (
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full border font-bold ${pathDanger.topTier.badge}`}
+                  >
+                    {pathDanger.topTier.emoji} Path {pathDanger.topScore}/10
+                  </span>
+                )}
                 {alignment && (
                   <span
                     className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
@@ -1375,8 +1388,8 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
-        {/* Path to Target */}
-        {trade && pathInfo.hasBlockers && pathInfo.nearest && (
+        {/* Path to Target — now with danger tiers */}
+        {trade && pathInfo.hasBlockers && pathInfo.nearest && pathDanger && (
           <div className="p-4 rounded-lg bg-gray-900 border-2 border-yellow-700 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-bold text-yellow-300">
@@ -1391,36 +1404,34 @@ export default function RejectionBlockPage() {
               )}
             </div>
 
-            <p className="text-xs text-yellow-200">
-              {pathBlockerBadge?.description ||
-                "Price may reject at these RBs before reaching the full target."}
-            </p>
+            <p className="text-xs text-yellow-200">{pathDanger.summary}</p>
 
             <div className="space-y-2">
-              {pathInfo.pathRbs.map((rb, i) => (
+              {pathDanger.rbs.map((d, i) => (
                 <div
-                  key={rb.id || i}
-                  className="p-3 rounded-lg bg-black border border-gray-800"
+                  key={d.rbId || i}
+                  className={`p-3 rounded-lg border ${d.tier.color}`}
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-sm font-bold">
-                      {i === 0 ? "🎯 Nearest" : `RB ${i + 1}`}
+                      {d.tier.emoji} {d.tier.label} · {d.score}/10
                     </span>
-                    <span className="text-xs tabular-nums text-gray-400">
-                      {rb.low} – {rb.high} (CE {rb.ce})
+                    <span className="text-xs tabular-nums opacity-90">
+                      {d.rbLow} – {d.rbHigh} (CE {d.ce})
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
+                  <p className="text-xs opacity-80 mt-1">{d.reason}</p>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                     <p>
-                      <span className="text-gray-500">Distance:</span>{" "}
-                      <span className="font-bold text-yellow-300 tabular-nums">
-                        {rb.distancePips} pips
+                      <span className="opacity-70">To entry:</span>{" "}
+                      <span className="font-bold tabular-nums">
+                        {d.distanceToEntryPips} pips
                       </span>
                     </p>
                     <p>
-                      <span className="text-gray-500">Safe TP:</span>{" "}
-                      <span className="font-bold text-green-300 tabular-nums">
-                        {formatPrice(rb.safeTp)}
+                      <span className="opacity-70">To TP:</span>{" "}
+                      <span className="font-bold tabular-nums">
+                        {d.distanceToTpPips} pips
                       </span>
                     </p>
                   </div>
@@ -1449,6 +1460,11 @@ export default function RejectionBlockPage() {
                   </span>
                 )}
               </p>
+              {pathDanger.topScore >= 8 && (
+                <p className="text-xs text-red-300 mt-2 font-bold">
+                  🚨 Strongly consider the Safe TP — critical RB in path.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -1558,6 +1574,43 @@ export default function RejectionBlockPage() {
             ? "🔴 Save SELL Setup"
             : "Fill zone + RB + close to enable"}
         </button>
+
+        {/* Info card */}
+        <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
+          <h3 className="text-xs font-semibold text-blue-300 mb-2">
+            💡 How the Rejection Block Works
+          </h3>
+          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
+            <li>
+              <strong>Detection</strong> — sweep + reclaim (Candle 2 sweeps
+              beyond Candle 1's wick, closes back inside)
+            </li>
+            <li>
+              <strong>Multiple RBs</strong> — inside, above, or below the zone
+            </li>
+            <li>
+              <strong>Active RB</strong> — the one price is approaching
+            </li>
+            <li>
+              <strong>EMA 50</strong> — aligns trade with higher-timeframe
+              trend
+            </li>
+            <li>
+              <strong>Danger Engine</strong> — scores every RB in the path
+              0–10 by how likely it is to reject your trade
+            </li>
+            <li>
+              <strong>Entry</strong> — CE of the active RB (50%)
+            </li>
+            <li>
+              <strong>SL</strong> — beyond the active RB wick + ATR buffer
+            </li>
+            <li>
+              <strong>TP</strong> — 2R from entry, or Safe TP before the
+              nearest critical RB
+            </li>
+          </ul>
+        </div>
       </div>
     </main>
   );
