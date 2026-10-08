@@ -65,7 +65,6 @@ export default function RejectionBlockPage() {
     zoneHigh: "",
     zoneLow: "",
     ema50Price: "",
-    ema50Prior: "",
     closePrice: "",
     priorClose: "",
     atrCurrent: "",
@@ -87,7 +86,7 @@ export default function RejectionBlockPage() {
   const [existingDetailId, setExistingDetailId] = useState(null);
 
   // ============================================================
-  // LOAD PROFILE + EXISTING SETUP
+  // LOAD
   // ============================================================
   useEffect(() => {
     async function load() {
@@ -134,7 +133,6 @@ export default function RejectionBlockPage() {
         zoneHigh: detailData?.zone_high?.toString() || "",
         zoneLow: detailData?.zone_low?.toString() || "",
         ema50Price: isEdit ? detailData?.ema50_price?.toString() || "" : "",
-        ema50Prior: isEdit ? detailData?.ema50_prior?.toString() || "" : "",
         closePrice: isEdit ? detailData?.close_price?.toString() || "" : "",
         priorClose: isEdit ? detailData?.prior_close?.toString() || "" : "",
         atrCurrent: isEdit ? detailData?.atr_current?.toString() || "" : "",
@@ -186,9 +184,6 @@ export default function RejectionBlockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId, visitId]);
 
-  // ============================================================
-  // FORM HELPERS
-  // ============================================================
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
@@ -210,9 +205,6 @@ export default function RejectionBlockPage() {
     setCandle2((c) => ({ ...c, [field]: value }));
   }
 
-  // ============================================================
-  // RB LIST
-  // ============================================================
   const rankedRbs = useMemo(() => {
     const cleaned = rbs
       .map((rb) => ({
@@ -225,9 +217,6 @@ export default function RejectionBlockPage() {
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
-  // ============================================================
-  // TWO-CANDLE DETECTION
-  // ============================================================
   const detection = useMemo(
     () => detectRbFromTwoCandles({ candle1, candle2 }),
     [candle1, candle2]
@@ -257,9 +246,6 @@ export default function RejectionBlockPage() {
     setAddedRbIds((prev) => [...prev, rb.id]);
   }
 
-  // ============================================================
-  // CORE COMPUTATIONS
-  // ============================================================
   const zoneCe = computeCe(form.zoneHigh, form.zoneLow);
 
   const activeRb = useMemo(() => {
@@ -281,32 +267,54 @@ export default function RejectionBlockPage() {
     ? rbVsZoneInfo(activeRbPosition)
     : null;
 
+  // ============================================================
+  // EMA — computed first, then used in verdict
+  // ============================================================
+  const ema = computeEmaDirection({
+    emaPrice: form.ema50Price,
+    closePrice: form.closePrice,
+  });
+  const emaMeta = emaInfo(ema);
+
+  // Interim alignment for the EMA badge (without the modifier yet)
+  const rawAlignment = useMemo(() => {
+    if (!form.closePrice) return null;
+    // Determine a provisional verdict direction first to test alignment
+    if (!activeRb) return null;
+    const provisional = judgeRejectionBlock({
+      rbHigh: activeRb.high,
+      rbLow: activeRb.low,
+      closePrice: form.closePrice,
+      emaModifier: 0,
+    });
+    if (!provisional) return null;
+    return emaAlignment({
+      position: ema.position,
+      verdict: provisional.verdict,
+    });
+  }, [activeRb, form.closePrice, ema.position]);
+
+  const emaModifier = rawAlignment?.modifier ?? 0;
+
   const negotiation = activeRb
     ? judgeRejectionBlock({
         rbHigh: activeRb.high,
         rbLow: activeRb.low,
         closePrice: form.closePrice,
+        emaModifier,
       })
     : null;
   const verdict = premiumDiscountVerdict(negotiation);
   const strength = negotiation ? strengthInfo(negotiation.strength) : null;
 
-  // EMA 50 (with validation)
-  const ema = computeEmaDirection({
-    emaPrice: form.ema50Price,
-    emaPrior: form.ema50Prior,
-    closePrice: form.closePrice,
-  });
-  const emaMeta = emaInfo(ema);
-  const alignment = negotiation
-    ? emaAlignment({
-        direction: ema.direction,
-        position: ema.position,
-        verdict: negotiation.verdict,
-      })
-    : null;
+  const alignment = useMemo(() => {
+    if (!negotiation) return null;
+    return emaAlignment({
+      position: ema.position,
+      verdict: negotiation.verdict,
+    });
+  }, [negotiation, ema.position]);
 
-  // Conditions
   const conditions = useMemo(() => {
     if (!activeRb || !negotiation) return { above: [], below: [] };
     return checkConditions({
@@ -336,7 +344,6 @@ export default function RejectionBlockPage() {
     [rankedRbs, form.atrCurrent]
   );
 
-  // Reversal
   const reversal = useMemo(() => {
     if (!negotiation || negotiation.verdict === "WAIT") return null;
     const list =
@@ -392,9 +399,6 @@ export default function RejectionBlockPage() {
     });
   }, [trade, negotiation, rankedRbs, form.pipSize]);
 
-  // ============================================================
-  // DANGER ENGINE
-  // ============================================================
   const zonePositionMap = useMemo(() => {
     const map = {};
     rankedRbs.forEach((rb) => {
@@ -467,27 +471,16 @@ export default function RejectionBlockPage() {
 
   const zoneInfo = zoneTypeInfo(form.zoneType);
 
-  // ============================================================
-  // VALIDATION
-  // ============================================================
+  // Validation
   const validation = useMemo(
     () =>
       validateSetupInputs({
         closePrice: form.closePrice,
         rankedRbs,
-        emaCurrent: form.ema50Price,
-        emaPrior: form.ema50Prior,
         atrCurrent: form.atrCurrent,
         atrPrior: form.atrPrior,
       }),
-    [
-      form.closePrice,
-      form.ema50Price,
-      form.ema50Prior,
-      form.atrCurrent,
-      form.atrPrior,
-      rankedRbs,
-    ]
+    [form.closePrice, form.atrCurrent, form.atrPrior, rankedRbs]
   );
 
   // ============================================================
@@ -515,7 +508,6 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // --- VISIT MODE ---
     if (isVisit) {
       const { data: parentRbs } = await supabase
         .from("rejection_block_rbs")
@@ -581,7 +573,6 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // --- NEW or EDIT ---
     const setupPayload = {
       user_id: user.id,
       pair: form.pair,
@@ -657,10 +648,11 @@ export default function RejectionBlockPage() {
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
       atr_state: atr.key,
       ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
-      ema50_prior: form.ema50Prior ? parseFloat(form.ema50Prior) : null,
+      ema50_prior: null,
       ema50_direction: ema.direction,
       ema50_position_field: ema.position,
       ema50_aligned: alignment?.key === "aligned",
+      ema50_modifier: emaModifier,
       conditions_above: conditions.above,
       conditions_below: conditions.below,
       all_rbs_flipped: flipped.allFlipped,
@@ -759,7 +751,6 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // Auto-create journal trade
     if (!isEdit) {
       await createTradeFromSetup({
         supabase,
@@ -1247,32 +1238,43 @@ export default function RejectionBlockPage() {
             EMA 50 · Verdict · Volatility · Pip
           </h2>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                EMA 50 (current)
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.ema50Price}
-                onChange={(e) => update("ema50Price", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                EMA 50 (prior)
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.ema50Prior}
-                onChange={(e) => update("ema50Prior", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
-            </div>
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">
+              EMA 50 (current price of the line)
+            </label>
+            <input
+              type="number"
+              step="any"
+              value={form.ema50Price}
+              onChange={(e) => update("ema50Price", e.target.value)}
+              placeholder="e.g. 189885"
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+            />
           </div>
+
+          {ema.valid && (
+            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs">
+                <span className="text-gray-400">EMA bias:</span>{" "}
+                <span className={`font-bold ${emaMeta.direction.color}`}>
+                  {emaMeta.direction.emoji} {emaMeta.direction.label}
+                </span>
+              </p>
+              <p className="text-xs">
+                <span className="text-gray-400">Price position:</span>{" "}
+                <span className={`font-bold ${emaMeta.position.color}`}>
+                  {emaMeta.position.label}
+                </span>
+              </p>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1367,6 +1369,13 @@ export default function RejectionBlockPage() {
                   className={`text-xs px-2 py-1 rounded-full font-semibold ${strength.color}`}
                 >
                   {strength.emoji} {strength.label}
+                </span>
+              )}
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
                 </span>
               )}
               {flippedInfo && (
@@ -1681,19 +1690,12 @@ export default function RejectionBlockPage() {
               beyond Candle 1's wick, closes back inside)
             </li>
             <li>
-              <strong>Multiple RBs</strong> — inside, above, or below the
-              zone
-            </li>
-            <li>
-              <strong>Active RB</strong> — the one price is approaching
-            </li>
-            <li>
-              <strong>EMA 50</strong> — aligns trade with higher-timeframe
-              trend
+              <strong>EMA 50</strong> — price above = bullish bias; below =
+              bearish. Aligned trades get strength upgrade.
             </li>
             <li>
               <strong>Danger Engine</strong> — scores every RB in the path
-              0–10 by how likely it is to reject your trade
+              0–10 by how likely it is to reject
             </li>
             <li>
               <strong>Entry</strong> — CE of the active RB (50%)

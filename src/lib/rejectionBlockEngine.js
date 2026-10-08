@@ -3,20 +3,20 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// TWO-CANDLE RB DETECTION — SWEEP + RECLAIM
-//   Resistance: candle2.high > candle1.high AND candle2.close < candle1.high
-//   Support:    candle2.low  < candle1.low  AND candle2.close > candle1.low
-//   Both valid → dual sweep (dead candle).
+// EMA 50 is a FIRST-CLASS SIGNAL:
+//   Price above EMA → bullish bias → BUY aligned, SELL counter
+//   Price below EMA → bearish bias → SELL aligned, BUY counter
+//   Aligned → bumps verdict strength UP one tier
+//   Counter → drops verdict strength DOWN one tier
+//   Missing → no change
 //
+// TWO-CANDLE RB DETECTION — SWEEP + RECLAIM
 // VERDICT: close inside the active RB (premium / discount / breakout)
-// EMA 50: validated; invalid prior → unknown
-// ATR:    validated; invalid prior → unknown
-// VALIDATION: close must sit inside at least one listed RB
 // ============================================================
 
 export const PIP_SIZE_DEFAULT = 0.01;
 export const NEAR_EDGE_BUFFER_PIPS = 5;
-export const PRIOR_DEVIATION_LIMIT = 0.2; // 20% max deviation current vs prior
+export const PRIOR_DEVIATION_LIMIT = 0.2;
 
 // ============================================================
 // ZONE TYPES
@@ -99,15 +99,12 @@ export function validateCloseInsideRbs(closePrice, rankedRbs) {
 export function validateSetupInputs({
   closePrice,
   rankedRbs,
-  emaCurrent,
-  emaPrior,
   atrCurrent,
   atrPrior,
 }) {
   const errors = [];
   const warnings = [];
 
-  // Verdict close must be entered
   const close = parseFloat(closePrice);
   if (isNaN(close)) {
     errors.push({
@@ -138,19 +135,6 @@ export function validateSetupInputs({
     });
   }
 
-  if (emaCurrent) {
-    const emaCheck = validatePrior(emaCurrent, emaPrior);
-    if (!emaCheck.valid) {
-      warnings.push({
-        field: "ema50Prior",
-        message:
-          emaCheck.reason === "missing"
-            ? "EMA 50 prior missing — EMA filter disabled."
-            : `EMA 50 prior (${emaPrior}) looks invalid vs current (${emaCurrent}) — filter disabled.`,
-      });
-    }
-  }
-
   if (atrCurrent) {
     const atrCheck = validatePrior(atrCurrent, atrPrior);
     if (!atrCheck.valid) {
@@ -164,11 +148,7 @@ export function validateSetupInputs({
     }
   }
 
-  return {
-    ok: errors.length === 0,
-    errors,
-    warnings,
-  };
+  return { ok: errors.length === 0, errors, warnings };
 }
 
 // ============================================================
@@ -299,9 +279,141 @@ export function findActiveRb(rbs, currentPrice) {
 }
 
 // ============================================================
-// VERDICT
+// EMA 50 — first-class signal
 // ============================================================
-export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
+// Direction is inferred from the close's position vs the EMA.
+// No prior needed.
+export function computeEmaDirection({ emaPrice, closePrice }) {
+  const c = parseFloat(emaPrice);
+  const close = parseFloat(closePrice);
+
+  if (isNaN(c)) {
+    return {
+      direction: "unknown",
+      position: "unknown",
+      valid: false,
+    };
+  }
+
+  let position = "unknown";
+  if (!isNaN(close)) {
+    const tolerance = Math.abs(c) * 0.0001;
+    if (Math.abs(close - c) <= tolerance) position = "at";
+    else position = close > c ? "above" : "below";
+  }
+
+  return {
+    direction: position === "above" ? "bullish" : position === "below" ? "bearish" : "unknown",
+    position,
+    emaPrice: c,
+    valid: true,
+  };
+}
+
+export function emaInfo({ direction, position }) {
+  const dirMap = {
+    bullish: { label: "Bullish", emoji: "📈", color: "text-green-300" },
+    bearish: { label: "Bearish", emoji: "📉", color: "text-red-300" },
+    unknown: { label: "Unknown", emoji: "⚪", color: "text-gray-400" },
+  };
+  const posMap = {
+    above: { label: "Above EMA", color: "text-green-300" },
+    below: { label: "Below EMA", color: "text-red-300" },
+    at: { label: "At EMA", color: "text-yellow-300" },
+    unknown: { label: "—", color: "text-gray-400" },
+  };
+  return {
+    direction: dirMap[direction] || dirMap.unknown,
+    position: posMap[position] || posMap.unknown,
+  };
+}
+
+// ============================================================
+// EMA ALIGNMENT — returns strength modifier
+// ============================================================
+// +1 = aligned, 0 = neutral/unknown, -1 = counter
+export function emaAlignment({ position, verdict }) {
+  if (!verdict || verdict === "WAIT") return null;
+  if (!position || position === "unknown") return null;
+
+  // Price above EMA → bullish bias
+  if (verdict === "BUY") {
+    if (position === "above") {
+      return {
+        key: "aligned",
+        label: "EMA 50 aligned ✅",
+        color: "bg-green-900/40 text-green-300",
+        description: "BUY with price above EMA 50 — aligned.",
+        modifier: +1,
+      };
+    }
+    if (position === "below") {
+      return {
+        key: "counter",
+        label: "Counter-trend ⚠️",
+        color: "bg-yellow-900/40 text-yellow-300",
+        description: "BUY with price below EMA 50 — counter-trend.",
+        modifier: -1,
+      };
+    }
+  }
+  if (verdict === "SELL") {
+    if (position === "below") {
+      return {
+        key: "aligned",
+        label: "EMA 50 aligned ✅",
+        color: "bg-green-900/40 text-green-300",
+        description: "SELL with price below EMA 50 — aligned.",
+        modifier: +1,
+      };
+    }
+    if (position === "above") {
+      return {
+        key: "counter",
+        label: "Counter-trend ⚠️",
+        color: "bg-yellow-900/40 text-yellow-300",
+        description: "SELL with price above EMA 50 — counter-trend.",
+        modifier: -1,
+      };
+    }
+  }
+  return {
+    key: "neutral",
+    label: "EMA 50 neutral",
+    color: "bg-blue-900/40 text-blue-300",
+    description: "Price at EMA 50 — no directional bias.",
+    modifier: 0,
+  };
+}
+
+// ============================================================
+// STRENGTH ADJUSTMENT — bump tier up/down
+// ============================================================
+const STRENGTH_ORDER = ["weak", "normal", "strong"];
+
+export function adjustStrengthForEma(baseStrength, modifier) {
+  if (!baseStrength) return baseStrength;
+  if (!modifier) return baseStrength;
+
+  const idx = STRENGTH_ORDER.indexOf(baseStrength);
+  if (idx === -1) return baseStrength;
+
+  let newIdx = idx + modifier;
+  if (newIdx < 0) newIdx = 0;
+  if (newIdx > 2) newIdx = 2;
+
+  return STRENGTH_ORDER[newIdx];
+}
+
+// ============================================================
+// VERDICT — accepts EMA modifier
+// ============================================================
+export function judgeRejectionBlock({
+  rbHigh,
+  rbLow,
+  closePrice,
+  emaModifier = 0,
+}) {
   const high = parseFloat(rbHigh);
   const low = parseFloat(rbLow);
   const close = parseFloat(closePrice);
@@ -309,8 +421,10 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
 
   const ce = Math.round(((high + low) / 2) * 100) / 100;
 
+  let base = null;
+
   if (close > high) {
-    return {
+    base = {
       verdict: "BUY",
       side: "above",
       ce,
@@ -319,9 +433,8 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
       reason:
         "Closed ABOVE the RB high — buyers broke through. Strong continuation up.",
     };
-  }
-  if (close < low) {
-    return {
+  } else if (close < low) {
+    base = {
       verdict: "SELL",
       side: "below",
       ce,
@@ -330,37 +443,59 @@ export function judgeRejectionBlock({ rbHigh, rbLow, closePrice }) {
       reason:
         "Closed BELOW the RB low — sellers broke through. Strong continuation down.",
     };
+  } else {
+    const tolerance = Math.abs(ce) * 0.0001;
+    if (Math.abs(close - ce) <= tolerance) {
+      return {
+        verdict: "WAIT",
+        side: "at-ce",
+        ce,
+        rbBroken: null,
+        strength: "weak",
+        reason:
+          "Price closed at the CE — indecision. Wait for a clear close.",
+      };
+    }
+    if (close > ce) {
+      base = {
+        verdict: "SELL",
+        side: "premium",
+        ce,
+        rbBroken: null,
+        strength: "normal",
+        reason:
+          "Closed in the PREMIUM (above CE, inside RB) — sellers defended.",
+      };
+    } else {
+      base = {
+        verdict: "BUY",
+        side: "discount",
+        ce,
+        rbBroken: null,
+        strength: "normal",
+        reason:
+          "Closed in the DISCOUNT (below CE, inside RB) — buyers defended.",
+      };
+    }
   }
 
-  const tolerance = Math.abs(ce) * 0.0001;
-  if (Math.abs(close - ce) <= tolerance) {
-    return {
-      verdict: "WAIT",
-      side: "at-ce",
-      ce,
-      rbBroken: null,
-      strength: "weak",
-      reason: "Price closed at the CE — indecision. Wait for a clear close.",
-    };
+  // Apply EMA strength modifier
+  const baseStrength = base.strength;
+  const adjustedStrength = adjustStrengthForEma(baseStrength, emaModifier);
+
+  if (adjustedStrength !== baseStrength) {
+    if (emaModifier > 0) {
+      base.reason += " EMA 50 aligned — strength upgraded.";
+    } else if (emaModifier < 0) {
+      base.reason += " EMA 50 counter-trend — strength reduced.";
+    }
   }
-  if (close > ce) {
-    return {
-      verdict: "SELL",
-      side: "premium",
-      ce,
-      rbBroken: null,
-      strength: "normal",
-      reason: "Closed in the PREMIUM (above CE, inside RB) — sellers defended.",
-    };
-  }
-  return {
-    verdict: "BUY",
-    side: "discount",
-    ce,
-    rbBroken: null,
-    strength: "normal",
-    reason: "Closed in the DISCOUNT (below CE, inside RB) — buyers defended.",
-  };
+
+  base.strength = adjustedStrength;
+  base.baseStrength = baseStrength;
+  base.emaModifier = emaModifier;
+
+  return base;
 }
 
 export function premiumDiscountVerdict(result) {
@@ -430,118 +565,6 @@ export function strengthInfo(strength) {
     },
   };
   return map[strength] || map.weak;
-}
-
-// ============================================================
-// EMA 50 — with validation
-// ============================================================
-export function computeEmaDirection({ emaPrice, emaPrior, closePrice }) {
-  const c = parseFloat(emaPrice);
-  const p = parseFloat(emaPrior);
-  const close = parseFloat(closePrice);
-
-  if (isNaN(c) || isNaN(p)) {
-    return {
-      direction: "unknown",
-      position: "unknown",
-      change: 0,
-      aligned: null,
-      valid: false,
-    };
-  }
-
-  const priorCheck = validatePrior(c, p);
-  if (!priorCheck.valid) {
-    return {
-      direction: "unknown",
-      position: "unknown",
-      change: 0,
-      aligned: null,
-      valid: false,
-      invalidReason: priorCheck.reason,
-    };
-  }
-
-  const change = ((c - p) / (p || 1)) * 100;
-  let direction;
-  if (change > 0.02) direction = "rising";
-  else if (change < -0.02) direction = "falling";
-  else direction = "flat";
-
-  let position = "unknown";
-  if (!isNaN(close)) {
-    const tolerance = Math.abs(c) * 0.0001;
-    if (Math.abs(close - c) <= tolerance) position = "at";
-    else position = close > c ? "above" : "below";
-  }
-  return { direction, position, change, emaPrice: c, emaPrior: p, valid: true };
-}
-
-export function emaInfo({ direction, position }) {
-  const dirMap = {
-    rising: { label: "Rising", emoji: "📈", color: "text-green-300" },
-    falling: { label: "Falling", emoji: "📉", color: "text-red-300" },
-    flat: { label: "Flat", emoji: "➡️", color: "text-blue-300" },
-    unknown: { label: "Unknown", emoji: "⚪", color: "text-gray-400" },
-  };
-  const posMap = {
-    above: { label: "Above", color: "text-green-300" },
-    below: { label: "Below", color: "text-red-300" },
-    at: { label: "At EMA", color: "text-yellow-300" },
-    unknown: { label: "—", color: "text-gray-400" },
-  };
-  return {
-    direction: dirMap[direction] || dirMap.unknown,
-    position: posMap[position] || posMap.unknown,
-  };
-}
-
-export function emaAlignment({ direction, position, verdict }) {
-  if (!verdict || verdict === "WAIT") return null;
-  if (direction === "unknown" || position === "unknown") return null;
-
-  if (verdict === "BUY") {
-    if (direction === "rising" && position === "above") {
-      return {
-        key: "aligned",
-        label: "EMA 50 aligned ✅",
-        color: "bg-green-900/40 text-green-300",
-        description: "BUY aligned with rising EMA 50, price above.",
-      };
-    }
-    if (direction === "falling" || position === "below") {
-      return {
-        key: "counter",
-        label: "Counter-trend ⚠️",
-        color: "bg-yellow-900/40 text-yellow-300",
-        description: "BUY against EMA 50 — reduced conviction.",
-      };
-    }
-  }
-  if (verdict === "SELL") {
-    if (direction === "falling" && position === "below") {
-      return {
-        key: "aligned",
-        label: "EMA 50 aligned ✅",
-        color: "bg-green-900/40 text-green-300",
-        description: "SELL aligned with falling EMA 50, price below.",
-      };
-    }
-    if (direction === "rising" || position === "above") {
-      return {
-        key: "counter",
-        label: "Counter-trend ⚠️",
-        color: "bg-yellow-900/40 text-yellow-300",
-        description: "SELL against EMA 50 — reduced conviction.",
-      };
-    }
-  }
-  return {
-    key: "neutral",
-    label: "EMA 50 neutral",
-    color: "bg-blue-900/40 text-blue-300",
-    description: "EMA 50 flat — no directional bias.",
-  };
 }
 
 // ============================================================
@@ -820,7 +843,6 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
 
   const rbs = [];
 
-  // RESISTANCE RB
   if (c2h > c1h && c2c < c1h) {
     const rbLow = Math.round(c1h * 100) / 100;
     const rbHigh = Math.round(c2h * 100) / 100;
@@ -836,7 +858,6 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
     });
   }
 
-  // SUPPORT RB
   if (c2l < c1l && c2c > c1l) {
     const rbLow = Math.round(c2l * 100) / 100;
     const rbHigh = Math.round(c1l * 100) / 100;
@@ -991,7 +1012,7 @@ export function checkDetectionVsClose({
 }
 
 // ============================================================
-// RB-IN-PATH — with corrected distance signs
+// RB-IN-PATH
 // ============================================================
 export function detectRbsInPath({
   entry,
@@ -1028,7 +1049,6 @@ export function detectRbsInPath({
       if (high <= t) continue;
     }
 
-    // Corrected distance signs
     const toEntryPrice = isBull ? low - e : e - high;
     const toTpPrice = isBull ? t - high : low - t;
 
@@ -1069,9 +1089,6 @@ export function detectRbsInPath({
   };
 }
 
-// ============================================================
-// BLOCKER INFO — 15% threshold
-// ============================================================
 export function blockerInfo({ direction, nearest, distanceRatio }) {
   if (!nearest) return null;
   if (distanceRatio !== undefined && distanceRatio < 0.15) {
