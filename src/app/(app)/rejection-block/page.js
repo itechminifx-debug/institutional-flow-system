@@ -77,6 +77,7 @@ export default function RejectionBlockPage() {
   const [candle1, setCandle1] = useState(emptyCandle());
   const [candle2, setCandle2] = useState(emptyCandle());
   const [addedRbIds, setAddedRbIds] = useState([]);
+  const [showWarningModal, setShowWarningModal] = useState(false);
 
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -85,9 +86,6 @@ export default function RejectionBlockPage() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingDetailId, setExistingDetailId] = useState(null);
 
-  // ============================================================
-  // LOAD
-  // ============================================================
   useEffect(() => {
     async function load() {
       const {
@@ -267,19 +265,14 @@ export default function RejectionBlockPage() {
     ? rbVsZoneInfo(activeRbPosition)
     : null;
 
-  // ============================================================
-  // EMA — computed first, then used in verdict
-  // ============================================================
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     closePrice: form.closePrice,
   });
   const emaMeta = emaInfo(ema);
 
-  // Interim alignment for the EMA badge (without the modifier yet)
   const rawAlignment = useMemo(() => {
     if (!form.closePrice) return null;
-    // Determine a provisional verdict direction first to test alignment
     if (!activeRb) return null;
     const provisional = judgeRejectionBlock({
       rbHigh: activeRb.high,
@@ -471,7 +464,6 @@ export default function RejectionBlockPage() {
 
   const zoneInfo = zoneTypeInfo(form.zoneType);
 
-  // Validation
   const validation = useMemo(
     () =>
       validateSetupInputs({
@@ -484,9 +476,53 @@ export default function RejectionBlockPage() {
   );
 
   // ============================================================
+  // WARNING MODAL LOGIC — NEW
+  // ============================================================
+  const warningReasons = useMemo(() => {
+    const reasons = [];
+
+    // 1. Critical path danger
+    if (pathDanger && pathDanger.topScore >= 8) {
+      reasons.push({
+        key: "critical_path",
+        label: `Critical RB ahead (score ${pathDanger.topScore}/10)`,
+        detail:
+          "A high-danger RB sits in the trade's path. Price may reject there before reaching the target.",
+      });
+    }
+
+    // 2. Blocked early
+    if (pathBlockerBadge && pathBlockerBadge.key === "weak") {
+      reasons.push({
+        key: "blocked_early",
+        label: "Blocked early",
+        detail:
+          "The nearest RB sits in the first 15% of the path — the trade may reject almost immediately.",
+      });
+    }
+
+    // 3. Weak + Counter-trend
+    if (
+      negotiation?.strength === "weak" &&
+      alignment?.key === "counter"
+    ) {
+      reasons.push({
+        key: "weak_counter",
+        label: "Weak verdict + Counter-trend",
+        detail:
+          "The verdict strength is weak and the EMA 50 bias is against the trade direction.",
+      });
+    }
+
+    return reasons;
+  }, [pathDanger, pathBlockerBadge, negotiation, alignment]);
+
+  const hasWarnings = warningReasons.length > 0;
+
+  // ============================================================
   // SAVE
   // ============================================================
-  async function handleSave() {
+  async function handleSave(force = false) {
     if (!negotiation || !activeRb) {
       setError("Fill in the zone, at least one RB, and close price first.");
       return;
@@ -496,6 +532,13 @@ export default function RejectionBlockPage() {
       return;
     }
 
+    // Show warning modal instead of saving — unless forced
+    if (hasWarnings && !force) {
+      setShowWarningModal(true);
+      return;
+    }
+
+    setShowWarningModal(false);
     setSaving(true);
     setError("");
 
@@ -646,7 +689,7 @@ export default function RejectionBlockPage() {
       tp_pips: tradePips?.tpDistance || null,
       atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
-      atr_state: atr.key,
+      atr_state: atr.key === "unknown" || atr.key === "invalid" ? "unknown" : atr.key,
       ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
       ema50_prior: null,
       ema50_direction: ema.direction,
@@ -691,6 +734,8 @@ export default function RejectionBlockPage() {
       path_danger_tier: pathDanger?.topTier?.key || null,
       path_danger_summary: pathDanger?.summary || null,
       nearest_danger_rb: pathDanger?.rbs?.[0] || null,
+      warning_acknowledged: hasWarnings,
+      warning_reasons: warningReasons.map((r) => r.key),
       notes: form.notes,
     };
 
@@ -789,9 +834,6 @@ export default function RejectionBlockPage() {
     );
   }
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -1341,9 +1383,9 @@ export default function RejectionBlockPage() {
               >
                 <option value={0.0001}>0.0001</option>
                 <option value={0.001}>0.001</option>
-                <option value={0.01}>0.01 (VOL)</option>
+                <option value={0.01}>0.01</option>
                 <option value={0.1}>0.1</option>
-                <option value={1}>1.0</option>
+                <option value={1}>1.0 (VOL)</option>
               </select>
             </div>
           </div>
@@ -1638,9 +1680,18 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
+        {/* Pre-save warning hint */}
+        {hasWarnings && (
+          <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
+            ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
+            {warningReasons.length === 1 ? "" : "s"} detected. The Save button
+            will show a confirmation.
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={handleSave}
+          onClick={() => handleSave(false)}
           disabled={
             saving ||
             !negotiation ||
@@ -1686,16 +1737,13 @@ export default function RejectionBlockPage() {
           </h3>
           <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
             <li>
-              <strong>Detection</strong> — sweep + reclaim (Candle 2 sweeps
-              beyond Candle 1's wick, closes back inside)
+              <strong>Detection</strong> — sweep + reclaim
             </li>
             <li>
-              <strong>EMA 50</strong> — price above = bullish bias; below =
-              bearish. Aligned trades get strength upgrade.
+              <strong>EMA 50</strong> — price above = bullish, below = bearish
             </li>
             <li>
               <strong>Danger Engine</strong> — scores every RB in the path
-              0–10 by how likely it is to reject
             </li>
             <li>
               <strong>Entry</strong> — CE of the active RB (50%)
@@ -1704,12 +1752,76 @@ export default function RejectionBlockPage() {
               <strong>SL</strong> — beyond the active RB wick + ATR buffer
             </li>
             <li>
-              <strong>TP</strong> — 2R from entry, or Safe TP before the
-              nearest critical RB
+              <strong>TP</strong> — 2R, or Safe TP before the nearest
+              critical RB
             </li>
           </ul>
         </div>
       </div>
+
+      {/* WARNING MODAL */}
+      {showWarningModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+          <div className="max-w-lg w-full p-6 rounded-2xl bg-gray-900 border-2 border-red-600 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="text-3xl">🚨</span>
+              <div>
+                <p className="text-lg font-bold text-red-200">
+                  The system advises against this trade
+                </p>
+                <p className="text-xs text-red-300 mt-1">
+                  {warningReasons.length} danger signal
+                  {warningReasons.length === 1 ? "" : "s"} detected:
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {warningReasons.map((r) => (
+                <div
+                  key={r.key}
+                  className="p-3 rounded-lg bg-red-950/40 border border-red-800"
+                >
+                  <p className="text-sm font-bold text-red-200">
+                    {r.label}
+                  </p>
+                  <p className="text-xs text-red-300 mt-1">{r.detail}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 rounded-lg bg-yellow-950/40 border border-yellow-800">
+              <p className="text-xs text-yellow-200">
+                💡 Your own recent trades with this combination have
+                historically lost. Consider skipping or reducing size.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowWarningModal(false)}
+                className="py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-bold"
+              >
+                ❌ Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                disabled={saving}
+                className="py-3 rounded-lg bg-red-800 hover:bg-red-700 font-bold disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "⚠️ Save Anyway"}
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center">
+              Save Anyway is a deliberate action — the trade will be
+              logged with a warning flag.
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
