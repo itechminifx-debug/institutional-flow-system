@@ -20,7 +20,19 @@ import {
   computeChecklistScore,
   zoneChecklistVerdict,
 } from "@/lib/liquidityZoneEngine";
+import { computeTrade, validateTrade } from "@/lib/tradeCalculator";
+import {
+  computeEmaDirection,
+  emaInfo,
+  emaAlignment,
+  enrichVerdict,
+  computeWarningReasons,
+  HTF_BIAS_OPTIONS,
+  SWEEP_DIRECTION_OPTIONS,
+} from "@/lib/verdictEngine";
 import PairPicker from "@/components/PairPicker";
+import TradeCard from "@/components/TradeCard";
+import WarningModal from "@/components/WarningModal";
 
 function emptyCandle() {
   return { type: "green", open: "", close: "", wickTip: "" };
@@ -43,14 +55,17 @@ export default function LiquidityZonePage() {
     timeframe: "H4",
     zoneKind: "upper",
     closePrice: "",
+    ema50Price: "",
+    htfBiasInput: "auto",
+    sweepDirection: "none",
     atrCurrent: "",
     atrPrior: "",
+    pipSize: 1,
     notes: "",
   });
 
   const [candles, setCandles] = useState([emptyCandle(), emptyCandle()]);
   const [rbs, setRbs] = useState([emptyRb()]);
-
   const [manualAnswers, setManualAnswers] = useState({});
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -59,6 +74,7 @@ export default function LiquidityZonePage() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingZoneId, setExistingZoneId] = useState(null);
   const [existingZoneInfo, setExistingZoneInfo] = useState(null);
+  const [showWarningModal, setShowWarningModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -107,8 +123,12 @@ export default function LiquidityZonePage() {
         timeframe: zoneData?.timeframe || f.timeframe,
         zoneKind: zoneData?.zone_kind || f.zoneKind,
         closePrice: zoneData?.close_price?.toString() || "",
+        ema50Price: setupData.ema50_price?.toString() || "",
+        htfBiasInput: setupData.htf_bias_override || "auto",
+        sweepDirection: setupData.sweep_direction || "none",
         atrCurrent: zoneData?.atr_current?.toString() || "",
         atrPrior: zoneData?.atr_prior?.toString() || "",
+        pipSize: zoneData?.pip_size || 1,
         notes: setupData.notes || "",
       }));
 
@@ -124,10 +144,10 @@ export default function LiquidityZonePage() {
       }
 
       if (zoneData?.checklist_answers) {
-        const saved = zoneData.checklist_answers;
+        const savedAns = zoneData.checklist_answers;
         const manual = {};
-        Object.keys(saved).forEach((k) => {
-          if (saved[k] === true) manual[k] = true;
+        Object.keys(savedAns).forEach((k) => {
+          if (savedAns[k] === true) manual[k] = true;
         });
         setManualAnswers(manual);
       }
@@ -148,31 +168,25 @@ export default function LiquidityZonePage() {
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
-
   function updateCandle(index, field, value) {
     setCandles((prev) =>
       prev.map((c, i) => (i === index ? { ...c, [field]: value } : c))
     );
   }
-
   function addCandle() {
     setCandles((prev) => [...prev, emptyCandle()]);
   }
-
   function removeCandle(index) {
     setCandles((prev) => prev.filter((_, i) => i !== index));
   }
-
   function updateRb(id, field, value) {
     setRbs((prev) =>
       prev.map((rb) => (rb.id === id ? { ...rb, [field]: value } : rb))
     );
   }
-
   function addRb() {
     setRbs((prev) => [...prev, emptyRb()]);
   }
-
   function removeRb(id) {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
@@ -194,7 +208,6 @@ export default function LiquidityZonePage() {
         addedAt: rb.addedAt || new Date().toISOString(),
       }))
       .filter((rb) => !isNaN(rb.high) && !isNaN(rb.low));
-
     return rankRejectionBlocks(cleaned);
   }, [rbs]);
 
@@ -205,13 +218,39 @@ export default function LiquidityZonePage() {
 
   const activeRbCe = activeRb ? computeCe(activeRb.high, activeRb.low) : null;
 
-  const negotiation = activeRb
+  // Base verdict from zone engine
+  const baseNegotiation = activeRb
     ? judgeZoneNegotiation({ activeRb, closePrice: form.closePrice })
     : null;
-  const verdict = premiumDiscountVerdict(negotiation);
+
+  // EMA
+  const ema = computeEmaDirection({
+    emaPrice: form.ema50Price,
+    closePrice: form.closePrice,
+  });
+  const emaMeta = emaInfo(ema);
+
+  // Enriched verdict
+  const enrichedVerdict = useMemo(() => {
+    if (!baseNegotiation) return null;
+    const base = {
+      verdict: baseNegotiation.verdict,
+      strength: baseNegotiation.strength || "normal",
+      reason: baseNegotiation.reason || "",
+    };
+    return enrichVerdict({
+      verdict: base,
+      ema,
+      htfBiasInput: form.htfBiasInput,
+      sweepDirection: form.sweepDirection,
+    });
+  }, [baseNegotiation, ema, form.htfBiasInput, form.sweepDirection]);
+
+  const alignment = enrichedVerdict?.emaAlignment;
 
   const atr = atrFilter(form.atrCurrent, form.atrPrior);
 
+  // Checklist
   const autoAnswers = {
     zone_present: !!zone,
     rbs_marked: rankedRbs.length > 0,
@@ -221,7 +260,8 @@ export default function LiquidityZonePage() {
     price_entered: !!form.closePrice,
     price_at_rb_ce: !!activeRbCe && !!form.closePrice,
     body_closed: !!form.closePrice,
-    close_clear: !!negotiation && negotiation.verdict !== "WAIT",
+    close_clear:
+      !!enrichedVerdict && enrichedVerdict.verdict !== "WAIT",
     risk_ok: false,
   };
 
@@ -243,19 +283,78 @@ export default function LiquidityZonePage() {
     }));
   }
 
-  const canSave = isEdit
-    ? !!activeRb && !!negotiation
-    : !!zone && !!activeRb && !!negotiation;
+  // Shared trade calculator
+  const trade = useMemo(() => {
+    if (!enrichedVerdict || !activeRb) return null;
+    const v = enrichedVerdict.verdict;
+    if (v !== "BUY" && v !== "SELL") return null;
+    const rbHigh = parseFloat(activeRb.high);
+    const rbLow = parseFloat(activeRb.low);
+    if (isNaN(rbHigh) || isNaN(rbLow)) return null;
+    const ceVal = Math.round(((rbHigh + rbLow) / 2) * 100) / 100;
+    const slRef = v === "BUY" ? rbLow : rbHigh;
+    return computeTrade({
+      direction: v,
+      entry: ceVal,
+      slReference: slRef,
+      atr: parseFloat(form.atrCurrent) || 0,
+      accountSize: profile?.account_size || 0,
+      riskPercent: profile?.risk_percent || 1,
+      pipSize: parseFloat(form.pipSize) || 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    enrichedVerdict,
+    activeRb,
+    form.atrCurrent,
+    form.pipSize,
+    profile?.account_size,
+    profile?.risk_percent,
+  ]);
 
-  async function handleSave() {
-    if (!canSave) {
-      setError(
-        isEdit
-          ? "Fill in the RBs and close price first."
-          : "Fill in the zone, RBs, and close price first."
-      );
+  const tradeValidation = useMemo(
+    () =>
+      validateTrade({
+        trade,
+        verdict: enrichedVerdict?.verdict,
+      }),
+    [trade, enrichedVerdict]
+  );
+
+  // Warnings
+  const warningReasons = useMemo(
+    () =>
+      computeWarningReasons({
+        verdict: enrichedVerdict,
+        alignment,
+        pathDanger: null,
+        blockerBadge: null,
+        extraReasons:
+          !checklistVerdict.passed && score < LIQUIDITY_ZONE_PASS_THRESHOLD
+            ? [
+                {
+                  key: "checklist_fail",
+                  label: `Checklist failed (${score}/10)`,
+                  detail: `Need at least ${LIQUIDITY_ZONE_PASS_THRESHOLD} checks — currently ${score}.`,
+                },
+              ]
+            : [],
+      }),
+    [enrichedVerdict, alignment, checklistVerdict, score]
+  );
+  const hasWarnings = warningReasons.length > 0;
+
+  async function handleSave(force = false) {
+    if (!enrichedVerdict || !trade || !activeRb) {
+      setError("Fill in the zone, at least one RB, and close price first.");
       return;
     }
+
+    if (hasWarnings && !force) {
+      setShowWarningModal(true);
+      return;
+    }
+    setShowWarningModal(false);
 
     setSaving(true);
     setError("");
@@ -273,14 +372,16 @@ export default function LiquidityZonePage() {
       user_id: user.id,
       pair: form.pair,
       setup_type: "liquidity_zone",
-      d1_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-      htf_bias: negotiation.verdict === "BUY" ? "bullish" : "bearish",
-      ema50_position: "above",
+      d1_bias: enrichedVerdict.verdict === "BUY" ? "bullish" : "bearish",
+      htf_bias: enrichedVerdict.verdict === "BUY" ? "bullish" : "bearish",
+      ema50_position: ema.position !== "unknown" ? ema.position : "above",
       rejection_block_zone: `${activeRb.low}-${activeRb.high}`,
-      ce_price: negotiation.ce,
+      ce_price: trade.entry,
       use_ce_entry: true,
       checklist_score: score,
       checklist_passed: checklistVerdict.passed,
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
       notes: form.notes,
     };
 
@@ -325,12 +426,30 @@ export default function LiquidityZonePage() {
       close_price: form.closePrice ? parseFloat(form.closePrice) : null,
       active_rb_high: activeRb.high,
       active_rb_low: activeRb.low,
-      active_rb_ce: negotiation.ce,
-      premium_discount: negotiation.side,
-      verdict: negotiation.verdict,
+      active_rb_ce: trade.entry,
+      premium_discount: baseNegotiation?.side || null,
+      verdict: enrichedVerdict.verdict,
+      entry: trade.entry,
+      sl: trade.sl,
+      tp: trade.tp,
+      lot_size: trade.lotSize,
+      risk_amount: trade.riskAmount,
+      pip_size: trade.pipSize,
+      sl_pips: trade.slPips,
+      tp_pips: trade.tpPips,
       atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
-      atr_state: atr.key,
+      atr_state: atr.key === "unknown" || atr.key === "invalid" ? "unknown" : atr.key,
+      ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
+      ema50_direction: ema.direction,
+      ema50_position: ema.position,
+      ema50_aligned: alignment?.key === "aligned",
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
+      htf_conflict: enrichedVerdict.hasHtfConflict || false,
+      sweep_override: enrichedVerdict.hasSweepOverride || false,
+      warning_acknowledged: hasWarnings,
+      warning_reasons: warningReasons.map((r) => r.key),
       checklist_score: score,
       checklist_passed: checklistVerdict.passed,
       checklist_answers: combinedAnswers,
@@ -351,7 +470,6 @@ export default function LiquidityZonePage() {
         return;
       }
       zoneRow = data;
-
       await supabase
         .from("liquidity_zone_rbs")
         .delete()
@@ -391,22 +509,21 @@ export default function LiquidityZonePage() {
       return;
     }
 
-    // Auto-create a linked trade in the journal
     if (!isEdit) {
       await createTradeFromSetup({
         supabase,
         userId: user.id,
         setupId: setup.id,
         pair: form.pair,
-        direction: negotiation.verdict === "BUY" ? "buy" : "sell",
-        entry: negotiation.ce,
-        sl: null,
-        tp: null,
-        lotSize: null,
+        direction: trade.direction === "BUY" ? "buy" : "sell",
+        entry: trade.entry,
+        sl: trade.sl,
+        tp: trade.tp,
+        lotSize: trade.lotSize,
         riskPercent: profile?.risk_percent || 1,
         rr: 2,
         extra: {
-          ce_price: negotiation.ce,
+          ce_price: trade.entry,
           used_ce_entry: true,
         },
       });
@@ -444,7 +561,7 @@ export default function LiquidityZonePage() {
         {isEdit && existingZoneInfo && (
           <div className="p-3 rounded-lg bg-blue-950/20 border border-blue-900">
             <p className="text-xs text-blue-300 font-semibold mb-1">
-              Stored zone (from original save)
+              Stored zone
             </p>
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div>
@@ -635,9 +752,6 @@ export default function LiquidityZonePage() {
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-gray-500">
-                Built from {zone.count} candle{zone.count === 1 ? "" : "s"}
-              </p>
             </div>
           )}
         </div>
@@ -725,41 +839,53 @@ export default function LiquidityZonePage() {
               );
             })}
           </div>
-
-          {rankedRbs.length > 0 && (
-            <div className="space-y-1 pt-2 border-t border-gray-800">
-              {rankedRbs.map((rb) => {
-                const info = rbRankInfo(rb.rank);
-                const ce = computeCe(rb.high, rb.low);
-                return (
-                  <div
-                    key={rb.id}
-                    className="flex items-center justify-between text-xs"
-                  >
-                    <span
-                      className={`px-1.5 py-0.5 rounded border ${info.color}`}
-                    >
-                      {info.emoji} {info.label}
-                    </span>
-                    <span className="text-gray-400 tabular-nums">
-                      {rb.low} – {rb.high} (CE {ce})
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
 
-        {/* Price + ATR */}
+        {/* EMA + HTF + Sweep + Close + ATR */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            Negotiation
+            EMA 50 · HTF Bias · Sweep · Negotiation
           </h2>
-          <div className="grid grid-cols-3 gap-3">
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                Close Price
+                HTF Bias
+              </label>
+              <select
+                value={form.htfBiasInput}
+                onChange={(e) => update("htfBiasInput", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {HTF_BIAS_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Sweep Direction
+              </label>
+              <select
+                value={form.sweepDirection}
+                onChange={(e) => update("sweepDirection", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {SWEEP_DIRECTION_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Close Price (verdict)
               </label>
               <input
                 type="number"
@@ -771,7 +897,22 @@ export default function LiquidityZonePage() {
             </div>
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                ATR (current)
+                EMA 50 (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Price}
+                onChange={(e) => update("ema50Price", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                ATR current
               </label>
               <input
                 type="number"
@@ -783,7 +924,7 @@ export default function LiquidityZonePage() {
             </div>
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                ATR (prior)
+                ATR prior
               </label>
               <input
                 type="number"
@@ -793,47 +934,157 @@ export default function LiquidityZonePage() {
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               />
             </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Pip size
+              </label>
+              <select
+                value={form.pipSize}
+                onChange={(e) =>
+                  update("pipSize", parseFloat(e.target.value))
+                }
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                <option value={0.0001}>0.0001</option>
+                <option value={0.001}>0.001</option>
+                <option value={0.01}>0.01</option>
+                <option value={0.1}>0.1</option>
+                <option value={1}>1.0 (VOL)</option>
+              </select>
+            </div>
           </div>
 
-          <div className={`p-3 rounded-lg border ${atr.color}`}>
-            <p className="text-xs font-semibold">
-              {atr.emoji} {atr.label}
-            </p>
-            <p className="text-xs opacity-90 mt-1">{atr.description}</p>
-          </div>
-
-          {activeRb && activeRbCe !== null && (
-            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900">
-              <p className="text-xs text-blue-300 font-semibold">
-                Active RB — CE (negotiation line)
+          {ema.valid && (
+            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs">
+                <span className="text-gray-400">EMA bias:</span>{" "}
+                <span className={`font-bold ${emaMeta.direction.color}`}>
+                  {emaMeta.direction.emoji} {emaMeta.direction.label}
+                </span>
               </p>
-              <p className="text-lg font-bold tabular-nums text-blue-200">
-                {formatPrice(activeRbCe)}
+              <p className="text-xs">
+                <span className="text-gray-400">Price position:</span>{" "}
+                <span className={`font-bold ${emaMeta.position.color}`}>
+                  {emaMeta.position.label}
+                </span>
               </p>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
+              )}
             </div>
           )}
         </div>
 
-        {/* Verdict */}
-        {negotiation && (
-          <div className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}>
+        {/* Enriched Verdict */}
+        {enrichedVerdict && (
+          <div
+            className={`p-4 rounded-lg border space-y-2 ${
+              enrichedVerdict.verdict === "BUY"
+                ? "bg-green-950/50 border-green-600 text-green-200"
+                : enrichedVerdict.verdict === "SELL"
+                ? "bg-red-950/50 border-red-600 text-red-200"
+                : "bg-yellow-950/40 border-yellow-700 text-yellow-200"
+            }`}
+          >
             <p className="text-xs opacity-80">Verdict</p>
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-2xl font-bold">
-                {verdict.emoji} {verdict.label}
+                {enrichedVerdict.verdict === "BUY"
+                  ? "🟢"
+                  : enrichedVerdict.verdict === "SELL"
+                  ? "🔴"
+                  : "⚠️"}{" "}
+                {enrichedVerdict.verdict}
               </p>
-              {negotiation.rbBroken === "up" && (
-                <span className="text-xs px-2 py-1 rounded-full font-semibold bg-green-900/40 text-green-300">
-                  RB broken ↑
+              {enrichedVerdict.strength && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                    enrichedVerdict.strength === "strong"
+                      ? "bg-green-900/40 text-green-300"
+                      : enrichedVerdict.strength === "weak"
+                      ? "bg-yellow-900/40 text-yellow-300"
+                      : "bg-blue-900/40 text-blue-300"
+                  }`}
+                >
+                  {enrichedVerdict.strength}
                 </span>
               )}
-              {negotiation.rbBroken === "down" && (
-                <span className="text-xs px-2 py-1 rounded-full font-semibold bg-red-900/40 text-red-300">
-                  RB broken ↓
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                  checklistVerdict.passed
+                    ? "bg-green-900/40 text-green-300"
+                    : "bg-yellow-900/40 text-yellow-300"
+                }`}
+              >
+                Checklist {score}/10
+              </span>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
                 </span>
               )}
             </div>
-            <p className="text-sm opacity-90">{verdict.description}</p>
+            <p className="text-sm opacity-90">{enrichedVerdict.reason}</p>
+          </div>
+        )}
+
+        {/* HTF Conflict Banner */}
+        {enrichedVerdict?.hasHtfConflict && (
+          <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/40 space-y-2">
+            <p className="text-sm font-bold text-red-200">
+              🚨 Counter-Trend Trade
+            </p>
+            {enrichedVerdict.htfConflict.map((c, i) => (
+              <div key={i}>
+                <p className="text-xs font-semibold text-red-200">
+                  {c.label}
+                </p>
+                <p className="text-xs text-red-300 mt-0.5">{c.detail}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sweep Override Banner */}
+        {enrichedVerdict?.hasSweepOverride && (
+          <div className="p-4 rounded-lg border-2 border-purple-700 bg-purple-950/40 space-y-2">
+            <p className="text-sm font-bold text-purple-200">
+              🔄 Sweep Override
+            </p>
+            <p className="text-xs text-purple-200">
+              {enrichedVerdict.sweepOverride.label}
+            </p>
+            <p className="text-xs text-purple-300 mt-1">
+              {enrichedVerdict.sweepOverride.detail}
+            </p>
+          </div>
+        )}
+
+        {/* Trade Card — SHARED COMPONENT */}
+        {trade && (
+          <TradeCard
+            trade={trade}
+            badges={[
+              alignment && {
+                label: alignment.label,
+                className: alignment.color,
+              },
+            ].filter(Boolean)}
+          />
+        )}
+
+        {/* Trade validation errors */}
+        {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
+          <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm space-y-1">
+            {tradeValidation.errors.map((e, i) => (
+              <p key={i}>⚠️ {e}</p>
+            ))}
           </div>
         )}
 
@@ -845,7 +1096,7 @@ export default function LiquidityZonePage() {
                 The 10-Question Checklist
               </h2>
               <p className="text-xs text-gray-500 mt-1">
-                Auto-detected where possible. Tap to override.
+                Auto-detected where possible.
               </p>
             </div>
             <p
@@ -954,10 +1205,17 @@ export default function LiquidityZonePage() {
           </div>
         )}
 
+        {hasWarnings && (
+          <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
+            ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
+            {warningReasons.length === 1 ? "" : "s"} detected.
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={handleSave}
-          disabled={saving || !canSave}
+          onClick={() => handleSave(false)}
+          disabled={saving || !trade}
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             checklistVerdict.passed
               ? "bg-green-700 hover:bg-green-600"
@@ -965,9 +1223,7 @@ export default function LiquidityZonePage() {
           }`}
         >
           {saving
-            ? isEdit
-              ? "Updating..."
-              : "Saving..."
+            ? "Saving..."
             : isEdit
             ? `✏️ Update Setup (${score}/10)`
             : checklistVerdict.passed
@@ -976,43 +1232,16 @@ export default function LiquidityZonePage() {
                 LIQUIDITY_ZONE_PASS_THRESHOLD - score
               } More)`}
         </button>
-
-        {/* Info card */}
-        <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
-          <h3 className="text-xs font-semibold text-blue-300 mb-2">
-            💡 How the Liquidity Zone Works
-          </h3>
-          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
-            <li>
-              <strong>Zone</strong> — a stack of rejected wicks
-            </li>
-            <li>
-              <strong>Multiple RBs</strong> — each wick is a target
-            </li>
-            <li>
-              <strong>Current RB</strong> — first target (freshest orders)
-            </li>
-            <li>
-              <strong>CE</strong> — 50% of the active RB = negotiation line
-            </li>
-            <li>
-              <strong>Close above RB high</strong> — BUY (strong, RB broken ↑)
-            </li>
-            <li>
-              <strong>Close below RB low</strong> — SELL (strong, RB broken ↓)
-            </li>
-            <li>
-              <strong>Close in premium (inside RB)</strong> — SELL (normal)
-            </li>
-            <li>
-              <strong>Close in discount (inside RB)</strong> — BUY (normal)
-            </li>
-            <li>
-              <strong>ATR rising</strong> — trade. Falling — wait.
-            </li>
-          </ul>
-        </div>
       </div>
+
+      {/* WARNING MODAL — SHARED COMPONENT */}
+      <WarningModal
+        open={showWarningModal}
+        warningReasons={warningReasons}
+        onCancel={() => setShowWarningModal(false)}
+        onConfirm={() => handleSave(true)}
+        saving={saving}
+      />
     </main>
   );
 }

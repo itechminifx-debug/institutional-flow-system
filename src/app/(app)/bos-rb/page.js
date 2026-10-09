@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
@@ -17,7 +17,22 @@ import {
   rbPositionInfo,
   rbPositionRules,
 } from "@/lib/bosRbEngine";
+import {
+  computeTrade,
+  validateTrade,
+} from "@/lib/tradeCalculator";
+import {
+  computeEmaDirection,
+  emaInfo,
+  emaAlignment,
+  enrichVerdict,
+  computeWarningReasons,
+  HTF_BIAS_OPTIONS,
+  SWEEP_DIRECTION_OPTIONS,
+} from "@/lib/verdictEngine";
 import PairPicker from "@/components/PairPicker";
+import TradeCard from "@/components/TradeCard";
+import WarningModal from "@/components/WarningModal";
 
 export default function BosRbPage() {
   const router = useRouter();
@@ -42,6 +57,10 @@ export default function BosRbPage() {
     lowerTfShift: false,
     useCe: true,
     atr: "",
+    ema50Price: "",
+    htfBiasInput: "auto",
+    sweepDirection: "none",
+    pipSize: 1,
     notes: "",
   });
 
@@ -53,6 +72,7 @@ export default function BosRbPage() {
   const [error, setError] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingDetailId, setExistingDetailId] = useState(null);
+  const [showWarningModal, setShowWarningModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -107,6 +127,10 @@ export default function BosRbPage() {
         useCe:
           setupData.use_ce_entry !== undefined ? setupData.use_ce_entry : true,
         atr: detailData?.atr?.toString() || "",
+        ema50Price: setupData.ema50_price?.toString() || "",
+        htfBiasInput: setupData.htf_bias_override || "auto",
+        sweepDirection: setupData.sweep_direction || "none",
+        pipSize: detailData?.pip_size || 1,
         notes: setupData.notes || "",
       }));
 
@@ -175,7 +199,42 @@ export default function BosRbPage() {
   const score = computeChecklistScore(combinedAnswers);
   const verdict = checklistVerdict(score);
 
-  const trade = computeBosRbTrade({
+  // EMA
+  const ema = computeEmaDirection({
+    emaPrice: form.ema50Price,
+    closePrice: form.bosClose,
+  });
+  const emaMeta = emaInfo(ema);
+
+  // Shared trade calculator
+  const sharedTrade = useMemo(() => {
+    if (!form.rbZoneHigh || !form.rbZoneLow || !form.htfBias) return null;
+    const rbHigh = parseFloat(form.rbZoneHigh);
+    const rbLow = parseFloat(form.rbZoneLow);
+    if (isNaN(rbHigh) || isNaN(rbLow)) return null;
+    const ce = Math.round(((rbHigh + rbLow) / 2) * 100) / 100;
+    const slRef = form.htfBias === "bullish" ? rbLow : rbHigh;
+    return computeTrade({
+      direction: form.htfBias === "bullish" ? "BUY" : "SELL",
+      entry: ce,
+      slReference: slRef,
+      atr: parseFloat(form.atr) || 0,
+      accountSize: profile?.account_size || 0,
+      riskPercent: profile?.risk_percent || 1,
+      pipSize: parseFloat(form.pipSize) || 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    form.rbZoneHigh,
+    form.rbZoneLow,
+    form.htfBias,
+    form.atr,
+    form.pipSize,
+    profile?.account_size,
+    profile?.risk_percent,
+  ]);
+
+  const baseTrade = computeBosRbTrade({
     htfBias: form.htfBias,
     rbZoneHigh: form.rbZoneHigh,
     rbZoneLow: form.rbZoneLow,
@@ -186,6 +245,66 @@ export default function BosRbPage() {
     atr: parseFloat(form.atr) || 0,
   });
 
+  const trade = sharedTrade || baseTrade;
+
+  // Enriched verdict
+  const baseVerdict = useMemo(() => {
+    if (!trade) return null;
+    return {
+      verdict: trade.direction,
+      strength: verdict.passed ? "strong" : "normal",
+      reason: verdict.passed
+        ? "BOS+RB checklist passed — setup valid."
+        : "BOS+RB checklist partial — trade with caution.",
+    };
+  }, [trade, verdict]);
+
+  const enrichedVerdict = useMemo(
+    () =>
+      enrichVerdict({
+        verdict: baseVerdict,
+        ema,
+        htfBiasInput: form.htfBiasInput,
+        sweepDirection: form.sweepDirection,
+      }),
+    [baseVerdict, ema, form.htfBiasInput, form.sweepDirection]
+  );
+
+  const alignment = enrichedVerdict?.emaAlignment;
+
+  // Trade validation
+  const tradeValidation = useMemo(
+    () =>
+      validateTrade({
+        trade,
+        verdict: enrichedVerdict?.verdict,
+      }),
+    [trade, enrichedVerdict]
+  );
+
+  // Warnings
+  const warningReasons = useMemo(
+    () =>
+      computeWarningReasons({
+        verdict: enrichedVerdict,
+        alignment,
+        pathDanger: null,
+        blockerBadge: null,
+        extraReasons:
+          !verdict.passed && score < CHECKLIST_PASS_THRESHOLD
+            ? [
+                {
+                  key: "checklist_fail",
+                  label: `Checklist failed (${score}/10)`,
+                  detail: `Need at least ${CHECKLIST_PASS_THRESHOLD} checks to pass — currently ${score}.`,
+                },
+              ]
+            : [],
+      }),
+    [enrichedVerdict, alignment, verdict, score]
+  );
+  const hasWarnings = warningReasons.length > 0;
+
   function toggleManual(key) {
     setManualAnswers((prev) => ({
       ...prev,
@@ -193,7 +312,13 @@ export default function BosRbPage() {
     }));
   }
 
-  async function handleSave() {
+  async function handleSave(force = false) {
+    if (hasWarnings && !force) {
+      setShowWarningModal(true);
+      return;
+    }
+    setShowWarningModal(false);
+
     setSaving(true);
     setError("");
 
@@ -212,7 +337,7 @@ export default function BosRbPage() {
       setup_type: "bos_rb",
       d1_bias: form.htfBias,
       htf_bias: form.htfBias,
-      ema50_position: "above",
+      ema50_position: ema.position !== "unknown" ? ema.position : "above",
       rejection_block_zone: `${form.rbZoneLow}-${form.rbZoneHigh}`,
       ce_price: trade?.entry || null,
       use_ce_entry: form.useCe,
@@ -226,6 +351,8 @@ export default function BosRbPage() {
         : null,
       checklist_score: score,
       checklist_passed: verdict.passed,
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
       notes: form.notes,
     };
 
@@ -275,11 +402,30 @@ export default function BosRbPage() {
       rb_zone_high: form.rbZoneHigh ? parseFloat(form.rbZoneHigh) : null,
       rb_zone_low: form.rbZoneLow ? parseFloat(form.rbZoneLow) : null,
       ce_price: trade?.entry || null,
+      entry: trade?.entry || null,
+      sl: trade?.sl || null,
+      tp: trade?.tp || null,
+      lot_size: trade?.lotSize || null,
+      risk_amount: trade?.riskAmount || null,
+      pip_size: trade?.pipSize || null,
+      sl_pips: trade?.slPips || null,
+      tp_pips: trade?.tpPips || null,
+      atr: form.atr ? parseFloat(form.atr) : null,
       fvg_present: form.fvgPresent,
       lower_tf_shift: form.lowerTfShift,
       checklist_score: score,
       checklist_passed: verdict.passed,
       checklist_answers: combinedAnswers,
+      ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
+      ema50_direction: ema.direction,
+      ema50_position: ema.position,
+      ema50_aligned: alignment?.key === "aligned",
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
+      htf_conflict: enrichedVerdict?.hasHtfConflict || false,
+      sweep_override: enrichedVerdict?.hasSweepOverride || false,
+      warning_acknowledged: hasWarnings,
+      warning_reasons: warningReasons.map((r) => r.key),
       notes: form.notes,
     };
 
@@ -304,7 +450,6 @@ export default function BosRbPage() {
       }
     }
 
-    // Auto-create a linked trade in the journal
     if (!isEdit) {
       await createTradeFromSetup({
         supabase,
@@ -420,7 +565,7 @@ export default function BosRbPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                BOS Level (broken swing)
+                BOS Level
               </label>
               <input
                 type="number"
@@ -480,9 +625,6 @@ export default function BosRbPage() {
               placeholder="e.g. 1.2"
               className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              ≥ 1.0× ATR = strong displacement
-            </p>
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
@@ -610,15 +752,112 @@ export default function BosRbPage() {
           </label>
         </div>
 
+        {/* EMA 50 · HTF Bias · Sweep Direction */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <h2 className="text-sm font-semibold text-blue-400">
+            EMA 50 · HTF Bias · Sweep Direction
+          </h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                HTF Bias
+              </label>
+              <select
+                value={form.htfBiasInput}
+                onChange={(e) => update("htfBiasInput", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {HTF_BIAS_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Sweep Direction
+              </label>
+              <select
+                value={form.sweepDirection}
+                onChange={(e) => update("sweepDirection", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {SWEEP_DIRECTION_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Price}
+                onChange={(e) => update("ema50Price", e.target.value)}
+                placeholder="e.g. 189885"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Pip size
+              </label>
+              <select
+                value={form.pipSize}
+                onChange={(e) =>
+                  update("pipSize", parseFloat(e.target.value))
+                }
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                <option value={0.0001}>0.0001</option>
+                <option value={0.001}>0.001</option>
+                <option value={0.01}>0.01</option>
+                <option value={0.1}>0.1</option>
+                <option value={1}>1.0 (VOL)</option>
+              </select>
+            </div>
+          </div>
+
+          {ema.valid && (
+            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs">
+                <span className="text-gray-400">EMA bias:</span>{" "}
+                <span className={`font-bold ${emaMeta.direction.color}`}>
+                  {emaMeta.direction.emoji} {emaMeta.direction.label}
+                </span>
+              </p>
+              <p className="text-xs">
+                <span className="text-gray-400">Price position:</span>{" "}
+                <span className={`font-bold ${emaMeta.position.color}`}>
+                  {emaMeta.position.label}
+                </span>
+              </p>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* RB Position Rules Card */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-blue-400">
               RB Position — All Three Are Valid
             </h2>
-            <span className="text-xs text-gray-500">
-              BOS sets direction. RB is only where price negotiates.
-            </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -642,97 +881,110 @@ export default function BosRbPage() {
                     )}
                   </div>
                   <p className="text-xs opacity-90 mb-2">{rule.approach}</p>
-                  <div className="text-xs space-y-0.5">
-                    <p>
-                      <span className="opacity-70">Direction:</span>{" "}
-                      <span className="font-bold">{rule.direction}</span>
-                    </p>
-                    <p>
-                      <span className="opacity-70">Entry:</span> {rule.entry}
-                    </p>
-                  </div>
                 </div>
               );
             })}
           </div>
-
-          <p className="text-xs text-gray-500 pt-1 border-t border-gray-800">
-            The RB can sit above, inside, or below the BOS zone — all
-            three are valid. Price approaches the RB, tests it, and
-            continues in the BOS direction. Entry is always the CE
-            (50%) of the RB.
-          </p>
         </div>
 
-        {/* Trade Parameters */}
-        {trade && (
-          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-            <h2 className="text-sm font-semibold text-blue-400">
-              Trade Parameters
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-gray-500">Direction</p>
-                <p
-                  className={`font-bold ${
-                    trade.direction === "BUY"
-                      ? "text-green-400"
-                      : "text-red-400"
-                  }`}
+        {/* Enriched Verdict */}
+        {enrichedVerdict && (
+          <div
+            className={`p-4 rounded-lg border space-y-2 ${
+              enrichedVerdict.verdict === "BUY"
+                ? "bg-green-950/50 border-green-600 text-green-200"
+                : "bg-red-950/50 border-red-600 text-red-200"
+            }`}
+          >
+            <p className="text-xs opacity-80">Verdict</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-2xl font-bold">
+                {enrichedVerdict.verdict === "BUY" ? "🟢" : "🔴"}{" "}
+                {enrichedVerdict.verdict}
+              </p>
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                  enrichedVerdict.strength === "strong"
+                    ? "bg-green-900/40 text-green-300"
+                    : enrichedVerdict.strength === "weak"
+                    ? "bg-yellow-900/40 text-yellow-300"
+                    : "bg-blue-900/40 text-blue-300"
+                }`}
+              >
+                {enrichedVerdict.strength}
+              </span>
+              <span
+                className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                  verdict.passed
+                    ? "bg-green-900/40 text-green-300"
+                    : "bg-yellow-900/40 text-yellow-300"
+                }`}
+              >
+                Checklist {score}/10
+              </span>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
                 >
-                  {trade.direction}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">
-                  Entry ({trade.entryIsCe ? "CE — 50%" : "RB edge"})
-                </p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  {formatPrice(trade.entry)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Stop Loss</p>
-                <p className="font-bold tabular-nums text-red-400">
-                  {formatPrice(trade.sl)}
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {trade.slSource === "wick+buffer"
-                    ? "wick + buffer"
-                    : "wick only"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Take Profit (2R)</p>
-                <p className="font-bold tabular-nums text-green-400">
-                  {formatPrice(trade.tp)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">CE (50%)</p>
-                <p className="font-bold tabular-nums text-blue-300">
-                  {formatPrice(trade.cePrice)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.risk.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Lot Size</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.lotSize.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk ($)</p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  ${trade.riskAmount.toFixed(2)}
-                </p>
-              </div>
+                  {alignment.label}
+                </span>
+              )}
             </div>
+            <p className="text-sm opacity-90">{enrichedVerdict.reason}</p>
+          </div>
+        )}
+
+        {/* HTF Conflict Banner */}
+        {enrichedVerdict?.hasHtfConflict && (
+          <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/40 space-y-2">
+            <p className="text-sm font-bold text-red-200">
+              🚨 Counter-Trend Trade
+            </p>
+            {enrichedVerdict.htfConflict.map((c, i) => (
+              <div key={i}>
+                <p className="text-xs font-semibold text-red-200">
+                  {c.label}
+                </p>
+                <p className="text-xs text-red-300 mt-0.5">{c.detail}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sweep Override Banner */}
+        {enrichedVerdict?.hasSweepOverride && (
+          <div className="p-4 rounded-lg border-2 border-purple-700 bg-purple-950/40 space-y-2">
+            <p className="text-sm font-bold text-purple-200">
+              🔄 Sweep Override
+            </p>
+            <p className="text-xs text-purple-200">
+              {enrichedVerdict.sweepOverride.label}
+            </p>
+            <p className="text-xs text-purple-300 mt-1">
+              {enrichedVerdict.sweepOverride.detail}
+            </p>
+          </div>
+        )}
+
+        {/* Trade Card — SHARED COMPONENT */}
+        {trade && (
+          <TradeCard
+            trade={trade}
+            badges={[
+              alignment && {
+                label: alignment.label,
+                className: alignment.color,
+              },
+            ].filter(Boolean)}
+          />
+        )}
+
+        {/* Trade validation errors */}
+        {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
+          <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm space-y-1">
+            {tradeValidation.errors.map((e, i) => (
+              <p key={i}>⚠️ {e}</p>
+            ))}
           </div>
         )}
 
@@ -772,12 +1024,6 @@ export default function BosRbPage() {
               {verdict.emoji} {verdict.label}
             </p>
             <p className="text-xs opacity-90 mt-1">{verdict.description}</p>
-            {!verdict.passed && (
-              <p className="text-xs opacity-70 mt-2">
-                Need {CHECKLIST_PASS_THRESHOLD - score} more check
-                {CHECKLIST_PASS_THRESHOLD - score === 1 ? "" : "s"} to pass
-              </p>
-            )}
           </div>
 
           <div className="space-y-2 pt-2">
@@ -785,7 +1031,6 @@ export default function BosRbPage() {
               const isAuto = autoAnswers[q.key];
               const isManual = manualAnswers[q.key] !== undefined;
               const isOn = combinedAnswers[q.key];
-
               const showDirectionalBadge =
                 q.key === "rb_aligned" && autoAnswers.rb_direction_ok === true;
 
@@ -867,9 +1112,17 @@ export default function BosRbPage() {
           </div>
         )}
 
+        {hasWarnings && (
+          <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
+            ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
+            {warningReasons.length === 1 ? "" : "s"} detected. The Save button
+            will show a confirmation.
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={handleSave}
+          onClick={() => handleSave(false)}
           disabled={saving || !trade}
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             verdict.passed
@@ -878,9 +1131,7 @@ export default function BosRbPage() {
           }`}
         >
           {saving
-            ? isEdit
-              ? "Updating..."
-              : "Saving..."
+            ? "Saving..."
             : isEdit
             ? "✏️ Update Setup"
             : verdict.passed
@@ -889,41 +1140,16 @@ export default function BosRbPage() {
                 CHECKLIST_PASS_THRESHOLD - score
               } More)`}
         </button>
-
-        {/* Info card */}
-        <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
-          <h3 className="text-xs font-semibold text-blue-300 mb-2">
-            💡 How BOS + RB Works
-          </h3>
-          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
-            <li>
-              <strong>BOS</strong> — Break of Structure (continuation)
-            </li>
-            <li>
-              <strong>Liquidity raid</strong> — the trap before the break
-            </li>
-            <li>
-              <strong>Displacement</strong> — strong move after the BOS
-            </li>
-            <li>
-              <strong>RB</strong> — can be above, inside, or below the BOS
-              zone (all three are valid)
-            </li>
-            <li>
-              <strong>Entry</strong> — the CE (50%) of the RB zone
-            </li>
-            <li>
-              <strong>SL</strong> — beyond the wick extreme
-            </li>
-            <li>
-              <strong>TP</strong> — 2R from entry
-            </li>
-            <li>
-              <strong>7+ checklist</strong> — pass threshold
-            </li>
-          </ul>
-        </div>
       </div>
+
+      {/* WARNING MODAL — SHARED COMPONENT */}
+      <WarningModal
+        open={showWarningModal}
+        warningReasons={warningReasons}
+        onCancel={() => setShowWarningModal(false)}
+        onConfirm={() => handleSave(true)}
+        saving={saving}
+      />
     </main>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
@@ -13,7 +13,22 @@ import {
   premiumDiscountVerdict,
   strengthInfo,
 } from "@/lib/premiumDiscountEngine";
+import {
+  computeTrade,
+  validateTrade,
+} from "@/lib/tradeCalculator";
+import {
+  computeEmaDirection,
+  emaInfo,
+  emaAlignment,
+  enrichVerdict,
+  computeWarningReasons,
+  HTF_BIAS_OPTIONS,
+  SWEEP_DIRECTION_OPTIONS,
+} from "@/lib/verdictEngine";
 import PairPicker from "@/components/PairPicker";
+import TradeCard from "@/components/TradeCard";
+import WarningModal from "@/components/WarningModal";
 
 export default function PremiumDiscountPage() {
   const router = useRouter();
@@ -32,6 +47,11 @@ export default function PremiumDiscountPage() {
     zoneLow: "",
     priorPrice: "",
     closePrice: "",
+    ema50Price: "",
+    htfBiasInput: "auto",
+    sweepDirection: "none",
+    atrCurrent: "",
+    pipSize: 1,
     notes: "",
   });
 
@@ -41,6 +61,7 @@ export default function PremiumDiscountPage() {
   const [error, setError] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingDetailId, setExistingDetailId] = useState(null);
+  const [showWarningModal, setShowWarningModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -87,6 +108,11 @@ export default function PremiumDiscountPage() {
         zoneLow: detailData?.zone_low?.toString() || "",
         priorPrice: detailData?.prior_price?.toString() || "",
         closePrice: detailData?.close_price?.toString() || "",
+        ema50Price: setupData.ema50_price?.toString() || "",
+        htfBiasInput: setupData.htf_bias_override || "auto",
+        sweepDirection: setupData.sweep_direction || "none",
+        atrCurrent: detailData?.atr_current?.toString() || "",
+        pipSize: detailData?.pip_size || 1,
         notes: setupData.notes || "",
       }));
 
@@ -101,6 +127,7 @@ export default function PremiumDiscountPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  // CE + side
   const ce = computeCe(form.zoneHigh, form.zoneLow);
   const sideOfCe = ce !== null ? detectSideOfCe(form.closePrice, ce) : null;
   const zonePosition = detectZonePosition(
@@ -109,7 +136,8 @@ export default function PremiumDiscountPage() {
     form.zoneLow
   );
 
-  const result = judgeNegotiation({
+  // Base verdict from premium/discount engine
+  const baseResult = judgeNegotiation({
     zoneType: form.zoneType,
     zoneHigh: form.zoneHigh,
     zoneLow: form.zoneLow,
@@ -117,14 +145,98 @@ export default function PremiumDiscountPage() {
     closePrice: form.closePrice,
   });
 
-  const verdict = premiumDiscountVerdict(result);
-  const strength = result ? strengthInfo(result.strength) : null;
+  // EMA
+  const ema = computeEmaDirection({
+    emaPrice: form.ema50Price,
+    closePrice: form.closePrice,
+  });
+  const emaMeta = emaInfo(ema);
 
-  async function handleSave() {
-    if (!result) {
-      setError("Nothing to save — fill in the zone and close first.");
+  // Enrich verdict with EMA + HTF + Sweep
+  const enrichedVerdict = useMemo(() => {
+    if (!baseResult) return null;
+    const base = {
+      verdict: baseResult.verdict,
+      strength: baseResult.strength || "normal",
+      reason: baseResult.reason || "",
+    };
+    return enrichVerdict({
+      verdict: base,
+      ema,
+      htfBiasInput: form.htfBiasInput,
+      sweepDirection: form.sweepDirection,
+    });
+  }, [baseResult, ema, form.htfBiasInput, form.sweepDirection]);
+
+  const alignment = enrichedVerdict?.emaAlignment;
+
+  // Shared trade calculator
+  const trade = useMemo(() => {
+    if (!enrichedVerdict) return null;
+    const v = enrichedVerdict.verdict;
+    if (v !== "BUY" && v !== "SELL") return null;
+    if (!form.zoneHigh || !form.zoneLow) return null;
+    const zoneHigh = parseFloat(form.zoneHigh);
+    const zoneLow = parseFloat(form.zoneLow);
+    if (isNaN(zoneHigh) || isNaN(zoneLow)) return null;
+    const ceVal = Math.round(((zoneHigh + zoneLow) / 2) * 100) / 100;
+    const slRef = v === "BUY" ? zoneLow : zoneHigh;
+    return computeTrade({
+      direction: v,
+      entry: ceVal,
+      slReference: slRef,
+      atr: parseFloat(form.atrCurrent) || 0,
+      accountSize: profile?.account_size || 0,
+      riskPercent: profile?.risk_percent || 1,
+      pipSize: parseFloat(form.pipSize) || 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    enrichedVerdict,
+    form.zoneHigh,
+    form.zoneLow,
+    form.atrCurrent,
+    form.pipSize,
+    profile?.account_size,
+    profile?.risk_percent,
+  ]);
+
+  // Trade validation
+  const tradeValidation = useMemo(
+    () =>
+      validateTrade({
+        trade,
+        verdict: enrichedVerdict?.verdict,
+      }),
+    [trade, enrichedVerdict]
+  );
+
+  // Warnings
+  const warningReasons = useMemo(
+    () =>
+      computeWarningReasons({
+        verdict: enrichedVerdict,
+        alignment,
+        pathDanger: null,
+        blockerBadge: null,
+      }),
+    [enrichedVerdict, alignment]
+  );
+  const hasWarnings = warningReasons.length > 0;
+
+  const verdict = premiumDiscountVerdict(enrichedVerdict || baseResult);
+
+  async function handleSave(force = false) {
+    if (!enrichedVerdict || !trade) {
+      setError("Fill in the zone and close first to compute a trade.");
       return;
     }
+
+    if (hasWarnings && !force) {
+      setShowWarningModal(true);
+      return;
+    }
+    setShowWarningModal(false);
 
     setSaving(true);
     setError("");
@@ -142,14 +254,16 @@ export default function PremiumDiscountPage() {
       user_id: user.id,
       pair: form.pair,
       setup_type: "premium_discount",
-      d1_bias: result.verdict === "BUY" ? "bullish" : "bearish",
-      htf_bias: result.verdict === "BUY" ? "bullish" : "bearish",
-      ema50_position: "above",
+      d1_bias: enrichedVerdict.verdict === "BUY" ? "bullish" : "bearish",
+      htf_bias: enrichedVerdict.verdict === "BUY" ? "bullish" : "bearish",
+      ema50_position: ema.position !== "unknown" ? ema.position : "above",
       rejection_block_zone: `${form.zoneLow}-${form.zoneHigh}`,
-      ce_price: result.ce,
+      ce_price: trade.entry,
       use_ce_entry: true,
       checklist_score: 0,
       checklist_passed: false,
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
       notes: form.notes,
     };
 
@@ -190,14 +304,33 @@ export default function PremiumDiscountPage() {
       zone_name: form.zoneName,
       zone_high: form.zoneHigh ? parseFloat(form.zoneHigh) : null,
       zone_low: form.zoneLow ? parseFloat(form.zoneLow) : null,
-      ce_price: result.ce,
+      ce_price: trade.entry,
       prior_price: form.priorPrice ? parseFloat(form.priorPrice) : null,
       close_price: form.closePrice ? parseFloat(form.closePrice) : null,
-      premium_discount: result.premiumDiscount,
-      zone_position: result.zonePosition,
-      verdict: result.verdict,
-      strength: result.strength,
-      reason: result.reason,
+      premium_discount: baseResult?.premiumDiscount || sideOfCe,
+      zone_position: baseResult?.zonePosition || zonePosition,
+      verdict: enrichedVerdict.verdict,
+      strength: enrichedVerdict.strength,
+      reason: enrichedVerdict.reason,
+      entry: trade.entry,
+      sl: trade.sl,
+      tp: trade.tp,
+      lot_size: trade.lotSize,
+      risk_amount: trade.riskAmount,
+      pip_size: trade.pipSize,
+      sl_pips: trade.slPips,
+      tp_pips: trade.tpPips,
+      atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
+      ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
+      ema50_direction: ema.direction,
+      ema50_position: ema.position,
+      ema50_aligned: alignment?.key === "aligned",
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
+      htf_conflict: enrichedVerdict.hasHtfConflict || false,
+      sweep_override: enrichedVerdict.hasSweepOverride || false,
+      warning_acknowledged: hasWarnings,
+      warning_reasons: warningReasons.map((r) => r.key),
       notes: form.notes,
     };
 
@@ -222,22 +355,21 @@ export default function PremiumDiscountPage() {
       }
     }
 
-    // Auto-create a linked trade in the journal
     if (!isEdit) {
       await createTradeFromSetup({
         supabase,
         userId: user.id,
         setupId: setup.id,
         pair: form.pair,
-        direction: result.verdict === "BUY" ? "buy" : "sell",
-        entry: result.ce,
-        sl: null,
-        tp: null,
-        lotSize: null,
+        direction: trade.direction === "BUY" ? "buy" : "sell",
+        entry: trade.entry,
+        sl: trade.sl,
+        tp: trade.tp,
+        lotSize: trade.lotSize,
         riskPercent: profile?.risk_percent || 1,
         rr: 2,
         extra: {
-          ce_price: result.ce,
+          ce_price: trade.entry,
           used_ce_entry: true,
         },
       });
@@ -330,7 +462,7 @@ export default function PremiumDiscountPage() {
 
           <div>
             <label className="block text-xs mb-1 text-gray-400">
-              Zone Name (e.g. Rejection Block, FVG, Order Block)
+              Zone Name
             </label>
             <input
               type="text"
@@ -406,7 +538,7 @@ export default function PremiumDiscountPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                Prior Price (before approaching the zone)
+                Prior Price
               </label>
               <input
                 type="number"
@@ -419,7 +551,7 @@ export default function PremiumDiscountPage() {
             </div>
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                Close Price (after the negotiation)
+                Close Price (verdict)
               </label>
               <input
                 type="number"
@@ -449,43 +581,209 @@ export default function PremiumDiscountPage() {
                   ? "🔻 Closed in DISCOUNT — buyers' territory"
                   : "🎯 Closed at CE"}
               </p>
-              {zonePosition && (
-                <p className="text-xs text-gray-400 mt-1">
-                  Zone position: <strong>{zonePosition}</strong>
-                </p>
+            </div>
+          )}
+        </div>
+
+        {/* EMA 50 · HTF Bias · Sweep Direction · ATR · Pip */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <h2 className="text-sm font-semibold text-blue-400">
+            EMA 50 · HTF Bias · Sweep Direction · ATR
+          </h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                HTF Bias
+              </label>
+              <select
+                value={form.htfBiasInput}
+                onChange={(e) => update("htfBiasInput", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {HTF_BIAS_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Sweep Direction
+              </label>
+              <select
+                value={form.sweepDirection}
+                onChange={(e) => update("sweepDirection", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {SWEEP_DIRECTION_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Price}
+                onChange={(e) => update("ema50Price", e.target.value)}
+                placeholder="e.g. 209550"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                ATR (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.atrCurrent}
+                onChange={(e) => update("atrCurrent", e.target.value)}
+                placeholder="e.g. 120"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Pip size
+              </label>
+              <select
+                value={form.pipSize}
+                onChange={(e) =>
+                  update("pipSize", parseFloat(e.target.value))
+                }
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                <option value={0.0001}>0.0001</option>
+                <option value={0.001}>0.001</option>
+                <option value={0.01}>0.01</option>
+                <option value={0.1}>0.1</option>
+                <option value={1}>1.0 (VOL)</option>
+              </select>
+            </div>
+          </div>
+
+          {ema.valid && (
+            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs">
+                <span className="text-gray-400">EMA bias:</span>{" "}
+                <span className={`font-bold ${emaMeta.direction.color}`}>
+                  {emaMeta.direction.emoji} {emaMeta.direction.label}
+                </span>
+              </p>
+              <p className="text-xs">
+                <span className="text-gray-400">Price position:</span>{" "}
+                <span className={`font-bold ${emaMeta.position.color}`}>
+                  {emaMeta.position.label}
+                </span>
+              </p>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
               )}
             </div>
           )}
         </div>
 
-        {/* Verdict */}
-        {result && (
-          <div className={`p-4 rounded-lg border space-y-3 ${verdict.color}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs opacity-80">Verdict</p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-2xl font-bold">
-                    {verdict.emoji} {verdict.label}
-                  </p>
-                  {verdict.brokenBadge && (
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full font-semibold ${verdict.brokenBadge.color}`}
-                    >
-                      {verdict.brokenBadge.label}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {strength && (
+        {/* Enriched Verdict */}
+        {enrichedVerdict && (
+          <div
+            className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}
+          >
+            <p className="text-xs opacity-80">Verdict</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-2xl font-bold">
+                {verdict.emoji} {verdict.label}
+              </p>
+              {enrichedVerdict.strength && (
                 <span
-                  className={`text-xs px-2 py-1 rounded-full font-semibold ${strength.color}`}
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                    enrichedVerdict.strength === "strong"
+                      ? "bg-green-900/40 text-green-300"
+                      : enrichedVerdict.strength === "weak"
+                      ? "bg-yellow-900/40 text-yellow-300"
+                      : "bg-blue-900/40 text-blue-300"
+                  }`}
                 >
-                  {strength.emoji} {strength.label}
+                  {enrichedVerdict.strength}
+                </span>
+              )}
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
                 </span>
               )}
             </div>
             <p className="text-sm opacity-90">{verdict.description}</p>
+          </div>
+        )}
+
+        {/* HTF Conflict Banner */}
+        {enrichedVerdict?.hasHtfConflict && (
+          <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/40 space-y-2">
+            <p className="text-sm font-bold text-red-200">
+              🚨 Counter-Trend Trade
+            </p>
+            {enrichedVerdict.htfConflict.map((c, i) => (
+              <div key={i}>
+                <p className="text-xs font-semibold text-red-200">
+                  {c.label}
+                </p>
+                <p className="text-xs text-red-300 mt-0.5">{c.detail}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sweep Override Banner */}
+        {enrichedVerdict?.hasSweepOverride && (
+          <div className="p-4 rounded-lg border-2 border-purple-700 bg-purple-950/40 space-y-2">
+            <p className="text-sm font-bold text-purple-200">
+              🔄 Sweep Override
+            </p>
+            <p className="text-xs text-purple-200">
+              {enrichedVerdict.sweepOverride.label}
+            </p>
+            <p className="text-xs text-purple-300 mt-1">
+              {enrichedVerdict.sweepOverride.detail}
+            </p>
+          </div>
+        )}
+
+        {/* Trade Card — SHARED COMPONENT */}
+        {trade && (
+          <TradeCard
+            trade={trade}
+            badges={[
+              alignment && {
+                label: alignment.label,
+                className: alignment.color,
+              },
+            ].filter(Boolean)}
+          />
+        )}
+
+        {/* Trade validation errors */}
+        {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
+          <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm space-y-1">
+            {tradeValidation.errors.map((e, i) => (
+              <p key={i}>⚠️ {e}</p>
+            ))}
           </div>
         )}
 
@@ -513,67 +811,47 @@ export default function PremiumDiscountPage() {
           </div>
         )}
 
+        {hasWarnings && (
+          <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
+            ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
+            {warningReasons.length === 1 ? "" : "s"} detected.
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={handleSave}
-          disabled={saving || !result || result.verdict === "WAIT"}
+          onClick={() => handleSave(false)}
+          disabled={saving || !trade}
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             isEdit
               ? "bg-blue-700 hover:bg-blue-600"
-              : result?.verdict === "BUY"
+              : enrichedVerdict?.verdict === "BUY"
               ? "bg-green-700 hover:bg-green-600"
-              : result?.verdict === "SELL"
+              : enrichedVerdict?.verdict === "SELL"
               ? "bg-red-700 hover:bg-red-600"
               : "bg-gray-800"
           }`}
         >
           {saving
-            ? isEdit
-              ? "Updating..."
-              : "Saving..."
+            ? "Saving..."
             : isEdit
             ? "✏️ Update Setup"
-            : result?.verdict === "BUY"
+            : enrichedVerdict?.verdict === "BUY"
             ? "✅ Save BUY Setup"
-            : result?.verdict === "SELL"
+            : enrichedVerdict?.verdict === "SELL"
             ? "🔴 Save SELL Setup"
             : "Fill zone + close to enable"}
         </button>
-
-        {/* Info card */}
-        <div className="p-4 rounded-lg bg-blue-950/30 border border-blue-900/50">
-          <h3 className="text-xs font-semibold text-blue-300 mb-2">
-            💡 How Premium / Discount Works
-          </h3>
-          <ul className="text-xs text-gray-300 space-y-1 ml-4 list-disc">
-            <li>
-              <strong>CE (50%)</strong> — pivot of the zone
-            </li>
-            <li>
-              <strong>Above CE</strong> — Premium (sellers' territory)
-            </li>
-            <li>
-              <strong>Below CE</strong> — Discount (buyers' territory)
-            </li>
-            <li>
-              <strong>Close in premium, inside zone</strong> — SELL
-              (sellers defended)
-            </li>
-            <li>
-              <strong>Close in discount, inside zone</strong> — BUY
-              (buyers defended)
-            </li>
-            <li>
-              <strong>Close above zone high</strong> — BUY (strong,
-              RB broken ↑)
-            </li>
-            <li>
-              <strong>Close below zone low</strong> — SELL (strong,
-              RB broken ↓)
-            </li>
-          </ul>
-        </div>
       </div>
+
+      {/* WARNING MODAL — SHARED COMPONENT */}
+      <WarningModal
+        open={showWarningModal}
+        warningReasons={warningReasons}
+        onCancel={() => setShowWarningModal(false)}
+        onConfirm={() => handleSave(true)}
+        saving={saving}
+      />
     </main>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
@@ -15,7 +15,23 @@ import {
   computeNextRBAlignment,
   strengthInfo,
 } from "@/lib/negotiationEngine";
+import {
+  computeTrade,
+  validateTrade,
+} from "@/lib/tradeCalculator";
+import {
+  computeEmaDirection,
+  emaInfo,
+  emaAlignment,
+  enrichVerdict,
+  computeWarningReasons,
+  resolveHtfBias,
+  HTF_BIAS_OPTIONS,
+  SWEEP_DIRECTION_OPTIONS,
+} from "@/lib/verdictEngine";
 import PairPicker from "@/components/PairPicker";
+import TradeCard from "@/components/TradeCard";
+import WarningModal from "@/components/WarningModal";
 
 export default function NegotiationPage() {
   const router = useRouter();
@@ -41,6 +57,11 @@ export default function NegotiationPage() {
     rbFlipped: false,
     nextRbHigh: "",
     nextRbLow: "",
+    ema50Price: "",
+    htfBiasInput: "auto",
+    sweepDirection: "none",
+    atrCurrent: "",
+    pipSize: 0.01,
     notes: "",
   });
 
@@ -51,6 +72,7 @@ export default function NegotiationPage() {
   const [error, setError] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingNegId, setExistingNegId] = useState(null);
+  const [showWarningModal, setShowWarningModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -104,6 +126,11 @@ export default function NegotiationPage() {
         rbFlipped: negData?.rb_flipped || false,
         nextRbHigh: negData?.next_rb_high?.toString() || "",
         nextRbLow: negData?.next_rb_low?.toString() || "",
+        ema50Price: setupData.ema50_price?.toString() || "",
+        htfBiasInput: setupData.htf_bias_override || "auto",
+        sweepDirection: setupData.sweep_direction || "none",
+        atrCurrent: negData?.atr_current?.toString() || "",
+        pipSize: negData?.pip_size || 0.01,
         notes: setupData.notes || "",
       }));
 
@@ -165,7 +192,15 @@ export default function NegotiationPage() {
       ? "SELL"
       : null;
 
-  const trade = computeNegotiationTrade({
+  // EMA
+  const ema = computeEmaDirection({
+    emaPrice: form.ema50Price,
+    closePrice: form.verdictClose,
+  });
+  const emaMeta = emaInfo(ema);
+
+  // Base negotiation trade (from the negotiation engine)
+  const baseTrade = computeNegotiationTrade({
     direction: tradeDirection,
     mssDirection: form.mssDirection,
     rbZoneHigh: form.rbZoneHigh,
@@ -175,6 +210,93 @@ export default function NegotiationPage() {
     accountSize: profile?.account_size || 0,
     riskPercent: profile?.risk_percent || 1,
   });
+
+  // Shared trade calculator — consistent output
+  const sharedTrade = useMemo(() => {
+    if (!tradeDirection || !form.rbZoneHigh || !form.rbZoneLow) return null;
+    const rbHigh = parseFloat(form.rbZoneHigh);
+    const rbLow = parseFloat(form.rbZoneLow);
+    if (isNaN(rbHigh) || isNaN(rbLow)) return null;
+    const ce = Math.round(((rbHigh + rbLow) / 2) * 100) / 100;
+    const slRef = tradeDirection === "BUY" ? rbLow : rbHigh;
+    return computeTrade({
+      direction: tradeDirection,
+      entry: ce,
+      slReference: slRef,
+      atr: parseFloat(form.atrCurrent) || 0,
+      accountSize: profile?.account_size || 0,
+      riskPercent: profile?.risk_percent || 1,
+      pipSize: parseFloat(form.pipSize) || 0.01,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    tradeDirection,
+    form.rbZoneHigh,
+    form.rbZoneLow,
+    form.atrCurrent,
+    form.pipSize,
+    profile?.account_size,
+    profile?.risk_percent,
+  ]);
+
+  const trade = sharedTrade || baseTrade;
+
+  // Base verdict from battle state
+  const baseVerdict = useMemo(() => {
+    if (!trade) return null;
+    const verdictStr =
+      trade.direction === "BUY"
+        ? "BUY"
+        : trade.direction === "SELL"
+        ? "SELL"
+        : null;
+    if (!verdictStr) return null;
+    return {
+      verdict: verdictStr,
+      strength: "normal",
+      reason: battle.description || "Battle Zone confirmed.",
+    };
+  }, [trade, battle]);
+
+  // Enrich with EMA + HTF + Sweep
+  const enrichedVerdict = useMemo(
+    () =>
+      enrichVerdict({
+        verdict: baseVerdict,
+        ema,
+        htfBiasInput: form.htfBiasInput,
+        sweepDirection: form.sweepDirection,
+      }),
+    [baseVerdict, ema, form.htfBiasInput, form.sweepDirection]
+  );
+
+  const alignment = enrichedVerdict?.emaAlignment;
+  const strength = enrichedVerdict
+    ? strengthInfo(enrichedVerdict.strength)
+    : null;
+
+  // Trade validation
+  const tradeValidation = useMemo(
+    () =>
+      validateTrade({
+        trade,
+        verdict: enrichedVerdict?.verdict,
+      }),
+    [trade, enrichedVerdict]
+  );
+
+  // Warning reasons
+  const warningReasons = useMemo(
+    () =>
+      computeWarningReasons({
+        verdict: enrichedVerdict,
+        alignment,
+        pathDanger: null,
+        blockerBadge: null,
+      }),
+    [enrichedVerdict, alignment]
+  );
+  const hasWarnings = warningReasons.length > 0;
 
   const nextRbAlignment = trade
     ? computeNextRBAlignment({
@@ -191,7 +313,13 @@ export default function NegotiationPage() {
     battle.state === "bullish_confirmed" ||
     battle.state === "bearish_confirmed";
 
-  async function handleSave() {
+  async function handleSave(force = false) {
+    if (hasWarnings && !force) {
+      setShowWarningModal(true);
+      return;
+    }
+    setShowWarningModal(false);
+
     setSaving(true);
     setError("");
 
@@ -214,16 +342,9 @@ export default function NegotiationPage() {
       setup_type: "negotiation",
       d1_bias: direction === "SELL" ? "bearish" : "bullish",
       htf_bias: direction === "SELL" ? "bearish" : "bullish",
-      ema50_position: "above",
+      ema50_position: ema.position !== "unknown" ? ema.position : "above",
       rejection_block_zone: `${form.rbZoneLow}-${form.rbZoneHigh}`,
-      ce_price:
-        form.rbZoneHigh && form.rbZoneLow
-          ? Math.round(
-              ((parseFloat(form.rbZoneHigh) + parseFloat(form.rbZoneLow)) /
-                2) *
-                100
-            ) / 100
-          : null,
+      ce_price: trade?.entry || null,
       use_ce_entry: true,
       rb_verdict: battle.state,
       rb_verdict_price: form.verdictClose
@@ -234,6 +355,8 @@ export default function NegotiationPage() {
       next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
       next_rb_low: form.nextRbLow ? parseFloat(form.nextRbLow) : null,
       next_rb_alignment: nextRbAlignment?.state || null,
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
       notes:
         form.notes ||
         `Battle Zone: ${configInfo?.label || form.configuration}`,
@@ -278,17 +401,36 @@ export default function NegotiationPage() {
       mss_zone_low: form.mssZoneLow ? parseFloat(form.mssZoneLow) : null,
       rb_zone_high: form.rbZoneHigh ? parseFloat(form.rbZoneHigh) : null,
       rb_zone_low: form.rbZoneLow ? parseFloat(form.rbZoneLow) : null,
-      ce_price: setup.ce_price,
+      ce_price: trade?.entry || null,
       verdict_close: form.verdictClose
         ? parseFloat(form.verdictClose)
         : null,
       verdict: battle.state,
       attempts: form.attempts,
       verdict_flipped: battle.state === "bearish_confirmed",
-      strength: configInfo?.strength || null,
+      strength: enrichedVerdict?.strength || null,
       next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
       next_rb_low: form.nextRbLow ? parseFloat(form.nextRbLow) : null,
       next_rb_alignment: nextRbAlignment?.state || null,
+      entry: trade?.entry || null,
+      sl: trade?.sl || null,
+      tp: trade?.tp || null,
+      lot_size: trade?.lotSize || null,
+      risk_amount: trade?.riskAmount || null,
+      pip_size: trade?.pipSize || null,
+      sl_pips: trade?.slPips || null,
+      tp_pips: trade?.tpPips || null,
+      atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
+      ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
+      ema50_direction: ema.direction,
+      ema50_position: ema.position,
+      ema50_aligned: alignment?.key === "aligned",
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
+      htf_conflict: enrichedVerdict?.hasHtfConflict || false,
+      sweep_override: enrichedVerdict?.hasSweepOverride || false,
+      warning_acknowledged: hasWarnings,
+      warning_reasons: warningReasons.map((r) => r.key),
       notes: form.notes,
     };
 
@@ -313,21 +455,13 @@ export default function NegotiationPage() {
       }
     }
 
-    // Auto-create a linked trade in the journal
     if (!isEdit) {
       await createTradeFromSetup({
         supabase,
         userId: user.id,
         setupId: setup.id,
         pair: form.pair,
-        direction:
-          battle.state === "bullish_confirmed"
-            ? "buy"
-            : battle.state === "bearish_confirmed"
-            ? "sell"
-            : direction === "bullish"
-            ? "buy"
-            : "sell",
+        direction: trade?.direction === "BUY" ? "buy" : "sell",
         entry: trade?.entry,
         sl: trade?.sl,
         tp: trade?.tp,
@@ -335,7 +469,7 @@ export default function NegotiationPage() {
         riskPercent: profile?.risk_percent || 1,
         rr: 2,
         extra: {
-          ce_price: setup.ce_price,
+          ce_price: trade?.entry || null,
           used_ce_entry: true,
           rb_verdict: battle.state,
         },
@@ -574,7 +708,7 @@ export default function NegotiationPage() {
           </div>
         </div>
 
-        {/* BATTLE ZONE VISUAL */}
+        {/* Battle Zone Visual */}
         {form.mssZoneHigh &&
           form.mssZoneLow &&
           form.rbZoneHigh &&
@@ -583,60 +717,18 @@ export default function NegotiationPage() {
               <h2 className="text-sm font-semibold text-blue-400">
                 ⚔️ The Battle Zone
               </h2>
-              <p className="text-xs text-gray-500">
-                Two strongholds. One close decides the verdict.
-              </p>
-
-              <div className="relative h-48 bg-black rounded-lg border border-gray-800 overflow-hidden">
-                <div
-                  className="absolute left-0 right-0 h-0.5 bg-green-500 z-10"
-                  style={{
-                    top: `${Math.max(
-                      0,
-                      100 -
-                        ((battle.bullishTarget - parseFloat(form.rbZoneLow)) /
-                          (parseFloat(form.mssZoneHigh) -
-                            parseFloat(form.rbZoneLow))) *
-                          100
-                    )}%`,
-                  }}
-                >
-                  <span className="absolute right-2 -top-5 text-xs text-green-400 font-bold">
-                    Bullish Target {formatPrice(battle.bullishTarget)}
-                  </span>
-                </div>
-
-                <div
-                  className="absolute left-0 right-0 h-0.5 bg-red-500 z-10"
-                  style={{ top: "95%" }}
-                >
-                  <span className="absolute right-2 top-1 text-xs text-red-400 font-bold">
-                    Bearish Target {formatPrice(battle.bearishTarget)}
-                  </span>
-                </div>
-
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <p className="text-3xl">⚔️</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Battle Zone
-                    </p>
-                  </div>
-                </div>
-              </div>
-
               <div className={`p-3 rounded-lg border-2 ${battle.color}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-bold">
-                    {battle.emoji} {battle.label}
-                  </span>
-                </div>
-                <p className="text-xs opacity-90">{battle.description}</p>
+                <p className="text-sm font-bold">
+                  {battle.emoji} {battle.label}
+                </p>
+                <p className="text-xs opacity-90 mt-1">
+                  {battle.description}
+                </p>
               </div>
             </div>
           )}
 
-        {/* CE */}
+        {/* CE Display */}
         {form.rbZoneHigh && form.rbZoneLow && (
           <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-950/40 to-amber-900/30 border-2 border-yellow-700 space-y-2">
             <h2 className="text-sm font-semibold text-yellow-300 uppercase tracking-wider">
@@ -657,9 +749,6 @@ export default function NegotiationPage() {
           <h2 className="text-sm font-semibold text-blue-400">
             The Verdict Close
           </h2>
-          <p className="text-xs text-gray-500">
-            Enter the close of the decisive candle
-          </p>
           <input
             type="number"
             step="any"
@@ -697,90 +786,207 @@ export default function NegotiationPage() {
                 attempts by the defender
               </span>
             </div>
-
-            {form.attempts >= 2 && (
-              <div className="p-3 rounded-lg bg-red-950/60 border border-red-700">
-                <p className="text-sm font-bold text-red-200">
-                  🔄 TWO ATTEMPTS USED
-                </p>
-                <p className="text-xs text-red-300">
-                  Watch for a decisive close in either direction.
-                </p>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Trade Output */}
-        {trade && (
-          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-            <h2 className="text-sm font-semibold text-blue-400">
-              Trade Parameters
-            </h2>
+        {/* EMA 50 · HTF Bias · Sweep Direction */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <h2 className="text-sm font-semibold text-blue-400">
+            EMA 50 · HTF Bias · Sweep Direction
+          </h2>
 
-            {!canEnter && (
-              <div className="p-3 rounded-lg bg-yellow-950/40 border border-yellow-800">
-                <p className="text-xs text-yellow-300">
-                  ⚠️ No decisive verdict yet. Trade parameters shown for
-                  reference only.
-                </p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-gray-500">Direction</p>
-                <p
-                  className={`font-bold ${
-                    trade.direction === "BUY"
-                      ? "text-green-400"
-                      : "text-red-400"
-                  }`}
-                >
-                  {trade.direction}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Entry (CE)</p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  {formatPrice(trade.entry)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Stop Loss</p>
-                <p className="font-bold tabular-nums text-red-400">
-                  {formatPrice(trade.sl)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Take Profit (2R)</p>
-                <p className="font-bold tabular-nums text-green-400">
-                  {formatPrice(trade.tp)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.risk.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">RR</p>
-                <p className="font-bold tabular-nums text-white">1:2</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Lot Size</p>
-                <p className="font-bold tabular-nums text-white">
-                  {trade.lotSize.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Risk ($)</p>
-                <p className="font-bold tabular-nums text-yellow-400">
-                  ${trade.riskAmount.toFixed(2)}
-                </p>
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                HTF Bias
+              </label>
+              <select
+                value={form.htfBiasInput}
+                onChange={(e) => update("htfBiasInput", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {HTF_BIAS_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
             </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Sweep Direction
+              </label>
+              <select
+                value={form.sweepDirection}
+                onChange={(e) => update("sweepDirection", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {SWEEP_DIRECTION_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                EMA 50 (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.ema50Price}
+                onChange={(e) => update("ema50Price", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                ATR (current)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.atrCurrent}
+                onChange={(e) => update("atrCurrent", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Pip size
+              </label>
+              <select
+                value={form.pipSize}
+                onChange={(e) =>
+                  update("pipSize", parseFloat(e.target.value))
+                }
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                <option value={0.0001}>0.0001</option>
+                <option value={0.001}>0.001</option>
+                <option value={0.01}>0.01</option>
+                <option value={0.1}>0.1</option>
+                <option value={1}>1.0 (VOL)</option>
+              </select>
+            </div>
+          </div>
+
+          {ema.valid && (
+            <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-900 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs">
+                <span className="text-gray-400">EMA bias:</span>{" "}
+                <span className={`font-bold ${emaMeta.direction.color}`}>
+                  {emaMeta.direction.emoji} {emaMeta.direction.label}
+                </span>
+              </p>
+              <p className="text-xs">
+                <span className="text-gray-400">Price position:</span>{" "}
+                <span className={`font-bold ${emaMeta.position.color}`}>
+                  {emaMeta.position.label}
+                </span>
+              </p>
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Enriched Verdict */}
+        {enrichedVerdict && (
+          <div
+            className={`p-4 rounded-lg border space-y-2 ${
+              enrichedVerdict.verdict === "BUY"
+                ? "bg-green-950/50 border-green-600 text-green-200"
+                : enrichedVerdict.verdict === "SELL"
+                ? "bg-red-950/50 border-red-600 text-red-200"
+                : "bg-yellow-950/40 border-yellow-700 text-yellow-200"
+            }`}
+          >
+            <p className="text-xs opacity-80">Verdict</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-2xl font-bold">
+                {enrichedVerdict.verdict === "BUY" ? "🟢" : "🔴"}{" "}
+                {enrichedVerdict.verdict}
+              </p>
+              {strength && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${strength.color}`}
+                >
+                  {strength.emoji} {strength.label}
+                </span>
+              )}
+              {alignment && (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full font-semibold ${alignment.color}`}
+                >
+                  {alignment.label}
+                </span>
+              )}
+            </div>
+            <p className="text-sm opacity-90">{enrichedVerdict.reason}</p>
+          </div>
+        )}
+
+        {/* HTF Conflict Banner */}
+        {enrichedVerdict?.hasHtfConflict && (
+          <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/40 space-y-2">
+            <p className="text-sm font-bold text-red-200">
+              🚨 Counter-Trend Trade
+            </p>
+            {enrichedVerdict.htfConflict.map((c, i) => (
+              <div key={i}>
+                <p className="text-xs font-semibold text-red-200">
+                  {c.label}
+                </p>
+                <p className="text-xs text-red-300 mt-0.5">{c.detail}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sweep Override Banner */}
+        {enrichedVerdict?.hasSweepOverride && (
+          <div className="p-4 rounded-lg border-2 border-purple-700 bg-purple-950/40 space-y-2">
+            <p className="text-sm font-bold text-purple-200">
+              🔄 Sweep Override
+            </p>
+            <p className="text-xs text-purple-200">
+              {enrichedVerdict.sweepOverride.label}
+            </p>
+            <p className="text-xs text-purple-300 mt-1">
+              {enrichedVerdict.sweepOverride.detail}
+            </p>
+          </div>
+        )}
+
+        {/* Trade Card — SHARED COMPONENT */}
+        {trade && (
+          <TradeCard
+            trade={trade}
+            badges={[
+              alignment && {
+                label: alignment.label,
+                className: alignment.color,
+              },
+            ].filter(Boolean)}
+          />
+        )}
+
+        {/* Trade validation errors */}
+        {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
+          <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm space-y-1">
+            {tradeValidation.errors.map((e, i) => (
+              <p key={i}>⚠️ {e}</p>
+            ))}
           </div>
         )}
 
@@ -859,9 +1065,17 @@ export default function NegotiationPage() {
           </div>
         )}
 
+        {hasWarnings && (
+          <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
+            ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
+            {warningReasons.length === 1 ? "" : "s"} detected. The Save button
+            will show a confirmation.
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={handleSave}
+          onClick={() => handleSave(false)}
           disabled={saving || !trade}
           className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
             canEnter
@@ -870,9 +1084,7 @@ export default function NegotiationPage() {
           }`}
         >
           {saving
-            ? isEdit
-              ? "Updating..."
-              : "Saving..."
+            ? "Saving..."
             : isEdit
             ? "✏️ Update Setup"
             : canEnter
@@ -880,6 +1092,15 @@ export default function NegotiationPage() {
             : "💾 Save (Battle In Progress)"}
         </button>
       </div>
+
+      {/* WARNING MODAL — SHARED COMPONENT */}
+      <WarningModal
+        open={showWarningModal}
+        warningReasons={warningReasons}
+        onCancel={() => setShowWarningModal(false)}
+        onConfirm={() => handleSave(true)}
+        saving={saving}
+      />
     </main>
   );
 }
