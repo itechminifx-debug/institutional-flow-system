@@ -3,15 +3,13 @@
 // ============================================================
 // ZONES HOLD ORDERS. REJECTION BLOCKS MAKE DECISIONS.
 //
-// EMA 50 is a FIRST-CLASS SIGNAL:
-//   Price above EMA → bullish bias → BUY aligned, SELL counter
-//   Price below EMA → bearish bias → SELL aligned, BUY counter
-//   Aligned → bumps verdict strength UP one tier
-//   Counter → drops verdict strength DOWN one tier
-//   Missing → no change
+// TREND OVERRIDE: HTF bias (from EMA or manual) can downgrade or
+// flip the verdict when it conflicts with the RB direction.
+//
+// SWEEP OVERRIDE: A confirmed liquidity sweep can flip the verdict.
 //
 // TWO-CANDLE RB DETECTION — SWEEP + RECLAIM
-// VERDICT: close inside the active RB (premium / discount / breakout)
+// EMA 50 — first-class signal with strength modifier
 // ============================================================
 
 export const PIP_SIZE_DEFAULT = 0.01;
@@ -32,6 +30,21 @@ export const ZONE_TYPES = [
 export function zoneTypeInfo(key) {
   return ZONE_TYPES.find((z) => z.key === key) || ZONE_TYPES[0];
 }
+
+// ============================================================
+// HTF BIAS OPTIONS
+// ============================================================
+export const HTF_BIAS_OPTIONS = [
+  { key: "auto", label: "Auto (use EMA 50)", emoji: "🤖" },
+  { key: "bullish", label: "Bullish", emoji: "🟢" },
+  { key: "bearish", label: "Bearish", emoji: "🔴" },
+];
+
+export const SWEEP_DIRECTION_OPTIONS = [
+  { key: "none", label: "No sweep detected", emoji: "⚪" },
+  { key: "up_bearish", label: "Sweep up → bearish", emoji: "🔻" },
+  { key: "down_bullish", label: "Sweep down → bullish", emoji: "🔺" },
+];
 
 // ============================================================
 // CE
@@ -60,7 +73,7 @@ export function computePips({ entry, sl, tp, pipSize = PIP_SIZE_DEFAULT }) {
 }
 
 // ============================================================
-// VALIDATION HELPERS
+// VALIDATION
 // ============================================================
 export function validatePrior(current, prior, limit = PRIOR_DEVIATION_LIMIT) {
   const c = parseFloat(current);
@@ -70,11 +83,7 @@ export function validatePrior(current, prior, limit = PRIOR_DEVIATION_LIMIT) {
   }
   const deviation = Math.abs(p - c) / Math.abs(c);
   if (deviation > limit) {
-    return {
-      valid: false,
-      reason: "out-of-range",
-      deviation: Math.round(deviation * 100) / 100,
-    };
+    return { valid: false, reason: "out-of-range", deviation };
   }
   return { valid: true, deviation };
 }
@@ -107,10 +116,7 @@ export function validateSetupInputs({
 
   const close = parseFloat(closePrice);
   if (isNaN(close)) {
-    errors.push({
-      field: "closePrice",
-      message: "Verdict close is required.",
-    });
+    errors.push({ field: "closePrice", message: "Verdict close is required." });
   } else {
     const inside = validateCloseInsideRbs(close, rankedRbs);
     if (!inside.valid) {
@@ -122,7 +128,7 @@ export function validateSetupInputs({
       } else if (inside.reason === "not-inside") {
         errors.push({
           field: "closePrice",
-          message: `Verdict close (${close}) doesn't sit inside any listed RB. Check your inputs or add the RB that contains it.`,
+          message: `Verdict close (${close}) doesn't sit inside any listed RB.`,
         });
       }
     }
@@ -142,8 +148,8 @@ export function validateSetupInputs({
         field: "atrPrior",
         message:
           atrCheck.reason === "missing"
-            ? "ATR prior missing — volatility filter disabled."
-            : `ATR prior (${atrPrior}) looks invalid vs current (${atrCurrent}) — filter disabled.`,
+            ? "ATR prior missing — filter disabled."
+            : `ATR prior (${atrPrior}) looks invalid — filter disabled.`,
       });
     }
   }
@@ -252,16 +258,13 @@ export function findActiveRb(rbs, currentPrice) {
   if (!Array.isArray(rbs) || rbs.length === 0) return null;
   const price = parseFloat(currentPrice);
   if (isNaN(price)) return rankRejectionBlocks(rbs)[0] || null;
-
   const ranked = rankRejectionBlocks(rbs);
-
   for (const rb of ranked) {
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
     if (isNaN(high) || isNaN(low)) continue;
     if (price >= low && price <= high) return rb;
   }
-
   let closest = null;
   let minDist = Infinity;
   for (const rb of ranked) {
@@ -279,140 +282,16 @@ export function findActiveRb(rbs, currentPrice) {
 }
 
 // ============================================================
-// EMA 50 — first-class signal
-// ============================================================
-// Direction is inferred from the close's position vs the EMA.
-// No prior needed.
-export function computeEmaDirection({ emaPrice, closePrice }) {
-  const c = parseFloat(emaPrice);
-  const close = parseFloat(closePrice);
-
-  if (isNaN(c)) {
-    return {
-      direction: "unknown",
-      position: "unknown",
-      valid: false,
-    };
-  }
-
-  let position = "unknown";
-  if (!isNaN(close)) {
-    const tolerance = Math.abs(c) * 0.0001;
-    if (Math.abs(close - c) <= tolerance) position = "at";
-    else position = close > c ? "above" : "below";
-  }
-
-  return {
-    direction: position === "above" ? "bullish" : position === "below" ? "bearish" : "unknown",
-    position,
-    emaPrice: c,
-    valid: true,
-  };
-}
-
-export function emaInfo({ direction, position }) {
-  const dirMap = {
-    bullish: { label: "Bullish", emoji: "📈", color: "text-green-300" },
-    bearish: { label: "Bearish", emoji: "📉", color: "text-red-300" },
-    unknown: { label: "Unknown", emoji: "⚪", color: "text-gray-400" },
-  };
-  const posMap = {
-    above: { label: "Above EMA", color: "text-green-300" },
-    below: { label: "Below EMA", color: "text-red-300" },
-    at: { label: "At EMA", color: "text-yellow-300" },
-    unknown: { label: "—", color: "text-gray-400" },
-  };
-  return {
-    direction: dirMap[direction] || dirMap.unknown,
-    position: posMap[position] || posMap.unknown,
-  };
-}
-
-// ============================================================
-// EMA ALIGNMENT — returns strength modifier
-// ============================================================
-// +1 = aligned, 0 = neutral/unknown, -1 = counter
-export function emaAlignment({ position, verdict }) {
-  if (!verdict || verdict === "WAIT") return null;
-  if (!position || position === "unknown") return null;
-
-  // Price above EMA → bullish bias
-  if (verdict === "BUY") {
-    if (position === "above") {
-      return {
-        key: "aligned",
-        label: "EMA 50 aligned ✅",
-        color: "bg-green-900/40 text-green-300",
-        description: "BUY with price above EMA 50 — aligned.",
-        modifier: +1,
-      };
-    }
-    if (position === "below") {
-      return {
-        key: "counter",
-        label: "Counter-trend ⚠️",
-        color: "bg-yellow-900/40 text-yellow-300",
-        description: "BUY with price below EMA 50 — counter-trend.",
-        modifier: -1,
-      };
-    }
-  }
-  if (verdict === "SELL") {
-    if (position === "below") {
-      return {
-        key: "aligned",
-        label: "EMA 50 aligned ✅",
-        color: "bg-green-900/40 text-green-300",
-        description: "SELL with price below EMA 50 — aligned.",
-        modifier: +1,
-      };
-    }
-    if (position === "above") {
-      return {
-        key: "counter",
-        label: "Counter-trend ⚠️",
-        color: "bg-yellow-900/40 text-yellow-300",
-        description: "SELL with price above EMA 50 — counter-trend.",
-        modifier: -1,
-      };
-    }
-  }
-  return {
-    key: "neutral",
-    label: "EMA 50 neutral",
-    color: "bg-blue-900/40 text-blue-300",
-    description: "Price at EMA 50 — no directional bias.",
-    modifier: 0,
-  };
-}
-
-// ============================================================
-// STRENGTH ADJUSTMENT — bump tier up/down
-// ============================================================
-const STRENGTH_ORDER = ["weak", "normal", "strong"];
-
-export function adjustStrengthForEma(baseStrength, modifier) {
-  if (!baseStrength) return baseStrength;
-  if (!modifier) return baseStrength;
-
-  const idx = STRENGTH_ORDER.indexOf(baseStrength);
-  if (idx === -1) return baseStrength;
-
-  let newIdx = idx + modifier;
-  if (newIdx < 0) newIdx = 0;
-  if (newIdx > 2) newIdx = 2;
-
-  return STRENGTH_ORDER[newIdx];
-}
-
-// ============================================================
-// VERDICT — accepts EMA modifier
+// VERDICT — with TREND OVERRIDE + SWEEP OVERRIDE
 // ============================================================
 export function judgeRejectionBlock({
   rbHigh,
   rbLow,
   closePrice,
   emaModifier = 0,
+  htfBias = "auto",
+  htfBiasResolved = null,
+  sweepDirection = "none",
 }) {
   const high = parseFloat(rbHigh);
   const low = parseFloat(rbLow);
@@ -452,8 +331,7 @@ export function judgeRejectionBlock({
         ce,
         rbBroken: null,
         strength: "weak",
-        reason:
-          "Price closed at the CE — indecision. Wait for a clear close.",
+        reason: "Price closed at the CE — indecision.",
       };
     }
     if (close > ce) {
@@ -463,8 +341,7 @@ export function judgeRejectionBlock({
         ce,
         rbBroken: null,
         strength: "normal",
-        reason:
-          "Closed in the PREMIUM (above CE, inside RB) — sellers defended.",
+        reason: "Closed in the PREMIUM (above CE) — sellers defended.",
       };
     } else {
       base = {
@@ -473,27 +350,67 @@ export function judgeRejectionBlock({
         ce,
         rbBroken: null,
         strength: "normal",
-        reason:
-          "Closed in the DISCOUNT (below CE, inside RB) — buyers defended.",
+        reason: "Closed in the DISCOUNT (below CE) — buyers defended.",
       };
     }
   }
 
-  // Apply EMA strength modifier
+  // HTF bias conflict
+  const htfConflict = [];
+  let strengthAdjustment = emaModifier;
+
+  if (htfBias !== "auto" && htfBiasResolved) {
+    const verdictDir = base.verdict === "BUY" ? "bullish" : "bearish";
+    if (verdictDir !== htfBiasResolved) {
+      htfConflict.push({
+        key: "htf_conflict",
+        label: `HTF bias is ${htfBiasResolved} — verdict is ${verdictDir}`,
+        detail:
+          "The higher-timeframe trend conflicts with the RB verdict. This is a counter-trend signal.",
+      });
+      if (strengthAdjustment === 0) strengthAdjustment = -1;
+    }
+  }
+
+  // Sweep override
+  let sweepOverride = null;
+  if (sweepDirection === "up_bearish" && base.verdict === "BUY") {
+    sweepOverride = {
+      key: "sweep_flip_to_sell",
+      label: "Sweep up — bearish override",
+      detail:
+        "Liquidity was swept above. The BUY verdict is contradicted by the sweep — consider SELL.",
+    };
+  }
+  if (sweepDirection === "down_bullish" && base.verdict === "SELL") {
+    sweepOverride = {
+      key: "sweep_flip_to_buy",
+      label: "Sweep down — bullish override",
+      detail:
+        "Liquidity was swept below. The SELL verdict is contradicted by the sweep — consider BUY.",
+    };
+  }
+
   const baseStrength = base.strength;
-  const adjustedStrength = adjustStrengthForEma(baseStrength, emaModifier);
+  const order = ["weak", "normal", "strong"];
+  let idx = order.indexOf(baseStrength);
+  idx = Math.max(0, Math.min(2, idx + strengthAdjustment));
+  const adjustedStrength = order[idx];
 
   if (adjustedStrength !== baseStrength) {
-    if (emaModifier > 0) {
-      base.reason += " EMA 50 aligned — strength upgraded.";
-    } else if (emaModifier < 0) {
-      base.reason += " EMA 50 counter-trend — strength reduced.";
-    }
+    if (strengthAdjustment > 0) base.reason += " Strength upgraded.";
+    else if (strengthAdjustment < 0)
+      base.reason += " Strength reduced (conflict).";
   }
 
   base.strength = adjustedStrength;
   base.baseStrength = baseStrength;
   base.emaModifier = emaModifier;
+  base.strengthAdjustment = strengthAdjustment;
+  base.htfConflict = htfConflict;
+  base.hasHtfConflict = htfConflict.length > 0;
+  base.sweepOverride = sweepOverride;
+  base.hasSweepOverride = !!sweepOverride;
 
   return base;
 }
@@ -568,6 +485,122 @@ export function strengthInfo(strength) {
 }
 
 // ============================================================
+// HTF BIAS RESOLUTION
+// ============================================================
+export function resolveHtfBias({ htfBiasInput, ema }) {
+  if (htfBiasInput === "bullish" || htfBiasInput === "bearish") {
+    return htfBiasInput;
+  }
+  if (ema?.direction === "bullish" || ema?.direction === "bearish") {
+    return ema.direction;
+  }
+  return "unknown";
+}
+
+// ============================================================
+// EMA 50
+// ============================================================
+export function computeEmaDirection({ emaPrice, closePrice }) {
+  const c = parseFloat(emaPrice);
+  const close = parseFloat(closePrice);
+  if (isNaN(c)) {
+    return {
+      direction: "unknown",
+      position: "unknown",
+      valid: false,
+    };
+  }
+  let position = "unknown";
+  if (!isNaN(close)) {
+    const tolerance = Math.abs(c) * 0.0001;
+    if (Math.abs(close - c) <= tolerance) position = "at";
+    else position = close > c ? "above" : "below";
+  }
+  return {
+    direction:
+      position === "above"
+        ? "bullish"
+        : position === "below"
+        ? "bearish"
+        : "unknown",
+    position,
+    emaPrice: c,
+    valid: true,
+  };
+}
+
+export function emaInfo({ direction, position }) {
+  const dirMap = {
+    bullish: { label: "Bullish", emoji: "📈", color: "text-green-300" },
+    bearish: { label: "Bearish", emoji: "📉", color: "text-red-300" },
+    unknown: { label: "Unknown", emoji: "⚪", color: "text-gray-400" },
+  };
+  const posMap = {
+    above: { label: "Above EMA", color: "text-green-300" },
+    below: { label: "Below EMA", color: "text-red-300" },
+    at: { label: "At EMA", color: "text-yellow-300" },
+    unknown: { label: "—", color: "text-gray-400" },
+  };
+  return {
+    direction: dirMap[direction] || dirMap.unknown,
+    position: posMap[position] || posMap.unknown,
+  };
+}
+
+export function emaAlignment({ position, verdict }) {
+  if (!verdict || verdict === "WAIT") return null;
+  if (!position || position === "unknown") return null;
+
+  if (verdict === "BUY") {
+    if (position === "above") {
+      return {
+        key: "aligned",
+        label: "EMA 50 aligned ✅",
+        color: "bg-green-900/40 text-green-300",
+        description: "BUY with price above EMA 50 — aligned.",
+        modifier: +1,
+      };
+    }
+    if (position === "below") {
+      return {
+        key: "counter",
+        label: "Counter-trend ⚠️",
+        color: "bg-yellow-900/40 text-yellow-300",
+        description: "BUY with price below EMA 50 — counter-trend.",
+        modifier: -1,
+      };
+    }
+  }
+  if (verdict === "SELL") {
+    if (position === "below") {
+      return {
+        key: "aligned",
+        label: "EMA 50 aligned ✅",
+        color: "bg-green-900/40 text-green-300",
+        description: "SELL with price below EMA 50 — aligned.",
+        modifier: +1,
+      };
+    }
+    if (position === "above") {
+      return {
+        key: "counter",
+        label: "Counter-trend ⚠️",
+        color: "bg-yellow-900/40 text-yellow-300",
+        description: "SELL with price above EMA 50 — counter-trend.",
+        modifier: -1,
+      };
+    }
+  }
+  return {
+    key: "neutral",
+    label: "EMA 50 neutral",
+    color: "bg-blue-900/40 text-blue-300",
+    description: "Price at EMA 50 — no directional bias.",
+    modifier: 0,
+  };
+}
+
+// ============================================================
 // CONDITIONS
 // ============================================================
 export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
@@ -576,28 +609,23 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
   }
   const close = parseFloat(closePrice);
   if (isNaN(close)) return { above: [], below: [] };
-
   const activeHigh = parseFloat(activeRb.high);
   const activeLow = parseFloat(activeRb.low);
   if (isNaN(activeHigh) || isNaN(activeLow)) {
     return { above: [], below: [] };
   }
-
   const above = [];
   const below = [];
-
   for (const rb of allRbs) {
     if (rb.id === activeRb.id) continue;
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
     if (isNaN(high) || isNaN(low)) continue;
     const ce = Math.round(((high + low) / 2) * 100) / 100;
-
     let bucket = null;
     if (low > activeHigh) bucket = "above";
     else if (high < activeLow) bucket = "below";
     else continue;
-
     let tier;
     if (bucket === "above") {
       if (close > high) {
@@ -607,11 +635,11 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
       } else if (close >= ce) {
         tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the upper half — still inside this RB." };
+          description: "Close sits in the upper half." };
       } else if (close >= low) {
         tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the lower half — still inside this RB." };
+          description: "Close sits in the lower half." };
       } else {
         tier = { key: "blocked", label: "Blocked", emoji: "⚠️",
           color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
@@ -625,26 +653,23 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
       } else if (close <= ce) {
         tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the lower half — still inside this RB." };
+          description: "Close sits in the lower half." };
       } else if (close <= high) {
         tier = { key: "caution", label: "Caution", emoji: "⚪",
           color: "bg-blue-900/40 text-blue-300 border-blue-700",
-          description: "Close sits in the upper half — still inside this RB." };
+          description: "Close sits in the upper half." };
       } else {
         tier = { key: "blocked", label: "Blocked", emoji: "⚠️",
           color: "bg-yellow-900/40 text-yellow-300 border-yellow-700",
           description: "Close is above this RB — it is a wall below." };
       }
     }
-
     const entry = { id: rb.id, high, low, ce, tier, close };
     if (bucket === "above") above.push(entry);
     else below.push(entry);
   }
-
   above.sort((a, b) => a.low - b.low);
   below.sort((a, b) => b.high - a.high);
-
   if (verdict === "BUY") return { above, below: [] };
   if (verdict === "SELL") return { above: [], below };
   return { above, below };
@@ -653,7 +678,6 @@ export function checkConditions({ activeRb, allRbs, closePrice, verdict }) {
 export function conditionSummary(conditions, verdict) {
   const list = verdict === "BUY" ? conditions.above : conditions.below;
   const where = verdict === "BUY" ? "above" : "below";
-
   if (!list || list.length === 0) {
     return {
       key: "none",
@@ -666,11 +690,9 @@ export function conditionSummary(conditions, verdict) {
           : "No RBs below the active RB — clear path downward.",
     };
   }
-
   const blocked = list.filter((x) => x.tier.key === "blocked").length;
   const confirmed = list.filter((x) => x.tier.key === "confirmed").length;
   const caution = list.filter((x) => x.tier.key === "caution").length;
-
   if (blocked > 0 && confirmed === 0) {
     return {
       key: "blocked",
@@ -758,7 +780,7 @@ export function allFlippedInfo(flipped) {
 }
 
 // ============================================================
-// RB COMPLETENESS CHECK
+// RB COMPLETENESS
 // ============================================================
 export function checkRbCompleteness({ rankedRbs, atr }) {
   if (!Array.isArray(rankedRbs) || rankedRbs.length === 0) {
@@ -775,7 +797,6 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
   const gaps = [];
   const sorted = [...rankedRbs].sort((a, b) => a.low - b.low);
   const atrVal = parseFloat(atr) || 0;
-
   if (atrVal > 0) {
     for (let i = 0; i < sorted.length - 1; i++) {
       const gap = sorted[i + 1].low - sorted[i].high;
@@ -788,7 +809,6 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
       }
     }
   }
-
   if (rankedRbs.length < 2) {
     return {
       complete: false,
@@ -824,7 +844,7 @@ export function checkRbCompleteness({ rankedRbs, atr }) {
 }
 
 // ============================================================
-// TWO-CANDLE RB DETECTION — SWEEP + RECLAIM
+// TWO-CANDLE RB DETECTION
 // ============================================================
 export function detectRbFromTwoCandles({ candle1, candle2 }) {
   const c1h = parseFloat(candle1?.high);
@@ -832,17 +852,14 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
   const c2h = parseFloat(candle2?.high);
   const c2l = parseFloat(candle2?.low);
   const c2c = parseFloat(candle2?.close);
-
   if (isNaN(c1h) || isNaN(c1l) || isNaN(c2h) || isNaN(c2l) || isNaN(c2c)) {
     return {
       detected: false,
       rbs: [],
-      reason: "Enter both candles with OHLC (high, low, close required).",
+      reason: "Enter both candles with OHLC.",
     };
   }
-
   const rbs = [];
-
   if (c2h > c1h && c2c < c1h) {
     const rbLow = Math.round(c1h * 100) / 100;
     const rbHigh = Math.round(c2h * 100) / 100;
@@ -854,10 +871,9 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
       rbHigh,
       ce,
       sweepSize: Math.round((c2h - c1h) * 100) / 100,
-      reason: `Resistance RB — Candle 2 swept above ${c1h} (to ${c2h}) and closed back below at ${c2c}.`,
+      reason: `Resistance RB — Candle 2 swept above ${c1h} and closed back below.`,
     });
   }
-
   if (c2l < c1l && c2c > c1l) {
     const rbLow = Math.round(c2l * 100) / 100;
     const rbHigh = Math.round(c1l * 100) / 100;
@@ -869,35 +885,32 @@ export function detectRbFromTwoCandles({ candle1, candle2 }) {
       rbHigh,
       ce,
       sweepSize: Math.round((c1l - c2l) * 100) / 100,
-      reason: `Support RB — Candle 2 swept below ${c1l} (to ${c2l}) and closed back above at ${c2c}.`,
+      reason: `Support RB — Candle 2 swept below ${c1l} and closed back above.`,
     });
   }
-
   let reason = "";
   if (rbs.length === 0) {
     if (c2h === c1h && c2l === c1l) {
       reason = "Invalid — wicks are equal.";
     } else if (c2h > c1h && c2c >= c1h) {
-      reason = `Invalid resistance — Candle 2 closed at/above Candle 1's high (${c2c} ≥ ${c1h}).`;
+      reason = `Invalid resistance — Candle 2 closed at/above Candle 1's high.`;
     } else if (c2l < c1l && c2c <= c1l) {
-      reason = `Invalid support — Candle 2 closed at/below Candle 1's low (${c2c} ≤ ${c1l}).`;
+      reason = `Invalid support — Candle 2 closed at/below Candle 1's low.`;
     } else if (c2h <= c1h && c2l >= c1l) {
-      reason = "Invalid — Candle 2 did not sweep either of Candle 1's wicks.";
+      reason = "Invalid — Candle 2 did not sweep either wick.";
     } else {
       reason = "No valid RB.";
     }
   } else if (rbs.length === 2) {
-    reason =
-      "⚡ Dual sweep — Candle 2 swept both sides and closed inside. Both RBs valid (dead candle).";
-  } else if (rbs.length === 1) {
+    reason = "⚡ Dual sweep — both RBs valid (dead candle).";
+  } else {
     reason = rbs[0].reason;
   }
-
   return { detected: rbs.length > 0, rbs, reason };
 }
 
 // ============================================================
-// DETECTION vs VERDICT CLOSE
+// DETECTION vs CLOSE
 // ============================================================
 export function checkDetectionVsClose({
   detection,
@@ -909,16 +922,12 @@ export function checkDetectionVsClose({
   if (!detection || !detection.detected || !detection.rbs?.length) return null;
   const rb = detection.rbs[activeRbIndex] || detection.rbs[0];
   if (!rb) return null;
-
   const close = parseFloat(closePrice);
   if (isNaN(close)) return null;
-
   const p = parseFloat(pipSize) || PIP_SIZE_DEFAULT;
   const buffer = (parseFloat(bufferPips) || NEAR_EDGE_BUFFER_PIPS) * p;
-
   const rbLow = parseFloat(rb.rbLow);
   const rbHigh = parseFloat(rb.rbHigh);
-
   if (close >= rbLow && close <= rbHigh) {
     const side = close > rb.ce ? "premium" : close < rb.ce ? "discount" : "at-ce";
     return {
@@ -927,8 +936,7 @@ export function checkDetectionVsClose({
       label: "Verdict close INSIDE the detected RB",
       emoji: "⚠️",
       color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
-      description:
-        "The close sits inside the detected RB range. Price is still negotiating.",
+      description: "The close sits inside the RB. Price is still negotiating.",
       distancePips: 0,
       side,
       action: "wait",
@@ -947,7 +955,7 @@ export function checkDetectionVsClose({
         label: "Verdict close NEAR the upper edge",
         emoji: "🟠",
         color: "bg-orange-950/40 border-orange-700 text-orange-200",
-        description: "Close is just above the RB's upper edge — momentum weak.",
+        description: "Close is just above the RB's upper edge.",
         distancePips,
         side: "above",
         action: "wait",
@@ -963,7 +971,7 @@ export function checkDetectionVsClose({
       label: "Close beyond the detected RB ↑",
       emoji: "✅",
       color: "bg-green-950/40 border-green-700 text-green-200",
-      description: "Close cleared the RB upward — bullish break.",
+      description: "Close cleared the RB upward.",
       distancePips,
       side: "above",
       action: "confirmed",
@@ -982,7 +990,7 @@ export function checkDetectionVsClose({
         label: "Verdict close NEAR the lower edge",
         emoji: "🟠",
         color: "bg-orange-950/40 border-orange-700 text-orange-200",
-        description: "Close is just below the RB's lower edge — momentum weak.",
+        description: "Close is just below the RB's lower edge.",
         distancePips,
         side: "below",
         action: "wait",
@@ -998,7 +1006,7 @@ export function checkDetectionVsClose({
       label: "Close beyond the detected RB ↓",
       emoji: "✅",
       color: "bg-green-950/40 border-green-700 text-green-200",
-      description: "Close cleared the RB downward — bearish break.",
+      description: "Close cleared the RB downward.",
       distancePips,
       side: "below",
       action: "confirmed",
@@ -1031,16 +1039,13 @@ export function detectRbsInPath({
   if (isNaN(e) || isNaN(t)) {
     return { pathRbs: [], hasBlockers: false, safeTp: null, safeTpPips: null };
   }
-
   const isBull = direction === "BUY";
   const fullRange = Math.abs(t - e);
   const pathRbs = [];
-
   for (const rb of rankedRbs) {
     const high = parseFloat(rb.high);
     const low = parseFloat(rb.low);
     if (isNaN(high) || isNaN(low)) continue;
-
     if (isBull) {
       if (low <= e) continue;
       if (low >= t) continue;
@@ -1048,16 +1053,12 @@ export function detectRbsInPath({
       if (high >= e) continue;
       if (high <= t) continue;
     }
-
     const toEntryPrice = isBull ? low - e : e - high;
     const toTpPrice = isBull ? t - high : low - t;
-
     const distanceToEntryPips = Math.round((toEntryPrice / p) * 100) / 100;
     const distanceToTpPips = Math.round((toTpPrice / p) * 100) / 100;
     const ratio = fullRange > 0 ? toEntryPrice / fullRange : 0;
-
     const safeTp = isBull ? low : high;
-
     pathRbs.push({
       id: rb.id,
       high,
@@ -1070,16 +1071,13 @@ export function detectRbsInPath({
       safeTp: Math.round(safeTp * 100) / 100,
     });
   }
-
   if (isBull) pathRbs.sort((a, b) => a.low - b.low);
   else pathRbs.sort((a, b) => b.high - a.high);
-
   const nearest = pathRbs[0] || null;
   const safeTp = nearest ? nearest.safeTp : null;
   const safeTpPips = nearest
     ? Math.round((Math.abs(safeTp - e) / p) * 100) / 100
     : null;
-
   return {
     pathRbs,
     hasBlockers: pathRbs.length > 0,
@@ -1097,10 +1095,7 @@ export function blockerInfo({ direction, nearest, distanceRatio }) {
       label: "Blocked early",
       emoji: "🚫",
       color: "bg-red-950/40 border-red-700 text-red-200",
-      description:
-        direction === "BUY"
-          ? "An RB sits in the first 15% of the path — the BUY may reject early."
-          : "An RB sits in the first 15% of the path — the SELL may reject early.",
+      description: "An RB sits in the first 15% of the path.",
     };
   }
   return {
@@ -1108,8 +1103,7 @@ export function blockerInfo({ direction, nearest, distanceRatio }) {
     label: "RB ahead in path",
     emoji: "⚠️",
     color: "bg-yellow-950/40 border-yellow-700 text-yellow-200",
-    description:
-      "Price may reject at this RB before reaching the full target.",
+    description: "Price may reject at this RB before reaching the full target.",
   };
 }
 
@@ -1122,7 +1116,6 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
   const close = parseFloat(closePrice);
   const prior = parseFloat(priorClose);
   if (isNaN(close)) return null;
-
   if (verdict === "SELL") {
     for (const rb of conditionRbs) {
       const low = parseFloat(rb.low);
@@ -1135,7 +1128,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newDirection: "BUY",
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: low,
-          reason: "Price swept below the condition RB low and closed back above — BUY reversal candidate.",
+          reason: "Price swept below the condition RB low and closed back above — BUY reversal.",
         };
       }
       if (close > low && close < rb.high) {
@@ -1144,7 +1137,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newDirection: "BUY",
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: low,
-          reason: "Price closed back inside the condition RB above its low — BUY reversal candidate.",
+          reason: "Price closed back inside the condition RB above its low — BUY reversal.",
         };
       }
     }
@@ -1161,7 +1154,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newDirection: "SELL",
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: high,
-          reason: "Price swept above the condition RB high and closed back below — SELL reversal candidate.",
+          reason: "Price swept above the condition RB high and closed back below — SELL reversal.",
         };
       }
       if (close < high && close > rb.low) {
@@ -1170,7 +1163,7 @@ export function detectReversal({ verdict, conditionRbs, closePrice, priorClose }
           newDirection: "SELL",
           newRb: { high: rb.high, low: rb.low, ce: rb.ce },
           sweepLevel: high,
-          reason: "Price closed back inside the condition RB below its high — SELL reversal candidate.",
+          reason: "Price closed back inside the condition RB below its high — SELL reversal.",
         };
       }
     }
@@ -1193,28 +1186,22 @@ export function computeNextOpportunityTrade({
   const low = parseFloat(newRb.low);
   if (isNaN(high) || isNaN(low)) return null;
   if (newDirection !== "BUY" && newDirection !== "SELL") return null;
-
   const ce = Math.round(((high + low) / 2) * 100) / 100;
   const isBull = newDirection === "BUY";
   const entry = ce;
-
   const sweep = parseFloat(sweepLevel);
   const buffer = atr > 0 ? atr * bufferMultiplier : 0;
   const sl = isBull
     ? (isNaN(sweep) ? low : sweep) - buffer
     : (isNaN(sweep) ? high : sweep) + buffer;
-
   const risk = Math.abs(entry - sl);
   const tp = isBull ? entry + risk * 2 : entry - risk * 2;
-
   const riskAmount = (accountSize * riskPercent) / 100;
   const lotSize =
     risk > 0
       ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
       : 0;
-
   const pips = computePips({ entry, sl, tp, pipSize });
-
   return {
     direction: newDirection,
     entry,
@@ -1260,7 +1247,6 @@ export function zoneLifecycleLabel(setup, visits) {
   const days = created
     ? Math.floor((Date.now() - created) / (1000 * 60 * 60 * 24))
     : null;
-
   if (setup.closed) {
     return {
       key: "invalidated",
@@ -1276,8 +1262,7 @@ export function zoneLifecycleLabel(setup, visits) {
       label: "Zone live — no visits yet",
       emoji: "🆕",
       color: "bg-blue-900/40 text-blue-300 border-blue-700",
-      description:
-        days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
+      description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
     };
   }
   return {
@@ -1285,18 +1270,16 @@ export function zoneLifecycleLabel(setup, visits) {
     label: `Zone live — ${visits.length} visit${visits.length === 1 ? "" : "s"}`,
     emoji: "🟢",
     color: "bg-green-900/40 text-green-300 border-green-700",
-    description:
-      days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
+    description: days !== null ? `Live for ${days} day${days === 1 ? "" : "s"}` : "",
   };
 }
 
 // ============================================================
-// ATR FILTER — with validation
+// ATR FILTER
 // ============================================================
 export function atrFilter(atrCurrent, atrPrior) {
   const c = parseFloat(atrCurrent);
   const p = parseFloat(atrPrior);
-
   if (isNaN(c) || isNaN(p)) {
     return {
       key: "unknown",
@@ -1308,7 +1291,6 @@ export function atrFilter(atrCurrent, atrPrior) {
       valid: false,
     };
   }
-
   const priorCheck = validatePrior(c, p);
   if (!priorCheck.valid) {
     return {
@@ -1316,14 +1298,12 @@ export function atrFilter(atrCurrent, atrPrior) {
       label: "ATR invalid",
       emoji: "⚪",
       color: "bg-gray-900/40 border-gray-700 text-gray-300",
-      description: `ATR prior (${p}) looks invalid vs current (${c}) — filter disabled.`,
+      description: `ATR prior (${p}) looks invalid vs current (${c}).`,
       tradeable: true,
       valid: false,
     };
   }
-
   const change = ((c - p) / (p || 1)) * 100;
-
   if (change > 2) {
     return {
       key: "rising",
@@ -1351,7 +1331,7 @@ export function atrFilter(atrCurrent, atrPrior) {
     label: "ATR Flat",
     emoji: "➡️",
     color: "bg-blue-950/40 border-blue-800 text-blue-200",
-    description: "Volatility stable — proceed.",
+    description: "Volatility stable.",
     tradeable: true,
     valid: true,
   };
@@ -1374,25 +1354,20 @@ export function computeRejectionBlockTrade({
   const low = parseFloat(rbLow);
   if (isNaN(high) || isNaN(low)) return null;
   if (verdict !== "BUY" && verdict !== "SELL") return null;
-
   const ce = Math.round(((high + low) / 2) * 100) / 100;
   const isBull = verdict === "BUY";
   const entry = ce;
   const wickExtreme = isBull ? low : high;
   const buffer = atr > 0 ? atr * bufferMultiplier : 0;
   const sl = isBull ? wickExtreme - buffer : wickExtreme + buffer;
-
   const risk = Math.abs(entry - sl);
   const tp = isBull ? entry + risk * 2 : entry - risk * 2;
-
   const riskAmount = (accountSize * riskPercent) / 100;
   const lotSize =
     risk > 0
       ? Math.max(0.01, Math.round((riskAmount / risk) * 100) / 100)
       : 0;
-
   const pips = computePips({ entry, sl, tp, pipSize });
-
   return {
     direction: verdict,
     entry,
