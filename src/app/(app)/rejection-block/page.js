@@ -36,6 +36,9 @@ import {
   computePips,
   PIP_SIZE_DEFAULT,
   validateSetupInputs,
+  resolveHtfBias,
+  HTF_BIAS_OPTIONS,
+  SWEEP_DIRECTION_OPTIONS,
 } from "@/lib/rejectionBlockEngine";
 import { scorePathDanger, pathDangerBanner } from "@/lib/rbDangerEngine";
 import PairPicker from "@/components/PairPicker";
@@ -70,6 +73,8 @@ export default function RejectionBlockPage() {
     atrCurrent: "",
     atrPrior: "",
     pipSize: PIP_SIZE_DEFAULT,
+    htfBiasInput: "auto",
+    sweepDirection: "none",
     notes: "",
   });
 
@@ -136,6 +141,8 @@ export default function RejectionBlockPage() {
         atrCurrent: isEdit ? detailData?.atr_current?.toString() || "" : "",
         atrPrior: isEdit ? detailData?.atr_prior?.toString() || "" : "",
         pipSize: detailData?.pip_size || PIP_SIZE_DEFAULT,
+        htfBiasInput: detailData?.htf_bias_override || "auto",
+        sweepDirection: detailData?.sweep_direction || "none",
         notes: isEdit ? setupData.notes || "" : "",
       }));
 
@@ -289,12 +296,20 @@ export default function RejectionBlockPage() {
 
   const emaModifier = rawAlignment?.modifier ?? 0;
 
+  const resolvedHtf = resolveHtfBias({
+    htfBiasInput: form.htfBiasInput,
+    ema,
+  });
+
   const negotiation = activeRb
     ? judgeRejectionBlock({
         rbHigh: activeRb.high,
         rbLow: activeRb.low,
         closePrice: form.closePrice,
         emaModifier,
+        htfBias: form.htfBiasInput,
+        htfBiasResolved: resolvedHtf,
+        sweepDirection: form.sweepDirection,
       })
     : null;
   const verdict = premiumDiscountVerdict(negotiation);
@@ -475,13 +490,9 @@ export default function RejectionBlockPage() {
     [form.closePrice, form.atrCurrent, form.atrPrior, rankedRbs]
   );
 
-  // ============================================================
-  // WARNING MODAL LOGIC — NEW
-  // ============================================================
+  // Warning modal logic
   const warningReasons = useMemo(() => {
     const reasons = [];
-
-    // 1. Critical path danger
     if (pathDanger && pathDanger.topScore >= 8) {
       reasons.push({
         key: "critical_path",
@@ -490,8 +501,6 @@ export default function RejectionBlockPage() {
           "A high-danger RB sits in the trade's path. Price may reject there before reaching the target.",
       });
     }
-
-    // 2. Blocked early
     if (pathBlockerBadge && pathBlockerBadge.key === "weak") {
       reasons.push({
         key: "blocked_early",
@@ -500,12 +509,7 @@ export default function RejectionBlockPage() {
           "The nearest RB sits in the first 15% of the path — the trade may reject almost immediately.",
       });
     }
-
-    // 3. Weak + Counter-trend
-    if (
-      negotiation?.strength === "weak" &&
-      alignment?.key === "counter"
-    ) {
+    if (negotiation?.strength === "weak" && alignment?.key === "counter") {
       reasons.push({
         key: "weak_counter",
         label: "Weak verdict + Counter-trend",
@@ -513,15 +517,27 @@ export default function RejectionBlockPage() {
           "The verdict strength is weak and the EMA 50 bias is against the trade direction.",
       });
     }
-
+    if (negotiation?.hasHtfConflict) {
+      reasons.push({
+        key: "htf_conflict",
+        label: "HTF bias conflict",
+        detail:
+          "The higher-timeframe bias conflicts with the RB verdict.",
+      });
+    }
+    if (negotiation?.hasSweepOverride) {
+      reasons.push({
+        key: "sweep_override",
+        label: "Sweep override",
+        detail:
+          "The sweep direction contradicts the RB verdict.",
+      });
+    }
     return reasons;
   }, [pathDanger, pathBlockerBadge, negotiation, alignment]);
 
   const hasWarnings = warningReasons.length > 0;
 
-  // ============================================================
-  // SAVE
-  // ============================================================
   async function handleSave(force = false) {
     if (!negotiation || !activeRb) {
       setError("Fill in the zone, at least one RB, and close price first.");
@@ -532,7 +548,6 @@ export default function RejectionBlockPage() {
       return;
     }
 
-    // Show warning modal instead of saving — unless forced
     if (hasWarnings && !force) {
       setShowWarningModal(true);
       return;
@@ -628,6 +643,8 @@ export default function RejectionBlockPage() {
       use_ce_entry: true,
       checklist_score: 0,
       checklist_passed: false,
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
       notes: form.notes,
     };
 
@@ -689,7 +706,8 @@ export default function RejectionBlockPage() {
       tp_pips: tradePips?.tpDistance || null,
       atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
-      atr_state: atr.key === "unknown" || atr.key === "invalid" ? "unknown" : atr.key,
+      atr_state:
+        atr.key === "unknown" || atr.key === "invalid" ? "unknown" : atr.key,
       ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
       ema50_prior: null,
       ema50_direction: ema.direction,
@@ -734,6 +752,10 @@ export default function RejectionBlockPage() {
       path_danger_tier: pathDanger?.topTier?.key || null,
       path_danger_summary: pathDanger?.summary || null,
       nearest_danger_rb: pathDanger?.rbs?.[0] || null,
+      htf_bias_override: form.htfBiasInput,
+      sweep_direction: form.sweepDirection,
+      htf_conflict: negotiation.hasHtfConflict,
+      sweep_override: negotiation.hasSweepOverride,
       warning_acknowledged: hasWarnings,
       warning_reasons: warningReasons.map((r) => r.key),
       notes: form.notes,
@@ -1274,11 +1296,53 @@ export default function RejectionBlockPage() {
           </div>
         </div>
 
-        {/* EMA + Close + ATR + Pip */}
+        {/* EMA + HTF + Sweep + Close + ATR + Pip */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
-            EMA 50 · Verdict · Volatility · Pip
+            EMA 50 · HTF Bias · Sweep · Verdict · Volatility · Pip
           </h2>
+
+          {/* HTF Bias + Sweep Direction */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                HTF Bias
+              </label>
+              <select
+                value={form.htfBiasInput}
+                onChange={(e) => update("htfBiasInput", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {HTF_BIAS_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Manual override — otherwise EMA 50 decides
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Sweep Direction
+              </label>
+              <select
+                value={form.sweepDirection}
+                onChange={(e) => update("sweepDirection", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {SWEEP_DIRECTION_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.emoji} {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Sweep flips the verdict if opposite
+              </p>
+            </div>
+          </div>
 
           <div>
             <label className="block text-xs mb-1 text-gray-400">
@@ -1429,6 +1493,42 @@ export default function RejectionBlockPage() {
               )}
             </div>
             <p className="text-sm opacity-90">{verdict.description}</p>
+          </div>
+        )}
+
+        {/* HTF Conflict Banner */}
+        {negotiation?.hasHtfConflict && (
+          <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/40 space-y-2">
+            <p className="text-sm font-bold text-red-200">
+              🚨 Counter-Trend Trade
+            </p>
+            {negotiation.htfConflict.map((c, i) => (
+              <div key={i}>
+                <p className="text-xs font-semibold text-red-200">
+                  {c.label}
+                </p>
+                <p className="text-xs text-red-300 mt-0.5">{c.detail}</p>
+              </div>
+            ))}
+            <p className="text-xs text-yellow-200 pt-2 border-t border-red-800/50">
+              ⚠️ Consider flipping the direction to match the HTF bias, or
+              skip the trade.
+            </p>
+          </div>
+        )}
+
+        {/* Sweep Override Banner */}
+        {negotiation?.hasSweepOverride && (
+          <div className="p-4 rounded-lg border-2 border-purple-700 bg-purple-950/40 space-y-2">
+            <p className="text-sm font-bold text-purple-200">
+              🔄 Sweep Override
+            </p>
+            <p className="text-xs font-semibold text-purple-200">
+              {negotiation.sweepOverride.label}
+            </p>
+            <p className="text-xs text-purple-300 mt-1">
+              {negotiation.sweepOverride.detail}
+            </p>
           </div>
         )}
 
@@ -1680,7 +1780,6 @@ export default function RejectionBlockPage() {
           </div>
         )}
 
-        {/* Pre-save warning hint */}
         {hasWarnings && (
           <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
             ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
@@ -1740,7 +1839,10 @@ export default function RejectionBlockPage() {
               <strong>Detection</strong> — sweep + reclaim
             </li>
             <li>
-              <strong>EMA 50</strong> — price above = bullish, below = bearish
+              <strong>HTF Bias</strong> — manual override or EMA 50 decides
+            </li>
+            <li>
+              <strong>Sweep Direction</strong> — flips verdict if opposite
             </li>
             <li>
               <strong>Danger Engine</strong> — scores every RB in the path
