@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
 import { createTradeFromSetup } from "@/lib/journalEngine";
-import { verdictInfo } from "@/lib/rbVerdict";
 import {
   CONFIGURATIONS,
   configurationInfo,
@@ -15,23 +14,21 @@ import {
   computeNextRBAlignment,
   strengthInfo,
 } from "@/lib/negotiationEngine";
-import {
-  computeTrade,
-  validateTrade,
-} from "@/lib/tradeCalculator";
+import { computeTrade, validateTrade } from "@/lib/tradeCalculator";
 import {
   computeEmaDirection,
   emaInfo,
   emaAlignment,
   enrichVerdict,
   computeWarningReasons,
-  resolveHtfBias,
   HTF_BIAS_OPTIONS,
   SWEEP_DIRECTION_OPTIONS,
 } from "@/lib/verdictEngine";
+import { computeIrlErl } from "@/lib/irlErlEngine";
 import PairPicker from "@/components/PairPicker";
 import TradeCard from "@/components/TradeCard";
 import WarningModal from "@/components/WarningModal";
+import DealingRangeCard from "@/components/DealingRangeCard";
 
 export default function NegotiationPage() {
   const router = useRouter();
@@ -192,26 +189,12 @@ export default function NegotiationPage() {
       ? "SELL"
       : null;
 
-  // EMA
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     closePrice: form.verdictClose,
   });
   const emaMeta = emaInfo(ema);
 
-  // Base negotiation trade (from the negotiation engine)
-  const baseTrade = computeNegotiationTrade({
-    direction: tradeDirection,
-    mssDirection: form.mssDirection,
-    rbZoneHigh: form.rbZoneHigh,
-    rbZoneLow: form.rbZoneLow,
-    mssZoneHigh: form.mssZoneHigh,
-    mssZoneLow: form.mssZoneLow,
-    accountSize: profile?.account_size || 0,
-    riskPercent: profile?.risk_percent || 1,
-  });
-
-  // Shared trade calculator — consistent output
   const sharedTrade = useMemo(() => {
     if (!tradeDirection || !form.rbZoneHigh || !form.rbZoneLow) return null;
     const rbHigh = parseFloat(form.rbZoneHigh);
@@ -239,26 +222,28 @@ export default function NegotiationPage() {
     profile?.risk_percent,
   ]);
 
+  const baseTrade = computeNegotiationTrade({
+    direction: tradeDirection,
+    mssDirection: form.mssDirection,
+    rbZoneHigh: form.rbZoneHigh,
+    rbZoneLow: form.rbZoneLow,
+    mssZoneHigh: form.mssZoneHigh,
+    mssZoneLow: form.mssZoneLow,
+    accountSize: profile?.account_size || 0,
+    riskPercent: profile?.risk_percent || 1,
+  });
+
   const trade = sharedTrade || baseTrade;
 
-  // Base verdict from battle state
   const baseVerdict = useMemo(() => {
     if (!trade) return null;
-    const verdictStr =
-      trade.direction === "BUY"
-        ? "BUY"
-        : trade.direction === "SELL"
-        ? "SELL"
-        : null;
-    if (!verdictStr) return null;
     return {
-      verdict: verdictStr,
+      verdict: trade.direction,
       strength: "normal",
       reason: battle.description || "Battle Zone confirmed.",
     };
   }, [trade, battle]);
 
-  // Enrich with EMA + HTF + Sweep
   const enrichedVerdict = useMemo(
     () =>
       enrichVerdict({
@@ -275,7 +260,6 @@ export default function NegotiationPage() {
     ? strengthInfo(enrichedVerdict.strength)
     : null;
 
-  // Trade validation
   const tradeValidation = useMemo(
     () =>
       validateTrade({
@@ -285,7 +269,6 @@ export default function NegotiationPage() {
     [trade, enrichedVerdict]
   );
 
-  // Warning reasons
   const warningReasons = useMemo(
     () =>
       computeWarningReasons({
@@ -297,6 +280,29 @@ export default function NegotiationPage() {
     [enrichedVerdict, alignment]
   );
   const hasWarnings = warningReasons.length > 0;
+
+  const irlErl = useMemo(() => {
+    if (!trade || !form.verdictClose) return null;
+    return computeIrlErl({
+      currentZone: {
+        high: form.rbZoneHigh,
+        low: form.rbZoneLow,
+        label: "RB Zone",
+      },
+      nextZone: form.nextRbHigh
+        ? { high: form.nextRbHigh, low: form.nextRbLow, label: "Next RB" }
+        : null,
+      closePrice: form.verdictClose,
+      trade,
+    });
+  }, [
+    trade,
+    form.verdictClose,
+    form.rbZoneHigh,
+    form.rbZoneLow,
+    form.nextRbHigh,
+    form.nextRbLow,
+  ]);
 
   const nextRbAlignment = trade
     ? computeNextRBAlignment({
@@ -347,9 +353,7 @@ export default function NegotiationPage() {
       ce_price: trade?.entry || null,
       use_ce_entry: true,
       rb_verdict: battle.state,
-      rb_verdict_price: form.verdictClose
-        ? parseFloat(form.verdictClose)
-        : null,
+      rb_verdict_price: form.verdictClose ? parseFloat(form.verdictClose) : null,
       rb_verdict_at: form.verdictClose ? new Date().toISOString() : null,
       rb_attempts: form.attempts,
       next_rb_high: form.nextRbHigh ? parseFloat(form.nextRbHigh) : null,
@@ -402,9 +406,7 @@ export default function NegotiationPage() {
       rb_zone_high: form.rbZoneHigh ? parseFloat(form.rbZoneHigh) : null,
       rb_zone_low: form.rbZoneLow ? parseFloat(form.rbZoneLow) : null,
       ce_price: trade?.entry || null,
-      verdict_close: form.verdictClose
-        ? parseFloat(form.verdictClose)
-        : null,
+      verdict_close: form.verdictClose ? parseFloat(form.verdictClose) : null,
       verdict: battle.state,
       attempts: form.attempts,
       verdict_flipped: battle.state === "bearish_confirmed",
@@ -431,6 +433,14 @@ export default function NegotiationPage() {
       sweep_override: enrichedVerdict?.hasSweepOverride || false,
       warning_acknowledged: hasWarnings,
       warning_reasons: warningReasons.map((r) => r.key),
+      dealing_high: irlErl?.range?.dealingHigh || null,
+      dealing_low: irlErl?.range?.dealingLow || null,
+      dealing_ce: irlErl?.range?.dealingCe || null,
+      irl_high: irlErl?.irl?.high || null,
+      irl_low: irlErl?.irl?.low || null,
+      irl_ce: irlErl?.irl?.ce || null,
+      erl_price: irlErl?.erl?.price || null,
+      irl_erl_aligned: irlErl?.aligned || false,
       notes: form.notes,
     };
 
@@ -736,9 +746,7 @@ export default function NegotiationPage() {
             </h2>
             <p className="text-3xl font-bold tabular-nums text-yellow-200">
               {formatPrice(
-                (parseFloat(form.rbZoneHigh) +
-                  parseFloat(form.rbZoneLow)) /
-                  2
+                (parseFloat(form.rbZoneHigh) + parseFloat(form.rbZoneLow)) / 2
               )}
             </p>
           </div>
@@ -861,9 +869,7 @@ export default function NegotiationPage() {
               </label>
               <select
                 value={form.pipSize}
-                onChange={(e) =>
-                  update("pipSize", parseFloat(e.target.value))
-                }
+                onChange={(e) => update("pipSize", parseFloat(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               >
                 <option value={0.0001}>0.0001</option>
@@ -968,18 +974,18 @@ export default function NegotiationPage() {
           </div>
         )}
 
-        {/* Trade Card — SHARED COMPONENT */}
+        {/* Trade Card */}
         {trade && (
           <TradeCard
             trade={trade}
             badges={[
-              alignment && {
-                label: alignment.label,
-                className: alignment.color,
-              },
+              alignment && { label: alignment.label, className: alignment.color },
             ].filter(Boolean)}
           />
         )}
+
+        {/* IRL / ERL Dealing Range Card */}
+        {irlErl && <DealingRangeCard data={irlErl} />}
 
         {/* Trade validation errors */}
         {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
@@ -1027,9 +1033,7 @@ export default function NegotiationPage() {
             </div>
 
             {nextRbAlignment && nextRbAlignment.state !== "none" && (
-              <div
-                className={`p-3 rounded-lg border-2 ${nextRbAlignment.color}`}
-              >
+              <div className={`p-3 rounded-lg border-2 ${nextRbAlignment.color}`}>
                 <p className="text-sm font-bold">
                   {nextRbAlignment.emoji} {nextRbAlignment.label}
                 </p>
@@ -1068,8 +1072,7 @@ export default function NegotiationPage() {
         {hasWarnings && (
           <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
             ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
-            {warningReasons.length === 1 ? "" : "s"} detected. The Save button
-            will show a confirmation.
+            {warningReasons.length === 1 ? "" : "s"} detected.
           </div>
         )}
 
@@ -1093,7 +1096,6 @@ export default function NegotiationPage() {
         </button>
       </div>
 
-      {/* WARNING MODAL — SHARED COMPONENT */}
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}

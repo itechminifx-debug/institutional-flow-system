@@ -13,10 +13,7 @@ import {
   premiumDiscountVerdict,
   strengthInfo,
 } from "@/lib/premiumDiscountEngine";
-import {
-  computeTrade,
-  validateTrade,
-} from "@/lib/tradeCalculator";
+import { computeTrade, validateTrade } from "@/lib/tradeCalculator";
 import {
   computeEmaDirection,
   emaInfo,
@@ -26,9 +23,11 @@ import {
   HTF_BIAS_OPTIONS,
   SWEEP_DIRECTION_OPTIONS,
 } from "@/lib/verdictEngine";
+import { computeIrlErl } from "@/lib/irlErlEngine";
 import PairPicker from "@/components/PairPicker";
 import TradeCard from "@/components/TradeCard";
 import WarningModal from "@/components/WarningModal";
+import DealingRangeCard from "@/components/DealingRangeCard";
 
 export default function PremiumDiscountPage() {
   const router = useRouter();
@@ -127,7 +126,6 @@ export default function PremiumDiscountPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // CE + side
   const ce = computeCe(form.zoneHigh, form.zoneLow);
   const sideOfCe = ce !== null ? detectSideOfCe(form.closePrice, ce) : null;
   const zonePosition = detectZonePosition(
@@ -136,7 +134,6 @@ export default function PremiumDiscountPage() {
     form.zoneLow
   );
 
-  // Base verdict from premium/discount engine
   const baseResult = judgeNegotiation({
     zoneType: form.zoneType,
     zoneHigh: form.zoneHigh,
@@ -145,14 +142,12 @@ export default function PremiumDiscountPage() {
     closePrice: form.closePrice,
   });
 
-  // EMA
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     closePrice: form.closePrice,
   });
   const emaMeta = emaInfo(ema);
 
-  // Enrich verdict with EMA + HTF + Sweep
   const enrichedVerdict = useMemo(() => {
     if (!baseResult) return null;
     const base = {
@@ -170,7 +165,6 @@ export default function PremiumDiscountPage() {
 
   const alignment = enrichedVerdict?.emaAlignment;
 
-  // Shared trade calculator
   const trade = useMemo(() => {
     if (!enrichedVerdict) return null;
     const v = enrichedVerdict.verdict;
@@ -201,7 +195,6 @@ export default function PremiumDiscountPage() {
     profile?.risk_percent,
   ]);
 
-  // Trade validation
   const tradeValidation = useMemo(
     () =>
       validateTrade({
@@ -211,7 +204,6 @@ export default function PremiumDiscountPage() {
     [trade, enrichedVerdict]
   );
 
-  // Warnings
   const warningReasons = useMemo(
     () =>
       computeWarningReasons({
@@ -223,6 +215,20 @@ export default function PremiumDiscountPage() {
     [enrichedVerdict, alignment]
   );
   const hasWarnings = warningReasons.length > 0;
+
+  const irlErl = useMemo(() => {
+    if (!trade || !form.closePrice) return null;
+    return computeIrlErl({
+      currentZone: {
+        high: form.zoneHigh,
+        low: form.zoneLow,
+        label: form.zoneName || "Zone",
+      },
+      nextZone: null,
+      closePrice: form.closePrice,
+      trade,
+    });
+  }, [trade, form.closePrice, form.zoneHigh, form.zoneLow, form.zoneName]);
 
   const verdict = premiumDiscountVerdict(enrichedVerdict || baseResult);
 
@@ -331,6 +337,14 @@ export default function PremiumDiscountPage() {
       sweep_override: enrichedVerdict.hasSweepOverride || false,
       warning_acknowledged: hasWarnings,
       warning_reasons: warningReasons.map((r) => r.key),
+      dealing_high: irlErl?.range?.dealingHigh || null,
+      dealing_low: irlErl?.range?.dealingLow || null,
+      dealing_ce: irlErl?.range?.dealingCe || null,
+      irl_high: irlErl?.irl?.high || null,
+      irl_low: irlErl?.irl?.low || null,
+      irl_ce: irlErl?.irl?.ce || null,
+      erl_price: irlErl?.erl?.price || null,
+      irl_erl_aligned: irlErl?.aligned || false,
       notes: form.notes,
     };
 
@@ -585,7 +599,7 @@ export default function PremiumDiscountPage() {
           )}
         </div>
 
-        {/* EMA 50 · HTF Bias · Sweep Direction · ATR · Pip */}
+        {/* EMA 50 · HTF Bias · Sweep · ATR · Pip */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">
             EMA 50 · HTF Bias · Sweep Direction · ATR
@@ -659,9 +673,7 @@ export default function PremiumDiscountPage() {
               </label>
               <select
                 value={form.pipSize}
-                onChange={(e) =>
-                  update("pipSize", parseFloat(e.target.value))
-                }
+                onChange={(e) => update("pipSize", parseFloat(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               >
                 <option value={0.0001}>0.0001</option>
@@ -700,9 +712,7 @@ export default function PremiumDiscountPage() {
 
         {/* Enriched Verdict */}
         {enrichedVerdict && (
-          <div
-            className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}
-          >
+          <div className={`p-4 rounded-lg border space-y-2 ${verdict.color}`}>
             <p className="text-xs opacity-80">Verdict</p>
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-2xl font-bold">
@@ -765,18 +775,18 @@ export default function PremiumDiscountPage() {
           </div>
         )}
 
-        {/* Trade Card — SHARED COMPONENT */}
+        {/* Trade Card */}
         {trade && (
           <TradeCard
             trade={trade}
             badges={[
-              alignment && {
-                label: alignment.label,
-                className: alignment.color,
-              },
+              alignment && { label: alignment.label, className: alignment.color },
             ].filter(Boolean)}
           />
         )}
+
+        {/* IRL / ERL Dealing Range Card */}
+        {irlErl && <DealingRangeCard data={irlErl} />}
 
         {/* Trade validation errors */}
         {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
@@ -844,7 +854,6 @@ export default function PremiumDiscountPage() {
         </button>
       </div>
 
-      {/* WARNING MODAL — SHARED COMPONENT */}
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}

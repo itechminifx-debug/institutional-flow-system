@@ -30,14 +30,15 @@ import {
   HTF_BIAS_OPTIONS,
   SWEEP_DIRECTION_OPTIONS,
 } from "@/lib/verdictEngine";
+import { computeIrlErl } from "@/lib/irlErlEngine";
 import PairPicker from "@/components/PairPicker";
 import TradeCard from "@/components/TradeCard";
 import WarningModal from "@/components/WarningModal";
+import DealingRangeCard from "@/components/DealingRangeCard";
 
 function emptyCandle() {
   return { type: "green", open: "", close: "", wickTip: "" };
 }
-
 function emptyRb() {
   return { id: Math.random().toString(36).slice(2), high: "", low: "" };
 }
@@ -218,19 +219,16 @@ export default function LiquidityZonePage() {
 
   const activeRbCe = activeRb ? computeCe(activeRb.high, activeRb.low) : null;
 
-  // Base verdict from zone engine
   const baseNegotiation = activeRb
     ? judgeZoneNegotiation({ activeRb, closePrice: form.closePrice })
     : null;
 
-  // EMA
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     closePrice: form.closePrice,
   });
   const emaMeta = emaInfo(ema);
 
-  // Enriched verdict
   const enrichedVerdict = useMemo(() => {
     if (!baseNegotiation) return null;
     const base = {
@@ -250,7 +248,6 @@ export default function LiquidityZonePage() {
 
   const atr = atrFilter(form.atrCurrent, form.atrPrior);
 
-  // Checklist
   const autoAnswers = {
     zone_present: !!zone,
     rbs_marked: rankedRbs.length > 0,
@@ -283,7 +280,6 @@ export default function LiquidityZonePage() {
     }));
   }
 
-  // Shared trade calculator
   const trade = useMemo(() => {
     if (!enrichedVerdict || !activeRb) return null;
     const v = enrichedVerdict.verdict;
@@ -321,7 +317,6 @@ export default function LiquidityZonePage() {
     [trade, enrichedVerdict]
   );
 
-  // Warnings
   const warningReasons = useMemo(
     () =>
       computeWarningReasons({
@@ -343,6 +338,20 @@ export default function LiquidityZonePage() {
     [enrichedVerdict, alignment, checklistVerdict, score]
   );
   const hasWarnings = warningReasons.length > 0;
+
+  const irlErl = useMemo(() => {
+    if (!trade || !form.closePrice || !activeRb) return null;
+    return computeIrlErl({
+      currentZone: {
+        high: activeRb.high,
+        low: activeRb.low,
+        label: "Active RB",
+      },
+      nextZone: null,
+      closePrice: form.closePrice,
+      trade,
+    });
+  }, [trade, form.closePrice, activeRb]);
 
   async function handleSave(force = false) {
     if (!enrichedVerdict || !trade || !activeRb) {
@@ -439,7 +448,8 @@ export default function LiquidityZonePage() {
       tp_pips: trade.tpPips,
       atr_current: form.atrCurrent ? parseFloat(form.atrCurrent) : null,
       atr_prior: form.atrPrior ? parseFloat(form.atrPrior) : null,
-      atr_state: atr.key === "unknown" || atr.key === "invalid" ? "unknown" : atr.key,
+      atr_state:
+        atr.key === "unknown" || atr.key === "invalid" ? "unknown" : atr.key,
       ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
       ema50_direction: ema.direction,
       ema50_position: ema.position,
@@ -453,6 +463,14 @@ export default function LiquidityZonePage() {
       checklist_score: score,
       checklist_passed: checklistVerdict.passed,
       checklist_answers: combinedAnswers,
+      dealing_high: irlErl?.range?.dealingHigh || null,
+      dealing_low: irlErl?.range?.dealingLow || null,
+      dealing_ce: irlErl?.range?.dealingCe || null,
+      irl_high: irlErl?.irl?.high || null,
+      irl_low: irlErl?.irl?.low || null,
+      irl_ce: irlErl?.irl?.ce || null,
+      erl_price: irlErl?.erl?.price || null,
+      irl_erl_aligned: irlErl?.aligned || false,
       notes: form.notes,
     };
 
@@ -940,9 +958,7 @@ export default function LiquidityZonePage() {
               </label>
               <select
                 value={form.pipSize}
-                onChange={(e) =>
-                  update("pipSize", parseFloat(e.target.value))
-                }
+                onChange={(e) => update("pipSize", parseFloat(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               >
                 <option value={0.0001}>0.0001</option>
@@ -1066,18 +1082,18 @@ export default function LiquidityZonePage() {
           </div>
         )}
 
-        {/* Trade Card — SHARED COMPONENT */}
+        {/* Trade Card */}
         {trade && (
           <TradeCard
             trade={trade}
             badges={[
-              alignment && {
-                label: alignment.label,
-                className: alignment.color,
-              },
+              alignment && { label: alignment.label, className: alignment.color },
             ].filter(Boolean)}
           />
         )}
+
+        {/* IRL / ERL Dealing Range Card */}
+        {irlErl && <DealingRangeCard data={irlErl} />}
 
         {/* Trade validation errors */}
         {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
@@ -1091,44 +1107,19 @@ export default function LiquidityZonePage() {
         {/* Checklist */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-blue-400">
-                The 10-Question Checklist
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">
-                Auto-detected where possible.
-              </p>
-            </div>
+            <h2 className="text-sm font-semibold text-blue-400">
+              The 10-Question Checklist
+            </h2>
             <p
               className={`text-xl font-bold ${
-                checklistVerdict.passed
-                  ? "text-green-400"
-                  : "text-yellow-400"
+                checklistVerdict.passed ? "text-green-400" : "text-yellow-400"
               }`}
             >
               {score}/10
             </p>
           </div>
 
-          <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all ${
-                checklistVerdict.passed ? "bg-green-500" : "bg-yellow-500"
-              }`}
-              style={{ width: `${(score / 10) * 100}%` }}
-            />
-          </div>
-
-          <div className={`p-3 rounded-lg border ${checklistVerdict.color}`}>
-            <p className="text-sm font-bold">
-              {checklistVerdict.emoji} {checklistVerdict.label}
-            </p>
-            <p className="text-xs opacity-90 mt-1">
-              {checklistVerdict.description}
-            </p>
-          </div>
-
-          <div className="space-y-2 pt-2">
+          <div className="space-y-2">
             {LIQUIDITY_ZONE_CHECKLIST.map((q) => {
               const isOn = combinedAnswers[q.key];
               const isAuto = autoAnswers[q.key];
@@ -1234,7 +1225,6 @@ export default function LiquidityZonePage() {
         </button>
       </div>
 
-      {/* WARNING MODAL — SHARED COMPONENT */}
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}

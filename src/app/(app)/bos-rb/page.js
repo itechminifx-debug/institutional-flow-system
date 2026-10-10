@@ -17,10 +17,7 @@ import {
   rbPositionInfo,
   rbPositionRules,
 } from "@/lib/bosRbEngine";
-import {
-  computeTrade,
-  validateTrade,
-} from "@/lib/tradeCalculator";
+import { computeTrade, validateTrade } from "@/lib/tradeCalculator";
 import {
   computeEmaDirection,
   emaInfo,
@@ -30,9 +27,11 @@ import {
   HTF_BIAS_OPTIONS,
   SWEEP_DIRECTION_OPTIONS,
 } from "@/lib/verdictEngine";
+import { computeIrlErl } from "@/lib/irlErlEngine";
 import PairPicker from "@/components/PairPicker";
 import TradeCard from "@/components/TradeCard";
 import WarningModal from "@/components/WarningModal";
+import DealingRangeCard from "@/components/DealingRangeCard";
 
 export default function BosRbPage() {
   const router = useRouter();
@@ -199,14 +198,12 @@ export default function BosRbPage() {
   const score = computeChecklistScore(combinedAnswers);
   const verdict = checklistVerdict(score);
 
-  // EMA
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
     closePrice: form.bosClose,
   });
   const emaMeta = emaInfo(ema);
 
-  // Shared trade calculator
   const sharedTrade = useMemo(() => {
     if (!form.rbZoneHigh || !form.rbZoneLow || !form.htfBias) return null;
     const rbHigh = parseFloat(form.rbZoneHigh);
@@ -247,7 +244,6 @@ export default function BosRbPage() {
 
   const trade = sharedTrade || baseTrade;
 
-  // Enriched verdict
   const baseVerdict = useMemo(() => {
     if (!trade) return null;
     return {
@@ -272,7 +268,6 @@ export default function BosRbPage() {
 
   const alignment = enrichedVerdict?.emaAlignment;
 
-  // Trade validation
   const tradeValidation = useMemo(
     () =>
       validateTrade({
@@ -282,7 +277,6 @@ export default function BosRbPage() {
     [trade, enrichedVerdict]
   );
 
-  // Warnings
   const warningReasons = useMemo(
     () =>
       computeWarningReasons({
@@ -296,7 +290,7 @@ export default function BosRbPage() {
                 {
                   key: "checklist_fail",
                   label: `Checklist failed (${score}/10)`,
-                  detail: `Need at least ${CHECKLIST_PASS_THRESHOLD} checks to pass — currently ${score}.`,
+                  detail: `Need at least ${CHECKLIST_PASS_THRESHOLD} checks — currently ${score}.`,
                 },
               ]
             : [],
@@ -304,6 +298,20 @@ export default function BosRbPage() {
     [enrichedVerdict, alignment, verdict, score]
   );
   const hasWarnings = warningReasons.length > 0;
+
+  const irlErl = useMemo(() => {
+    if (!trade || !form.bosClose) return null;
+    return computeIrlErl({
+      currentZone: {
+        high: form.rbZoneHigh,
+        low: form.rbZoneLow,
+        label: "RB Zone",
+      },
+      nextZone: null,
+      closePrice: form.bosClose,
+      trade,
+    });
+  }, [trade, form.bosClose, form.rbZoneHigh, form.rbZoneLow]);
 
   function toggleManual(key) {
     setManualAnswers((prev) => ({
@@ -426,6 +434,14 @@ export default function BosRbPage() {
       sweep_override: enrichedVerdict?.hasSweepOverride || false,
       warning_acknowledged: hasWarnings,
       warning_reasons: warningReasons.map((r) => r.key),
+      dealing_high: irlErl?.range?.dealingHigh || null,
+      dealing_low: irlErl?.range?.dealingLow || null,
+      dealing_ce: irlErl?.range?.dealingCe || null,
+      irl_high: irlErl?.irl?.high || null,
+      irl_low: irlErl?.irl?.low || null,
+      irl_ce: irlErl?.irl?.ce || null,
+      erl_price: irlErl?.erl?.price || null,
+      irl_erl_aligned: irlErl?.aligned || false,
       notes: form.notes,
     };
 
@@ -813,9 +829,7 @@ export default function BosRbPage() {
               </label>
               <select
                 value={form.pipSize}
-                onChange={(e) =>
-                  update("pipSize", parseFloat(e.target.value))
-                }
+                onChange={(e) => update("pipSize", parseFloat(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
               >
                 <option value={0.0001}>0.0001</option>
@@ -966,18 +980,18 @@ export default function BosRbPage() {
           </div>
         )}
 
-        {/* Trade Card — SHARED COMPONENT */}
+        {/* Trade Card */}
         {trade && (
           <TradeCard
             trade={trade}
             badges={[
-              alignment && {
-                label: alignment.label,
-                className: alignment.color,
-              },
+              alignment && { label: alignment.label, className: alignment.color },
             ].filter(Boolean)}
           />
         )}
+
+        {/* IRL / ERL Dealing Range Card */}
+        {irlErl && <DealingRangeCard data={irlErl} />}
 
         {/* Trade validation errors */}
         {!tradeValidation.ok && tradeValidation.errors.length > 0 && (
@@ -988,45 +1002,24 @@ export default function BosRbPage() {
           </div>
         )}
 
-        {/* The 10-Question Checklist */}
+        {/* Checklist */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold text-blue-400">
                 The 10-Question Checklist
               </h2>
-              <p className="text-xs text-gray-500 mt-1">
-                Auto-detected where possible. Tap to override.
-              </p>
             </div>
-            <div className="text-right">
-              <p
-                className={`text-xl font-bold ${
-                  verdict.passed ? "text-green-400" : "text-yellow-400"
-                }`}
-              >
-                {score}/10
-              </p>
-            </div>
-          </div>
-
-          <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all ${
-                verdict.passed ? "bg-green-500" : "bg-yellow-500"
+            <p
+              className={`text-xl font-bold ${
+                verdict.passed ? "text-green-400" : "text-yellow-400"
               }`}
-              style={{ width: `${(score / 10) * 100}%` }}
-            />
-          </div>
-
-          <div className={`p-3 rounded-lg border ${verdict.color}`}>
-            <p className="text-sm font-bold">
-              {verdict.emoji} {verdict.label}
+            >
+              {score}/10
             </p>
-            <p className="text-xs opacity-90 mt-1">{verdict.description}</p>
           </div>
 
-          <div className="space-y-2 pt-2">
+          <div className="space-y-2">
             {BOS_RB_CHECKLIST.map((q) => {
               const isAuto = autoAnswers[q.key];
               const isManual = manualAnswers[q.key] !== undefined;
@@ -1115,8 +1108,7 @@ export default function BosRbPage() {
         {hasWarnings && (
           <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
             ⚠️ <strong>Warning:</strong> {warningReasons.length} danger signal
-            {warningReasons.length === 1 ? "" : "s"} detected. The Save button
-            will show a confirmation.
+            {warningReasons.length === 1 ? "" : "s"} detected.
           </div>
         )}
 
@@ -1142,7 +1134,6 @@ export default function BosRbPage() {
         </button>
       </div>
 
-      {/* WARNING MODAL — SHARED COMPONENT */}
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}

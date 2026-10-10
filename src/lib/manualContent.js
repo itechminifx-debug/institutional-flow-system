@@ -242,6 +242,19 @@ export const MANUAL_PARTS = [
       },
     ],
   },
+
+    {
+    key: "part12",
+    number: 12,
+    title: "IRL / ERL — Internal & External Range Liquidity",
+    chapters: [
+      { key: "ch88", number: 88, title: "The Dealing Range" },
+      { key: "ch89", number: 89, title: "Internal Range Liquidity (IRL)" },
+      { key: "ch90", number: 90, title: "External Range Liquidity (ERL)" },
+      { key: "ch91", number: 91, title: "The IRL → ERL Cycle" },
+      { key: "ch92", number: 92, title: "Applying IRL / ERL in Your System" },
+    ],
+  },
 ];
 // ============================================================
 // CHAPTER CONTENT — STAGE 2 (Parts 1 & 2)
@@ -8010,6 +8023,307 @@ Every rule of the Rejection Block system, in one place.
 ---
 
 *End of Part 11 — The Institutional Flow System now has 87 chapters across 11 Parts.*
+    `,
+  },
+
+    ch88: {
+    title: "The Dealing Range",
+    content: `
+## The Dealing Range
+
+Everything in the IRL/ERL framework starts with the **dealing range** — the high and low of the current market structure.
+
+### What It Is
+
+The dealing range is the **highest swing high** and the **lowest swing low** of the current move. It's the boundary of the game.
+
+**Inside the range** = IRL (internal range liquidity)
+**Beyond the range** = ERL (external range liquidity)
+
+### How To Find It
+
+1. Identify the current major swing high
+2. Identify the current major swing low
+3. Draw a horizontal line at each
+
+**The space between them is the dealing range.**
+
+### Why It Matters
+
+- Every trade is either **inside the range** (IRL) or **aiming beyond it** (ERL)
+- Price alternates between consuming IRL and reaching for ERL
+- **Where price sits in the range** tells you who is in control
+
+### The Range CE
+
+The 50% midpoint of the dealing range is the **equilibrium (EQ)**.
+
+- **Above EQ** = premium → sellers' territory
+- **Below EQ** = discount → buyers' territory
+- **At EQ** = indecision
+
+### How Your System Uses It
+
+Every setup page now shows a **Dealing Range card**:
+
+- Dealing High
+- Dealing Low
+- Range CE
+- Where the close sits (premium / discount / above range / below range)
+- The IRL you're trading
+- The ERL you're targeting
+
+**You don't enter anything new.** The system derives the range from the zones you already typed.
+
+### The Golden Rule
+
+> "The range defines the game. Price inside the range is IRL. Price beyond the range is ERL. Trade from one to the other."
+
+---
+
+*Continue to Chapter 89 →*
+    `,
+  },
+
+  ch89: {
+    title: "Internal Range Liquidity (IRL)",
+    content: `
+## Internal Range Liquidity (IRL)
+
+IRL is the liquidity **inside** the dealing range — the stepping stones price uses before it expands.
+
+### Where It Lives
+
+- Smaller swing highs and lows
+- Fair Value Gaps (FVGs)
+- Order Blocks (OBs)
+- Rejection Blocks (RBs)
+- Internal equal highs / lows
+
+**Anything inside the range is IRL.**
+
+### Its Role
+
+IRL is the **immediate target**. Price draws toward internal liquidity first, rebalances, then decides whether to keep expanding.
+
+**You enter at IRL. You don't chase ERL.**
+
+### Why IRL Matters
+
+- It's where price **pauses**
+- It's where price **rebalances** inefficiencies
+- It's where **you get your best entries**
+- It's where **stops cluster** (the sweep fuel)
+
+### The IRL Sweep
+
+Price almost always **sweeps IRL before expanding**. The sweep:
+
+1. Takes out stops above/below the internal level
+2. Fills the market with orders
+3. **Then** expands toward ERL
+
+**If you don't see the IRL sweep, the expansion isn't ready.**
+
+### In Your System
+
+The **IRL is your zone** — the RB, MSS, FVG, or Order Block you enter on any setup page.
+
+The system labels it:
+
+> 🎯 IRL — Current RB / Zone
+> 209500 – 209700
+> CE 209600
+
+### The Golden Rule
+
+> "IRL is the path. Trade IRL entries. Never trade IRL in isolation — always know where the ERL is."
+
+---
+
+*Continue to Chapter 90 →*
+    `,
+  },
+
+  ch90: {
+    title: "External Range Liquidity (ERL)",
+    content: `
+## External Range Liquidity (ERL)
+
+ERL is the liquidity **beyond** the dealing range — the major magnets that attract institutional moves.
+
+### Where It Lives
+
+- Major swing highs and lows
+- Previous Day High / Low (PDH / PDL)
+- Previous Week High / Low (PWH / PWL)
+- Session extremes (Asian / London / NY)
+- Round numbers beyond the range
+
+**Anything outside the range is ERL.**
+
+### Its Role
+
+ERL is the **ultimate destination**. When price expands, it's aiming for a specific ERL — not moving randomly.
+
+**Every internal move has an external objective.**
+
+### Why ERL Matters
+
+- It defines your **take profit**
+- It confirms the **trade direction** (BUY aims up-ERL, SELL aims down-ERL)
+- It tells you **whether the move has room to run**
+
+### ERL Reaction
+
+When price reaches ERL, two things can happen:
+
+1. **Sweep and reverse** — the ERL held, price was rejected
+2. **Break and continue** — the ERL was broken, price expands further
+
+Either outcome tells you something about the next phase.
+
+### In Your System
+
+The **ERL is your TP target** — the level your trade is aiming for.
+
+The system labels it:
+
+> 🧲 ERL — Target
+> 210000
+> 2R target
+
+### The Golden Rule
+
+> "ERL is the destination. Know your ERL before you take the trade — otherwise you're trading blind."
+
+---
+
+*Continue to Chapter 91 →*
+    `,
+  },
+
+  ch91: {
+    title: "The IRL → ERL Cycle",
+    content: `
+## The IRL → ERL Cycle
+
+Price moves in a **continuous loop** between IRL and ERL. Understanding this cycle is the core narrative.
+
+### The Three Phases
+
+**Phase 1 — Internal Consumption**
+- Price sweeps internal liquidity (IRL)
+- Stops are taken out
+- Orders are filled
+- The market builds fuel
+
+**Phase 2 — Expansion**
+- With enough orders, price expands aggressively
+- The move is directional and clean
+- Aim: the next major ERL
+
+**Phase 3 — External Reaction**
+- Price reaches ERL
+- Either sweeps and reverses (liquidity sweep)
+- Or breaks and continues (liquidity run)
+
+### After Reaction
+
+Once the external reaction completes, a **new dealing range** forms:
+
+- The old ERL becomes the new range high or low
+- New internal liquidity builds inside
+- The cycle repeats
+
+**This is why price never sits still. There's always a new IRL to sweep and a new ERL to target.**
+
+### What This Means For You
+
+**Before every trade, ask:**
+
+- Which IRL is being swept?
+- Which ERL is being targeted?
+- Are they aligned with my direction?
+
+If yes → the trade has a **narrative**.
+
+If no → you're guessing.
+
+### The Golden Rule
+
+> "IRL is the path. ERL is the destination. Price will consume internal liquidity to fuel its expansion toward external liquidity."
+
+---
+
+*Continue to Chapter 92 →*
+    `,
+  },
+
+  ch92: {
+    title: "Applying IRL / ERL in Your System",
+    content: `
+## Applying IRL / ERL in Your System
+
+Every setup page now derives IRL and ERL **automatically** from the zones you enter.
+
+### The Step-By-Step Workflow
+
+**Step 1 — Define the Range**
+The system builds the dealing range from the current zone + the next zone you've entered.
+- High = highest zone high
+- Low = lowest zone low
+- CE = range midpoint
+
+**Step 2 — Mark the IRL**
+Your **current zone** is the IRL — the RB, MSS, FVG, or Order Block you're trading.
+
+**Step 3 — Wait for the Sweep**
+Price must sweep IRL (your zone) before expanding. Your RB sweep detection handles this.
+
+**Step 4 — Target the ERL**
+Your **TP** is the ERL — the external level your trade is aiming for.
+- For BUY → ERL is above the IRL
+- For SELL → ERL is below the IRL
+
+### The Alignment Check
+
+The Dealing Range card shows:
+
+- ✅ **IRL → ERL aligned** — your TP is on the correct side of the IRL
+- ⚠️ **IRL → ERL misaligned** — your TP is on the wrong side (rare, but signals a conflict)
+- ⚪ **Unknown** — enter a zone + close to compute
+
+### The Range Position
+
+The card also tells you **where price sits** in the range:
+
+- **Premium half** → sellers' territory
+- **Discount half** → buyers' territory
+- **At equilibrium** → wait for a close
+- **Above range** → breakout continuation up
+- **Below range** → breakdown continuation down
+
+### Combining With The Rest Of Your System
+
+| Concept | Your System |
+|---|---|
+| **Dealing Range** | Zone High + Zone Low + Next Zone |
+| **IRL** | The zone you're trading |
+| **ERL** | Your TP target |
+| **Sweep** | Your sweep + reclaim detection |
+| **Expansion** | Your path danger / Safe TP |
+| **Range Position** | Premium / Discount / Breakout |
+
+**Everything connects.**
+
+### The Golden Rule
+
+> "Never trade an IRL zone in isolation. Always know the ERL it's aiming for."
+
+---
+
+*End of Part 12 — The Institutional Flow System now has 92 chapters across 12 Parts.*
     `,
   },
 };
