@@ -1,33 +1,42 @@
 // ============================================================
-// LIQUIDITY SEQUENCE ENGINE — v2 (5-system collaborative flow)
+// LIQUIDITY SEQUENCE ENGINE
+// ============================================================
+// The 5-system collaborative model:
 //
-// Systems, in order:
-//   1. Liquidity Zone    — marked (high + low)
-//   2. Liquidity Sweep   — price poked through the zone
-//   3. MSS               — structure shifted (close breaks reference)
-//   4. FVG               — fair value gap formed
-//   5. Rejection Block   — RB aligns with the FVG
-//   6. Close in RB       — a candle closes inside the RB range
+//   1. Liquidity Zone   — user marks high + low
+//   2. Liquidity Sweep  — did price poke through?
+//   3. MSS              — did structure shift?
+//   4. FVG              — did a fair value gap form?
+//   5. Rejection Block  — does the RB align with the FVG?
 //
-// Verdict (system 6 extension):
-//   Premium / discount judged INSIDE the RB.
-//   Close above RB CE → premium → SELL
-//   Close below RB CE → discount → BUY
-//   Close ≈ RB CE     → equilibrium → WAIT
+// Then the trigger:
+//
+//   6. Close in RB      — did a candle close inside the RB?
+//
+// Then the verdict:
+//
+//   judgeZoneNegotiation → premium/discount inside the RB
+//   enrichVerdict        → HTF + sweep layer on top
+//
+// This engine REUSES:
+//   - judgeZoneNegotiation, computeCe, atrFilter  (liquidityZoneEngine)
+//   - enrichVerdict, computeEmaDirection, emaInfo,
+//     computeWarningReasons                       (verdictEngine)
+//   - computeTrade                                (tradeCalculator)
+//
+// It does NOT duplicate any existing logic.
 // ============================================================
 
-export const SEQUENCE_TYPES = [
-  { key: "support",    label: "Support Liquidity (Bullish)",    emoji: "🟢" },
-  { key: "resistance", label: "Resistance Liquidity (Bearish)", emoji: "🔴" },
-];
+import {
+  computeCe,
+  judgeZoneNegotiation,
+  premiumDiscountVerdict,
+  atrFilter,
+} from "@/lib/liquidityZoneEngine";
 
-export function sequenceTypeInfo(key) {
-  return SEQUENCE_TYPES.find((s) => s.key === key) || SEQUENCE_TYPES[0];
-}
-
-// ------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------
+// ============================================================
+// HELPERS
+// ============================================================
 
 function num(v) {
   const n = parseFloat(v);
@@ -44,14 +53,32 @@ function validCandle(c) {
   );
 }
 
-function round(n, dp = 2) {
-  if (n === null || n === undefined || isNaN(n)) return null;
-  return Math.round(n * 10 ** dp) / 10 ** dp;
+// ============================================================
+// SEQUENCE TYPES
+// ============================================================
+
+export const SEQUENCE_TYPES = [
+  {
+    key: "support",
+    label: "Support Liquidity (Bullish)",
+    emoji: "🟢",
+    hint: "Sweep below → reversal up → MSS → FVG → BUY",
+  },
+  {
+    key: "resistance",
+    label: "Resistance Liquidity (Bearish)",
+    emoji: "🔴",
+    hint: "Sweep above → reversal down → MSS → FVG → SELL",
+  },
+];
+
+export function sequenceTypeInfo(key) {
+  return SEQUENCE_TYPES.find((s) => s.key === key) || SEQUENCE_TYPES[0];
 }
 
-// ------------------------------------------------------------
-// GATE 1 — Liquidity Zone
-// ------------------------------------------------------------
+// ============================================================
+// SYSTEM 1 — LIQUIDITY ZONE
+// ============================================================
 
 export function checkLiquidityZone({ liquidityZoneHigh, liquidityZoneLow }) {
   const high = num(liquidityZoneHigh);
@@ -59,133 +86,163 @@ export function checkLiquidityZone({ liquidityZoneHigh, liquidityZoneLow }) {
 
   if (high === null || low === null) {
     return {
-      pass: false,
+      key: "liquidity",
+      number: 1,
       label: "Liquidity Zone",
-      detail: "Zone not marked yet.",
-      zone: null,
+      hint: "Mark the pool of stops (high + low)",
+      pass: false,
+      detail: "Zone not marked.",
+      data: null,
     };
   }
-  if (low >= high) {
+
+  if (high <= low) {
     return {
-      pass: false,
+      key: "liquidity",
+      number: 1,
       label: "Liquidity Zone",
-      detail: "Zone low must be below zone high.",
-      zone: null,
+      hint: "Mark the pool of stops (high + low)",
+      pass: false,
+      detail: `Zone high (${high}) must be above zone low (${low}).`,
+      data: null,
     };
   }
+
   return {
-    pass: true,
+    key: "liquidity",
+    number: 1,
     label: "Liquidity Zone",
+    hint: "Mark the pool of stops (high + low)",
+    pass: true,
     detail: `Zone marked ${low} – ${high}.`,
-    zone: { high, low, ce: (high + low) / 2 },
+    data: { high, low, ce: computeCe(high, low) },
   };
 }
 
-// ------------------------------------------------------------
-// GATE 2 — Liquidity Sweep
-// Support: sweep candle's low dips below the zone low
-// Resistance: sweep candle's high pokes above the zone high
-// ------------------------------------------------------------
+// ============================================================
+// SYSTEM 2 — LIQUIDITY SWEEP
+// ============================================================
+// Support: sweep candle's LOW pokes BELOW the zone low
+// Resistance: sweep candle's HIGH pokes ABOVE the zone high
 
-export function checkLiquiditySweep({
-  sweepCandle,
-  liquidityZone,
-  sequenceType,
-}) {
-  if (!liquidityZone) {
-    return {
-      pass: false,
-      label: "Liquidity Sweep",
-      detail: "Zone missing.",
-    };
-  }
+export function checkSweep({ sweepCandle, liquidityZoneHigh, liquidityZoneLow, sequenceType }) {
   if (!validCandle(sweepCandle)) {
     return {
-      pass: false,
+      key: "sweep",
+      number: 2,
       label: "Liquidity Sweep",
+      hint: "Candle that pokes through the zone",
+      pass: false,
       detail: "Sweep candle not filled in.",
+      data: null,
     };
   }
 
-  const low = num(sweepCandle.low);
-  const high = num(sweepCandle.high);
+  const zoneHigh = num(liquidityZoneHigh);
+  const zoneLow = num(liquidityZoneLow);
+  if (zoneHigh === null || zoneLow === null) {
+    return {
+      key: "sweep",
+      number: 2,
+      label: "Liquidity Sweep",
+      hint: "Candle that pokes through the zone",
+      pass: false,
+      detail: "Liquidity zone missing.",
+      data: null,
+    };
+  }
+
+  const wickLow = num(sweepCandle.low);
+  const wickHigh = num(sweepCandle.high);
 
   if (sequenceType === "support") {
-    const swept = low < liquidityZone.low;
+    const swept = wickLow < zoneLow;
+    const depth = swept ? Math.round((zoneLow - wickLow) * 100) / 100 : 0;
     return {
-      pass: swept,
+      key: "sweep",
+      number: 2,
       label: "Liquidity Sweep",
+      hint: "Candle that pokes through the zone",
+      pass: swept,
       detail: swept
-        ? `Swept below zone (low ${low} < ${liquidityZone.low}).`
-        : `No sweep — low ${low} did not go below zone low ${liquidityZone.low}.`,
-      sweepExtreme: low,
+        ? `Swept ${depth} below zone low ${zoneLow}.`
+        : `No sweep — wick low ${wickLow} did not go below ${zoneLow}.`,
+      data: swept ? { direction: "down", depth } : null,
     };
   } else {
-    const swept = high > liquidityZone.high;
+    const swept = wickHigh > zoneHigh;
+    const depth = swept ? Math.round((wickHigh - zoneHigh) * 100) / 100 : 0;
     return {
-      pass: swept,
+      key: "sweep",
+      number: 2,
       label: "Liquidity Sweep",
+      hint: "Candle that pokes through the zone",
+      pass: swept,
       detail: swept
-        ? `Swept above zone (high ${high} > ${liquidityZone.high}).`
-        : `No sweep — high ${high} did not go above zone high ${liquidityZone.high}.`,
-      sweepExtreme: high,
+        ? `Swept ${depth} above zone high ${zoneHigh}.`
+        : `No sweep — wick high ${wickHigh} did not go above ${zoneHigh}.`,
+      data: swept ? { direction: "up", depth } : null,
     };
   }
 }
 
-// ------------------------------------------------------------
-// GATE 3 — MSS (Market Structure Shift)
-// Support: close breaks ABOVE the MSS reference
-// Resistance: close breaks BELOW the MSS reference
-// ------------------------------------------------------------
+// ============================================================
+// SYSTEM 3 — MSS (Market Structure Shift)
+// ============================================================
+// Support: current close > MSS reference (swing high broken up)
+// Resistance: current close < MSS reference (swing low broken down)
 
-export function checkMSS({ mssCandle, mssReference, sequenceType }) {
-  if (!validCandle(mssCandle)) {
-    return {
-      pass: false,
-      label: "MSS",
-      detail: "MSS candle not filled in.",
-    };
-  }
+export function checkMSS({ currentClose, mssReference, sequenceType }) {
+  const close = num(currentClose);
   const ref = num(mssReference);
-  if (ref === null) {
+
+  if (close === null || ref === null) {
     return {
+      key: "mss",
+      number: 3,
+      label: "Market Structure Shift",
+      hint: "Structure broke in the sequence direction",
       pass: false,
-      label: "MSS",
-      detail: "MSS reference price missing.",
+      detail: "Close price or MSS reference missing.",
+      data: null,
     };
   }
-
-  const close = num(mssCandle.close);
 
   if (sequenceType === "support") {
     const broke = close > ref;
     return {
+      key: "mss",
+      number: 3,
+      label: "Market Structure Shift",
+      hint: "Structure broke in the sequence direction",
       pass: broke,
-      label: "MSS",
       detail: broke
-        ? `Bullish MSS — closed ${close} above ${ref}.`
-        : `No bullish MSS — close ${close}, needs to break above ${ref}.`,
-      direction: "BUY",
+        ? `Bullish MSS — close ${close} above ${ref}.`
+        : `No bullish MSS — close ${close}, needs above ${ref}.`,
+      data: broke ? { direction: "bullish", level: ref } : null,
     };
   } else {
     const broke = close < ref;
     return {
+      key: "mss",
+      number: 3,
+      label: "Market Structure Shift",
+      hint: "Structure broke in the sequence direction",
       pass: broke,
-      label: "MSS",
       detail: broke
-        ? `Bearish MSS — closed ${close} below ${ref}.`
-        : `No bearish MSS — close ${close}, needs to break below ${ref}.`,
-      direction: "SELL",
+        ? `Bearish MSS — close ${close} below ${ref}.`
+        : `No bearish MSS — close ${close}, needs below ${ref}.`,
+      data: broke ? { direction: "bearish", level: ref } : null,
     };
   }
 }
 
-// ------------------------------------------------------------
-// GATE 4 — FVG (Fair Value Gap)
-// Just needs the FVG high + low to be marked, and matching
-// direction relative to the sequence type.
-// ------------------------------------------------------------
+// ============================================================
+// SYSTEM 4 — FVG (Fair Value Gap)
+// ============================================================
+// Support: FVG low < FVG high (bullish imbalance)
+// Resistance: FVG low < FVG high (bearish imbalance)
+// Either way, user marks the FVG high + low directly.
 
 export function checkFVG({ fvgHigh, fvgLow, sequenceType }) {
   const high = num(fvgHigh);
@@ -193,359 +250,282 @@ export function checkFVG({ fvgHigh, fvgLow, sequenceType }) {
 
   if (high === null || low === null) {
     return {
+      key: "fvg",
+      number: 4,
+      label: "Fair Value Gap",
+      hint: "Imbalance zone between candles",
       pass: false,
-      label: "FVG",
-      detail: "FVG not marked.",
-      fvg: null,
+      detail: "FVG high + low not marked.",
+      data: null,
     };
   }
-  if (low >= high) {
+
+  if (high <= low) {
     return {
+      key: "fvg",
+      number: 4,
+      label: "Fair Value Gap",
+      hint: "Imbalance zone between candles",
       pass: false,
-      label: "FVG",
-      detail: "FVG low must be below FVG high.",
-      fvg: null,
+      detail: `FVG high (${high}) must be above FVG low (${low}).`,
+      data: null,
     };
   }
+
+  const ce = computeCe(high, low);
+  const size = Math.round((high - low) * 100) / 100;
+
   return {
+    key: "fvg",
+    number: 4,
+    label: "Fair Value Gap",
+    hint: "Imbalance zone between candles",
     pass: true,
-    label: "FVG",
-    detail: `FVG marked ${low} – ${high}.`,
-    fvg: { high, low, ce: (high + low) / 2 },
+    detail: `${sequenceType === "support" ? "Bullish" : "Bearish"} FVG ${low} – ${high} (${size} wide).`,
+    data: { high, low, ce, size },
   };
 }
 
-// ------------------------------------------------------------
-// GATE 5 — Rejection Block aligned with FVG
-// Any overlap between RB range and FVG range counts as aligned.
-// Also classified as: "inside", "above", "below" for display.
-// ------------------------------------------------------------
+// ============================================================
+// SYSTEM 5 — RB aligned with FVG
+// ============================================================
+// RB passes if it OVERLAPS with the FVG (any of: inside / above / below)
+// "Above" = RB bottom touches FVG top
+// "Below" = RB top touches FVG bottom
+// "Inside" = RB overlaps FVG middle
 
-export function checkRBAlignment({ rbHigh, rbLow, fvg }) {
-  const high = num(rbHigh);
-  const low = num(rbLow);
+export function checkRbAlignment({ rbHigh, rbLow, fvgHigh, fvgLow }) {
+  const rHigh = num(rbHigh);
+  const rLow = num(rbLow);
+  const fHigh = num(fvgHigh);
+  const fLow = num(fvgLow);
 
-  if (high === null || low === null) {
+  if (rHigh === null || rLow === null) {
     return {
+      key: "rb",
+      number: 5,
+      label: "Rejection Block",
+      hint: "RB must align with the FVG",
       pass: false,
-      label: "RB vs FVG",
-      detail: "Rejection Block not marked.",
-      rb: null,
-      alignment: null,
-      overlap: 0,
-    };
-  }
-  if (low >= high) {
-    return {
-      pass: false,
-      label: "RB vs FVG",
-      detail: "RB low must be below RB high.",
-      rb: null,
-      alignment: null,
-      overlap: 0,
-    };
-  }
-  if (!fvg) {
-    return {
-      pass: false,
-      label: "RB vs FVG",
-      detail: "FVG missing.",
-      rb: { high, low, ce: (high + low) / 2 },
-      alignment: null,
-      overlap: 0,
+      detail: "RB high + low not marked.",
+      data: null,
     };
   }
 
-  const rb = { high, low, ce: (high + low) / 2 };
+  if (rHigh <= rLow) {
+    return {
+      key: "rb",
+      number: 5,
+      label: "Rejection Block",
+      hint: "RB must align with the FVG",
+      pass: false,
+      detail: `RB high (${rHigh}) must be above RB low (${rLow}).`,
+      data: null,
+    };
+  }
 
-  // Overlap of [rbLow, rbHigh] and [fvg.low, fvg.high]
-  const overlapTop = Math.min(rb.high, fvg.high);
-  const overlapBottom = Math.max(rb.low, fvg.low);
-  const overlap = Math.max(0, overlapTop - overlapBottom);
+  if (fHigh === null || fLow === null) {
+    return {
+      key: "rb",
+      number: 5,
+      label: "Rejection Block",
+      hint: "RB must align with the FVG",
+      pass: false,
+      detail: "FVG missing — cannot check alignment.",
+      data: null,
+    };
+  }
 
-  let alignment;
+  // Overlap between two ranges [rbLow, rbHigh] and [fLow, fHigh]
+  const overlapLow = Math.max(rLow, fLow);
+  const overlapHigh = Math.min(rHigh, fHigh);
+  const overlap = overlapHigh - overlapLow;
+
   if (overlap > 0) {
-    alignment = "inside";
-  } else if (rb.low >= fvg.high) {
-    alignment = "above";
-  } else if (rb.high <= fvg.low) {
-    alignment = "below";
-  } else {
-    alignment = "none";
+    // Determine position — where does the RB sit relative to the FVG?
+    let position;
+    if (rHigh <= fHigh && rLow >= fLow) position = "inside";
+    else if (rLow >= fHigh - 0.0001) position = "above";
+    else if (rHigh <= fLow + 0.0001) position = "below";
+    else position = "overlapping";
+
+    return {
+      key: "rb",
+      number: 5,
+      label: "Rejection Block",
+      hint: "RB must align with the FVG",
+      pass: true,
+      detail: `RB ${rLow} – ${rHigh} ${position} the FVG (overlap ${Math.round(overlap * 100) / 100}).`,
+      data: { rbHigh: rHigh, rbLow: rLow, rbCe: computeCe(rHigh, rLow), position, overlap },
+    };
   }
-
-  // "Aligned" = overlapping, OR touching (within tolerance of 0 gap)
-  const pass = overlap > 0 || alignment === "above" || alignment === "below";
-
-  const detail =
-    alignment === "inside"
-      ? `RB sits inside the FVG (overlap ${round(overlap)}).`
-      : alignment === "above"
-      ? `RB sits just above the FVG.`
-      : alignment === "below"
-      ? `RB sits just below the FVG.`
-      : `RB does not align with the FVG.`;
 
   return {
-    pass,
-    label: "RB vs FVG",
-    detail,
-    rb,
-    alignment,
-    overlap,
+    key: "rb",
+    number: 5,
+    label: "Rejection Block",
+    hint: "RB must align with the FVG",
+    pass: false,
+    detail: `RB ${rLow} – ${rHigh} does not overlap FVG ${fLow} – ${fHigh}.`,
+    data: null,
   };
 }
 
-// ------------------------------------------------------------
-// GATE 6 — Close inside RB
-// The trigger candle must close within the RB range.
-// ------------------------------------------------------------
+// ============================================================
+// TRIGGER 6 — Close inside RB
+// ============================================================
+// A candle must close inside the RB for the verdict to fire.
 
-export function checkCloseInRB({ closeCandle, rb }) {
+export function checkCloseInRb({ closeCandle, rbHigh, rbLow }) {
   if (!validCandle(closeCandle)) {
     return {
-      pass: false,
+      key: "close",
+      number: 6,
       label: "Close in RB",
+      hint: "Body must close inside the RB",
+      pass: false,
       detail: "Close candle not filled in.",
-      close: null,
+      data: null,
     };
   }
-  if (!rb) {
+
+  const rHigh = num(rbHigh);
+  const rLow = num(rbLow);
+  const close = num(closeCandle.close);
+
+  if (rHigh === null || rLow === null || close === null) {
     return {
-      pass: false,
+      key: "close",
+      number: 6,
       label: "Close in RB",
-      detail: "RB missing.",
-      close: null,
+      hint: "Body must close inside the RB",
+      pass: false,
+      detail: "RB or close missing.",
+      data: null,
     };
   }
 
-  const close = num(closeCandle.close);
-  const inside = close >= rb.low && close <= rb.high;
+  if (close >= rLow && close <= rHigh) {
+    const rbCe = computeCe(rHigh, rLow);
+    const side = close > rbCe ? "premium" : close < rbCe ? "discount" : "at-ce";
+    return {
+      key: "close",
+      number: 6,
+      label: "Close in RB",
+      hint: "Body must close inside the RB",
+      pass: true,
+      detail: `Closed ${close} inside RB — ${side}.`,
+      data: { close, side, rbCe },
+    };
+  }
+
+  if (close > rHigh) {
+    return {
+      key: "close",
+      number: 6,
+      label: "Close in RB",
+      hint: "Body must close inside the RB",
+      pass: false,
+      detail: `Closed ${close} ABOVE RB high — breakout, not negotiation.`,
+      data: null,
+    };
+  }
 
   return {
-    pass: inside,
+    key: "close",
+    number: 6,
     label: "Close in RB",
-    detail: inside
-      ? `Closed ${close} inside RB (${rb.low} – ${rb.high}).`
-      : `Close ${close} is outside RB (${rb.low} – ${rb.high}).`,
-    close,
+    hint: "Body must close inside the RB",
+    pass: false,
+    detail: `Closed ${close} BELOW RB low — breakout, not negotiation.`,
+    data: null,
   };
 }
 
-// ------------------------------------------------------------
-// VERDICT — Premium / Discount inside the RB
-// Close > RB CE → premium → SELL
-// Close < RB CE → discount → BUY
-// Close ≈ RB CE → equilibrium → WAIT
-// ------------------------------------------------------------
-
-export function judgePremiumDiscount({ closeCandle, rb, pipSize }) {
-  if (!validCandle(closeCandle) || !rb) {
-    return {
-      verdict: "WAIT",
-      position: "unknown",
-      detail: "Missing close candle or RB.",
-      ce: rb?.ce ?? null,
-      close: null,
-      pipsFromCe: null,
-    };
-  }
-
-  const close = num(closeCandle.close);
-  const ce = rb.ce;
-  const ps = num(pipSize) || 1;
-
-  // Equilibrium tolerance — 5% of RB height, minimum 1 pip
-  const rbHeight = rb.high - rb.low;
-  const tolerance = Math.max(rbHeight * 0.05, ps);
-
-  const diff = close - ce;
-  const pipsFromCe = diff / ps;
-
-  if (Math.abs(diff) <= tolerance) {
-    return {
-      verdict: "WAIT",
-      position: "equilibrium",
-      detail: `Close ${close} is at equilibrium (CE ${round(ce)}).`,
-      ce,
-      close,
-      pipsFromCe: round(pipsFromCe, 1),
-    };
-  }
-
-  if (diff > 0) {
-    return {
-      verdict: "SELL",
-      position: "premium",
-      detail: `Close ${close} is in premium (above CE ${round(ce)}).`,
-      ce,
-      close,
-      pipsFromCe: round(pipsFromCe, 1),
-    };
-  }
-
-  return {
-    verdict: "BUY",
-    position: "discount",
-    detail: `Close ${close} is in discount (below CE ${round(ce)}).`,
-    ce,
-    close,
-    pipsFromCe: round(pipsFromCe, 1),
-  };
-}
-
-// ------------------------------------------------------------
-// Trade computation — entry / SL / TP / RR
-// Entry = RB CE
-// SL    = RB extreme on the losing side + 10% of RB height
-// TP    = next liquidity level (user-marked)
-// ------------------------------------------------------------
-
-export function computeSequenceTrade({
-  sequenceType,
-  rb,
-  nextLiquidityLevel,
-  pipSize,
-}) {
-  if (!rb) return null;
-  const nextLiq = num(nextLiquidityLevel);
-  if (nextLiq === null) return null;
-
-  const entry = rb.ce;
-  const rbHeight = rb.high - rb.low;
-  const buffer = rbHeight * 0.1;
-
-  let sl;
-  if (sequenceType === "support") {
-    sl = rb.low - buffer;
-  } else {
-    sl = rb.high + buffer;
-  }
-
-  const tp = nextLiq;
-
-  const risk = Math.abs(entry - sl);
-  const reward = Math.abs(tp - entry);
-  const rr = risk > 0 ? reward / risk : 0;
-
-  const ps = num(pipSize) || 1;
-  const slPips = ps > 0 ? risk / ps : null;
-  const tpPips = ps > 0 ? reward / ps : null;
-
-  return {
-    entry: round(entry, 5),
-    sl: round(sl, 5),
-    tp: round(tp, 5),
-    rr: round(rr, 2),
-    slPips: round(slPips, 1),
-    tpPips: round(tpPips, 1),
-    direction: sequenceType === "support" ? "BUY" : "SELL",
-  };
-}
-
-// ------------------------------------------------------------
-// ORCHESTRATOR
-// ------------------------------------------------------------
+// ============================================================
+// FULL EVALUATION — THE COLLABORATION
+// ============================================================
 
 export function evaluateLiquiditySequence({
   sequenceType,
   liquidityZoneHigh,
   liquidityZoneLow,
   sweepCandle,
-  mssCandle,
+  currentClose,
   mssReference,
   fvgHigh,
   fvgLow,
   rbHigh,
   rbLow,
   closeCandle,
-  nextLiquidityLevel,
-  pipSize,
+  atrCurrent,
+  atrPrior,
 }) {
-  const liquidity = checkLiquidityZone({
+  // ---- 5-system gates + trigger ----
+  const liquidity = checkLiquidityZone({ liquidityZoneHigh, liquidityZoneLow });
+  const sweep = checkSweep({
+    sweepCandle,
     liquidityZoneHigh,
     liquidityZoneLow,
-  });
-
-  const sweep = checkLiquiditySweep({
-    sweepCandle,
-    liquidityZone: liquidity.zone,
     sequenceType,
   });
-
-  const mss = checkMSS({ mssCandle, mssReference, sequenceType });
-
+  const mss = checkMSS({ currentClose, mssReference, sequenceType });
   const fvg = checkFVG({ fvgHigh, fvgLow, sequenceType });
+  const rb = checkRbAlignment({ rbHigh, rbLow, fvgHigh, fvgLow });
+  const close = checkCloseInRb({ closeCandle, rbHigh, rbLow });
 
-  const rbAlign = checkRBAlignment({
-    rbHigh,
-    rbLow,
-    fvg: fvg.fvg,
-  });
+  const steps = { liquidity, sweep, mss, fvg, rb, close };
 
-  const closeGate = checkCloseInRB({
-    closeCandle,
-    rb: rbAlign.rb,
-  });
+  const gatesPass = [liquidity, sweep, mss, fvg, rb].every((s) => s.pass);
+  const triggerPass = close.pass;
+  const allPassed = gatesPass && triggerPass;
 
-  const premiumDiscount = judgePremiumDiscount({
-    closeCandle,
-    rb: rbAlign.rb,
-    pipSize,
-  });
-
-  const steps = {
-    liquidity,
-    sweep,
-    mss,
-    fvg,
-    rb: rbAlign,
-    close: closeGate,
-  };
-
-  const gatesPassed = Object.values(steps).every((s) => s.pass);
-
-  // Final verdict — only fires if all 6 gates pass AND premium/discount
-  // agrees with the MSS direction (collaboration check).
-  let verdict = "WAIT";
-  let conflict = null;
-
-  if (gatesPassed && premiumDiscount.verdict !== "WAIT") {
-    if (mss.direction && premiumDiscount.verdict !== mss.direction) {
-      conflict = {
-        label: "MSS vs Premium/Discount conflict",
-        detail: `MSS says ${mss.direction}, but premium/discount says ${premiumDiscount.verdict}. Wait for alignment.`,
-      };
-      verdict = "WAIT";
-    } else {
-      verdict = premiumDiscount.verdict;
-    }
-  }
-
-  let trade = null;
-  if (verdict === "BUY" || verdict === "SELL") {
-    trade = computeSequenceTrade({
-      sequenceType,
-      rb: rbAlign.rb,
-      nextLiquidityLevel,
-      pipSize,
+  // ---- Premium / discount verdict (the RB negotiation) ----
+  // Reuses judgeZoneNegotiation from liquidityZoneEngine
+  let baseNegotiation = null;
+  if (rb.pass && close.pass) {
+    baseNegotiation = judgeZoneNegotiation({
+      activeRb: { high: rbHigh, low: rbLow },
+      closePrice: currentClose,
     });
   }
 
-  const reasons = [];
-  Object.entries(steps).forEach(([, s]) => {
-    if (!s.pass) reasons.push(`${s.label}: ${s.detail}`);
-  });
-  if (conflict) reasons.push(conflict.detail);
+  // ---- ATR filter for tradeability ----
+  const atr = atrFilter(atrCurrent, atrPrior);
+
+  // ---- Final verdict (only if all gates + trigger passed) ----
+  let verdict = "WAIT";
+  let verdictReason = "Sequence not complete.";
+
+  if (allPassed && baseNegotiation) {
+    verdict = baseNegotiation.verdict;
+    verdictReason = baseNegotiation.reason;
+  } else if (!allPassed) {
+    const failing = Object.values(steps).filter((s) => !s.pass);
+    verdictReason = `${failing.length} step${failing.length === 1 ? "" : "s"} failing.`;
+  }
+
+  // ---- Verdict display object ----
+  const verdictDisplay = premiumDiscountVerdict(
+    baseNegotiation || { verdict: "WAIT", reason: verdictReason }
+  );
+
+  // ---- Reasons list ----
+  const reasons = Object.values(steps)
+    .filter((s) => !s.pass)
+    .map((s) => `${s.label}: ${s.detail}`);
 
   return {
     sequenceType,
     steps,
-    premiumDiscount,
+    gatesPass,
+    triggerPass,
+    allPassed,
+    baseNegotiation,
     verdict,
-    conflict,
-    trade,
+    verdictDisplay,
+    verdictReason,
+    atr,
     reasons,
-    allPassed: gatesPassed && !conflict && verdict !== "WAIT",
   };
 }

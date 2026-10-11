@@ -33,17 +33,6 @@ function verdictBadge(verdict) {
   };
 }
 
-// Count how many of the 6 gates passed
-function countGates(row) {
-  const steps = row.steps_passed;
-  if (!steps || typeof steps !== "object") return null;
-  const keys = ["liquidity", "sweep", "mss", "fvg", "rb", "close"];
-  const present = keys.filter((k) => k in steps);
-  if (present.length === 0) return null;
-  const passed = present.filter((k) => steps[k]).length;
-  return { passed, total: present.length };
-}
-
 export default function LiquiditySequenceHistoryPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -52,10 +41,12 @@ export default function LiquiditySequenceHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Filters
   const [filterPair, setFilterPair] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterVerdict, setFilterVerdict] = useState("all");
 
+  // Delete
   const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
@@ -114,7 +105,7 @@ export default function LiquiditySequenceHistoryPage() {
           <div>
             <h1 className="text-2xl font-bold">Sequence History</h1>
             <p className="text-gray-400 text-sm">
-              All saved liquidity sequences — the 5-system flow.
+              All saved liquidity sequences.
             </p>
           </div>
           <button
@@ -173,9 +164,7 @@ export default function LiquiditySequenceHistoryPage() {
             <span>
               Showing {filtered.length} of {rows.length}
             </span>
-            {(filterPair ||
-              filterType !== "all" ||
-              filterVerdict !== "all") && (
+            {(filterPair || filterType !== "all" || filterVerdict !== "all") && (
               <button
                 type="button"
                 onClick={() => {
@@ -208,7 +197,9 @@ export default function LiquiditySequenceHistoryPage() {
         {/* Empty state */}
         {!loading && rows.length === 0 && (
           <div className="p-6 rounded-lg bg-blue-950/30 border border-blue-900/50 text-center space-y-3">
-            <p className="text-sm text-blue-200">No saved sequences yet.</p>
+            <p className="text-sm text-blue-200">
+              No saved sequences yet.
+            </p>
             <button
               type="button"
               onClick={() => router.push("/liquidity-sequence")}
@@ -219,14 +210,14 @@ export default function LiquiditySequenceHistoryPage() {
           </div>
         )}
 
-        {/* No matches after filters */}
+        {/* No matches */}
         {!loading && rows.length > 0 && filtered.length === 0 && (
           <div className="p-6 text-center text-gray-400 text-sm">
             No sequences match the current filters.
           </div>
         )}
 
-        {/* Row list */}
+        {/* Rows */}
         {!loading && filtered.length > 0 && (
           <div className="space-y-2">
             {filtered.map((r) => {
@@ -234,15 +225,10 @@ export default function LiquiditySequenceHistoryPage() {
               const seqInfo = SEQUENCE_TYPES.find(
                 (s) => s.key === r.sequence_type
               );
-              const gates = countGates(r);
-              const isLegacy = !r.liquidity_zone_high && !r.rb_high;
-
               return (
                 <div
                   key={r.id}
-                  onClick={() =>
-                    router.push(`/liquidity-sequence/${r.id}`)
-                  }
+                  onClick={() => router.push(`/liquidity-sequence/${r.id}`)}
                   className="p-3 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-700 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2">
@@ -264,16 +250,6 @@ export default function LiquiditySequenceHistoryPage() {
                       >
                         {badge.label}
                       </span>
-                      {gates && (
-                        <span className="text-xs text-gray-500">
-                          {gates.passed}/{gates.total} gates
-                        </span>
-                      )}
-                      {isLegacy && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-950/60 border border-yellow-700 text-yellow-200">
-                          legacy
-                        </span>
-                      )}
                     </div>
                     <button
                       type="button"
