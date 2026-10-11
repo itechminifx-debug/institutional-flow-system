@@ -8,8 +8,6 @@ import { createTradeFromSetup } from "@/lib/journalEngine";
 import {
   SEQUENCE_TYPES,
   evaluateLiquiditySequence,
-  checkRbAlignment,
-  checkFVG,
 } from "@/lib/liquiditySequenceEngine";
 import {
   computeCe,
@@ -17,12 +15,10 @@ import {
   rbRankInfo,
   findActiveRb,
   judgeZoneNegotiation,
-  atrFilter,
 } from "@/lib/liquidityZoneEngine";
 import {
   computeEmaDirection,
   emaInfo,
-  emaAlignment,
   enrichVerdict,
   computeWarningReasons,
   HTF_BIAS_OPTIONS,
@@ -115,11 +111,12 @@ export default function LiquiditySequencePage() {
         return;
       }
 
+      // FIX 1 — use maybeSingle() so 0 rows returns null instead of erroring
       const { data: seqData } = await supabase
         .from("liquidity_sequence_setups")
         .select("*")
         .eq("setup_id", editId)
-        .single();
+        .maybeSingle();
 
       const { data: rbData } = await supabase
         .from("liquidity_sequence_rbs")
@@ -229,7 +226,6 @@ export default function LiquiditySequencePage() {
     return findActiveRb(rankedRbs, form.closePrice);
   }, [rankedRbs, form.closePrice]);
 
-  // Use the ACTIVE RB for the RB alignment + close checks
   const rbHigh = activeRb?.high ?? null;
   const rbLow = activeRb?.low ?? null;
 
@@ -269,7 +265,7 @@ export default function LiquiditySequencePage() {
   ]);
 
   // ----------------------------------------------------------
-  // EMA + ENRICHED VERDICT (HTF + sweep layer)
+  // EMA + ENRICHED VERDICT
   // ----------------------------------------------------------
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
@@ -310,7 +306,8 @@ export default function LiquiditySequencePage() {
   const atr = sequence.atr;
 
   // ----------------------------------------------------------
-  // TRADE COMPUTATION (only if sequence passes + verdict is BUY/SELL)
+  // TRADE COMPUTATION
+  // FIX 2 — ATR fallback: if ATR is 0, use 10% of RB height as buffer
   // ----------------------------------------------------------
   const trade = useMemo(() => {
     if (!sequence.allPassed) return null;
@@ -326,11 +323,16 @@ export default function LiquiditySequencePage() {
     const ceVal = Math.round(((rHigh + rLow) / 2) * 100) / 100;
     const slRef = v === "BUY" ? rLow : rHigh;
 
+    // ATR fallback: if user didn't provide ATR, use 10% of the RB range
+    const atrInput = parseFloat(form.atrCurrent) || 0;
+    const rbRange = Math.abs(rHigh - rLow);
+    const atrForTrade = atrInput > 0 ? atrInput : rbRange * 0.1;
+
     return computeTrade({
       direction: v,
       entry: ceVal,
       slReference: slRef,
-      atr: parseFloat(form.atrCurrent) || 0,
+      atr: atrForTrade,
       accountSize: profile?.account_size || 0,
       riskPercent: profile?.risk_percent || 1,
       pipSize: parseFloat(form.pipSize) || 1,
@@ -516,8 +518,7 @@ export default function LiquiditySequencePage() {
       rb_low: activeRb.low,
       rb_ce: trade.entry,
 
-      rb_fvg_alignment:
-        sequence.steps.rb.data?.position || null,
+      rb_fvg_alignment: sequence.steps.rb.data?.position || null,
       rb_fvg_overlap: sequence.steps.rb.data?.overlap || null,
 
       premium_discount: baseNegotiation?.side || null,
@@ -988,7 +989,8 @@ export default function LiquiditySequencePage() {
                 <label className="block text-xs mb-1 text-gray-400">
                   {f.charAt(0).toUpperCase() + f.slice(1)}
                 </label>
-                <input                  type="number"
+                <input
+                  type="number"
                   step="any"
                   value={closeCandle[f]}
                   onChange={(e) =>
