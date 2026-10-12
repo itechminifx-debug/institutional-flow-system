@@ -8,8 +8,8 @@
 //   3. Distribution — MSS → FVG → RB → retest → close → entry
 //
 // Reuses:
-//   - computeCe, judgeZoneNegotiation   (liquidityZoneEngine)
-//   - atrFilter                          (liquidityZoneEngine)
+//   - computeCe, judgeZoneNegotiation,
+//     premiumDiscountVerdict, atrFilter   (liquidityZoneEngine)
 //
 // Does NOT duplicate any existing logic.
 // ============================================================
@@ -64,21 +64,17 @@ function validCandle(c) {
 // ============================================================
 // THE 10-GATE CHECKLIST
 // ============================================================
-// Phase-labelled for the card:
-//   A = Accumulation, M = Manipulation, D = Distribution, X = Mindset
-// ============================================================
-
 export const AMD_CHECKLIST = [
-  { key: "range",        number: 1,  phase: "A", label: "Is price in a range?",         hint: "Mark the range high + low" },
-  { key: "atr_falling",  number: 2,  phase: "A", label: "Is ATR falling?",              hint: "Compression — volatility contracting" },
-  { key: "sweep",        number: 3,  phase: "M", label: "Did price sweep the range?",   hint: "False break against the true direction" },
-  { key: "reclaim",      number: 4,  phase: "M", label: "Did price close back inside?", hint: "The trap is set — the sweep was false" },
-  { key: "mss",          number: 5,  phase: "D", label: "Did an MSS occur?",            hint: "Market Structure Shift — confirmed by close" },
-  { key: "fvg",          number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark the FVG high + low" },
-  { key: "rb",           number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the FVG" },
-  { key: "entry",        number: 8,  phase: "D", label: "Is there a clear entry?",      hint: "Close candle lands inside the RB" },
-  { key: "reward",       number: 9,  phase: "D", label: "Is the reward 1:2+?",          hint: "TP vs Entry vs SL ≥ 2:1" },
-  { key: "mindset",      number: 10, phase: "X", label: "Am I calm and disciplined?",   hint: "Manual check — mindset gate" },
+  { key: "range",       number: 1,  phase: "A", label: "Is price in a range?",          hint: "Mark the range high + low" },
+  { key: "atr_falling", number: 2,  phase: "A", label: "Is ATR falling?",               hint: "Compression — volatility contracting" },
+  { key: "sweep",       number: 3,  phase: "M", label: "Did price sweep the range?",    hint: "False break against the true direction" },
+  { key: "reclaim",     number: 4,  phase: "M", label: "Did price close back inside?",  hint: "The trap is set — the sweep was false" },
+  { key: "mss",         number: 5,  phase: "D", label: "Did an MSS occur?",             hint: "Market Structure Shift — confirmed by close" },
+  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark the FVG high + low" },
+  { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the FVG" },
+  { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "Close candle lands inside the RB" },
+  { key: "reward",      number: 9,  phase: "D", label: "Is the reward 1:2+?",           hint: "TP vs Entry vs SL ≥ 2:1" },
+  { key: "mindset",     number: 10, phase: "X", label: "Am I calm and disciplined?",    hint: "Manual check — mindset gate" },
 ];
 
 export const AMD_PASS_THRESHOLD = 7;
@@ -129,7 +125,7 @@ export function amdChecklistVerdict(score) {
 }
 
 // ============================================================
-// PHASE 1 — ACCUMULATION
+// PHASE A — ACCUMULATION
 // ============================================================
 
 export function checkRange({ rangeHigh, rangeLow }) {
@@ -137,11 +133,7 @@ export function checkRange({ rangeHigh, rangeLow }) {
   const low = num(rangeLow);
 
   if (high === null || low === null) {
-    return {
-      pass: false,
-      detail: "Range not marked.",
-      data: null,
-    };
+    return { pass: false, detail: "Range not marked.", data: null };
   }
   if (high <= low) {
     return {
@@ -159,7 +151,6 @@ export function checkRange({ rangeHigh, rangeLow }) {
 
 export function checkAtrFalling({ atrCurrent, atrPrior }) {
   const filter = atrFilter(atrCurrent, atrPrior);
-  // For AMD we want ATR falling (contraction during accumulation)
   const falling = filter.key === "falling" || filter.key === "flat";
   return {
     pass: falling,
@@ -171,16 +162,12 @@ export function checkAtrFalling({ atrCurrent, atrPrior }) {
 }
 
 // ============================================================
-// PHASE 2 — MANIPULATION
+// PHASE M — MANIPULATION
 // ============================================================
 
 export function checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType }) {
   if (!validCandle(sweepCandle)) {
-    return {
-      pass: false,
-      detail: "Sweep candle not filled in.",
-      data: null,
-    };
+    return { pass: false, detail: "Sweep candle not filled in.", data: null };
   }
   const high = num(rangeHigh);
   const low = num(rangeLow);
@@ -192,7 +179,6 @@ export function checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType }) {
   const wickHigh = num(sweepCandle.high);
 
   if (sequenceType === "bullish") {
-    // Bullish AMD → sweep BELOW range low
     const swept = wickLow < low;
     const depth = swept ? Math.round((low - wickLow) * 100) / 100 : 0;
     return {
@@ -203,7 +189,6 @@ export function checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType }) {
       data: swept ? { side: "below", depth } : null,
     };
   } else {
-    // Bearish AMD → sweep ABOVE range high
     const swept = wickHigh > high;
     const depth = swept ? Math.round((wickHigh - high) * 100) / 100 : 0;
     return {
@@ -249,7 +234,7 @@ export function checkReclaim({ sweepCandle, rangeHigh, rangeLow, sequenceType })
 }
 
 // ============================================================
-// PHASE 3 — DISTRIBUTION
+// PHASE D — DISTRIBUTION
 // ============================================================
 
 export function checkMSS({ currentClose, mssReference, sequenceType }) {
@@ -312,11 +297,7 @@ export function checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow }) {
     return { pass: false, detail: "RB not marked.", data: null };
   }
   if (rHigh <= rLow) {
-    return {
-      pass: false,
-      detail: `RB high must be above RB low.`,
-      data: null,
-    };
+    return { pass: false, detail: "RB high must be above RB low.", data: null };
   }
   if (fHigh === null || fLow === null) {
     return { pass: false, detail: "FVG missing.", data: null };
@@ -386,7 +367,6 @@ export function checkEntry({ closeCandle, rbHigh, rbLow }) {
   };
 }
 
-// Reward gate — needs trade computed first
 export function checkReward({ trade }) {
   if (!trade) {
     return { pass: false, detail: "Trade not yet computable.", data: null };
@@ -402,7 +382,6 @@ export function checkReward({ trade }) {
   };
 }
 
-// Mindset gate — manual
 export function checkMindset({ manualAnswer }) {
   const pass = manualAnswer === true;
   return {
@@ -458,16 +437,40 @@ export function evaluateAmd({
   const rb = checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow });
   const entry = checkEntry({ closeCandle, rbHigh, rbLow });
 
-  // Base negotiation verdict (uses judgeZoneNegotiation)
+  // ---- Base negotiation verdict ----
+  // Uses judgeZoneNegotiation (RB CE premium/discount).
+  // AMD fix: if judge returns WAIT (close within its tolerance of CE),
+  // but the CLOSE CANDLE clearly sits on one side of CE, use that side.
   let baseNegotiation = null;
   if (rb.pass && entry.pass) {
     baseNegotiation = judgeZoneNegotiation({
       activeRb: { high: rbHigh, low: rbLow },
       closePrice: currentClose,
     });
+
+    if (
+      baseNegotiation &&
+      baseNegotiation.verdict === "WAIT" &&
+      entry.data?.side &&
+      entry.data.side !== "at-ce"
+    ) {
+      const rbCe = entry.data.rbCe;
+      const close = entry.data.close;
+      const isAbove = close > rbCe;
+      baseNegotiation = {
+        verdict: isAbove ? "SELL" : "BUY",
+        side: isAbove ? "premium" : "discount",
+        ce: rbCe,
+        rbBroken: null,
+        strength: "normal",
+        reason: isAbove
+          ? "Closed in the PREMIUM of the RB (via close candle) — SELL."
+          : "Closed in the DISCOUNT of the RB (via close candle) — BUY.",
+      };
+    }
   }
 
-  // Compute trade if verdict actionable
+  // ---- Trade computation ----
   let trade = null;
   if (
     baseNegotiation &&
@@ -497,12 +500,10 @@ export function evaluateAmd({
           tpPips: ps > 0 ? Math.round(reward / ps) : null,
         };
 
-        // Lot size if account size given
+        // Lot size estimate
         if (accountSize > 0 && risk > 0) {
           const riskAmount = (accountSize * (riskPercent || 1)) / 100;
           const pips = risk / ps;
-          // Notional value per pip per lot: assume 1 lot × 100000 × pipSize
-          // For VOL indices, this is approximate — we use a simple model
           const pipValuePerLot = 100000 * ps;
           const lots = pips > 0 ? riskAmount / (pips * pipValuePerLot) : 0;
           trade.lotSize = Math.round(lots * 100) / 100;
@@ -512,11 +513,11 @@ export function evaluateAmd({
     }
   }
 
-  // Reward + mindset gates
+  // ---- Remaining gates ----
   const reward = checkReward({ trade });
   const mindset = checkMindset({ manualAnswer: manualMindset });
 
-  // Build answers map for score
+  // ---- Score ----
   const answers = {
     range: range.pass,
     atr_falling: atr.pass,
@@ -533,7 +534,7 @@ export function evaluateAmd({
   const score = computeAmdScore(answers);
   const checklistVerdict = amdChecklistVerdict(score);
 
-  // Final verdict — only if 7+ AND entry + reward pass
+  // ---- Final verdict ----
   let verdict = "WAIT";
   if (
     checklistVerdict.passed &&
@@ -547,7 +548,7 @@ export function evaluateAmd({
     baseNegotiation || { verdict: "WAIT", reason: "AMD sequence not complete." }
   );
 
-  // Reasons list
+  // ---- Reasons list ----
   const reasons = [];
   if (!range.pass) reasons.push(`Range: ${range.detail}`);
   if (!atr.pass) reasons.push(`ATR: ${atr.detail}`);
