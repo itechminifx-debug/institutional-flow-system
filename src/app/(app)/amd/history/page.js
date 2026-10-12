@@ -7,6 +7,12 @@ import { formatPrice } from "@/lib/formatNumbers";
 import PairPicker from "@/components/PairPicker";
 import { AMD_TYPES } from "@/lib/amdEngine";
 
+const STATUS_OPTIONS = [
+  { key: "all", label: "All statuses" },
+  { key: "draft", label: "📝 Drafts only" },
+  { key: "complete", label: "✅ Complete only" },
+];
+
 // ------------------------------------------------------------
 // Date grouping helpers
 // ------------------------------------------------------------
@@ -33,10 +39,17 @@ function groupLabel(isoDate) {
   });
 }
 
+// For drafts we use updated_at; for complete we use created_at.
+function rowDate(r) {
+  return r.status === "draft"
+    ? r.updated_at || r.created_at
+    : r.created_at;
+}
+
 function groupRowsByDay(rows) {
   const groups = {};
   rows.forEach((r) => {
-    const key = startOfDay(r.created_at).toISOString();
+    const key = startOfDay(rowDate(r)).toISOString();
     if (!groups[key]) groups[key] = [];
     groups[key].push(r);
   });
@@ -45,7 +58,9 @@ function groupRowsByDay(rows) {
     .map(([key, items]) => ({
       key,
       label: groupLabel(key),
-      items,
+      items: items.sort(
+        (a, b) => new Date(rowDate(b)) - new Date(rowDate(a))
+      ),
     }));
 }
 
@@ -76,6 +91,7 @@ export default function AmdHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterPair, setFilterPair] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
 
   useEffect(() => {
     async function load() {
@@ -98,20 +114,29 @@ export default function AmdHistoryPage() {
   }, []);
 
   const filtered = useMemo(() => {
-    if (!filterPair) return rows;
-    return rows.filter((r) => r.pair === filterPair);
-  }, [rows, filterPair]);
+    return rows.filter((r) => {
+      if (filterPair && r.pair !== filterPair) return false;
+      if (filterStatus !== "all" && r.status !== filterStatus) return false;
+      return true;
+    });
+  }, [rows, filterPair, filterStatus]);
 
   const groups = useMemo(() => groupRowsByDay(filtered), [filtered]);
 
   // Overall stats
   const stats = useMemo(() => {
     const total = rows.length;
-    const buys = rows.filter((r) => r.verdict === "BUY").length;
-    const sells = rows.filter((r) => r.verdict === "SELL").length;
+    const drafts = rows.filter((r) => r.status === "draft").length;
+    const complete = rows.filter((r) => r.status !== "draft").length;
+    const buys = rows.filter(
+      (r) => r.verdict === "BUY" && r.status !== "draft"
+    ).length;
+    const sells = rows.filter(
+      (r) => r.verdict === "SELL" && r.status !== "draft"
+    ).length;
     const bull = rows.filter((r) => r.sequence_type === "bullish").length;
     const bear = rows.filter((r) => r.sequence_type === "bearish").length;
-    return { total, buys, sells, bull, bear };
+    return { total, drafts, complete, buys, sells, bull, bear };
   }, [rows]);
 
   return (
@@ -145,27 +170,27 @@ export default function AmdHistoryPage() {
 
         {/* Stats */}
         {!loading && rows.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
               <p className="text-xs text-gray-500">Total</p>
               <p className="text-lg font-bold">{stats.total}</p>
             </div>
+            <div className="p-3 rounded-lg bg-gray-900 border border-yellow-800/60 text-center">
+              <p className="text-xs text-gray-500">📝 Drafts</p>
+              <p className="text-lg font-bold text-yellow-300">
+                {stats.drafts}
+              </p>
+            </div>
             <div className="p-3 rounded-lg bg-gray-900 border border-green-900/60 text-center">
-              <p className="text-xs text-gray-500">BUY</p>
-              <p className="text-lg font-bold text-green-300">{stats.buys}</p>
+              <p className="text-xs text-gray-500">🟢 BUY</p>
+              <p className="text-lg font-bold text-green-300">
+                {stats.buys}
+              </p>
             </div>
             <div className="p-3 rounded-lg bg-gray-900 border border-red-900/60 text-center">
-              <p className="text-xs text-gray-500">SELL</p>
-              <p className="text-lg font-bold text-red-300">{stats.sells}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-gray-900 border border-blue-900/60 text-center">
-              <p className="text-xs text-gray-500">Bullish</p>
-              <p className="text-lg font-bold text-blue-300">{stats.bull}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-gray-900 border border-purple-900/60 text-center">
-              <p className="text-xs text-gray-500">Bearish</p>
-              <p className="text-lg font-bold text-purple-300">
-                {stats.bear}
+              <p className="text-xs text-gray-500">🔴 SELL</p>
+              <p className="text-lg font-bold text-red-300">
+                {stats.sells}
               </p>
             </div>
           </div>
@@ -176,21 +201,42 @@ export default function AmdHistoryPage() {
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-blue-400">Filter</h2>
-              {filterPair && (
+              {(filterPair || filterStatus !== "all") && (
                 <button
                   type="button"
-                  onClick={() => setFilterPair("")}
+                  onClick={() => {
+                    setFilterPair("");
+                    setFilterStatus("all");
+                  }}
                   className="text-xs text-blue-300 hover:text-blue-200"
                 >
-                  Clear filter
+                  Clear filters
                 </button>
               )}
             </div>
-            <PairPicker
-              value={filterPair}
-              onChange={setFilterPair}
-              label="Pair (any)"
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <PairPicker
+                value={filterPair}
+                onChange={setFilterPair}
+                label="Pair (any)"
+              />
+              <div>
+                <label className="block text-xs mb-1 text-gray-400">
+                  Status
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <p className="text-xs text-gray-500">
               Showing {filtered.length} of {rows.length} setups
             </p>
@@ -230,7 +276,7 @@ export default function AmdHistoryPage() {
         {/* No matches */}
         {!loading && rows.length > 0 && filtered.length === 0 && (
           <div className="p-6 text-center text-gray-400 text-sm">
-            No AMD setups for {filterPair}.
+            No AMD setups match the current filters.
           </div>
         )}
 
@@ -250,11 +296,12 @@ export default function AmdHistoryPage() {
 
                 {/* Rows */}
                 {g.items.map((r) => {
+                  const isDraft = r.status === "draft";
                   const badge = verdictBadge(r.verdict);
                   const typeInfo = AMD_TYPES.find(
                     (t) => t.key === r.sequence_type
                   );
-                  const time = new Date(r.created_at).toLocaleTimeString(
+                  const time = new Date(rowDate(r)).toLocaleTimeString(
                     undefined,
                     { hour: "2-digit", minute: "2-digit" }
                   );
@@ -263,13 +310,22 @@ export default function AmdHistoryPage() {
                     <div
                       key={r.id}
                       onClick={() => router.push(`/amd/${r.id}`)}
-                      className="p-3 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-700 cursor-pointer transition-colors"
+                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                        isDraft
+                          ? "bg-yellow-950/20 border-yellow-800/60 hover:border-yellow-600"
+                          : "bg-gray-900 border-gray-800 hover:border-blue-700"
+                      }`}
                     >
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs text-gray-500 tabular-nums">
                             {time}
                           </span>
+                          {isDraft && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 border border-yellow-700 text-yellow-200 font-bold">
+                              📝 DRAFT
+                            </span>
+                          )}
                           <span className="text-sm font-bold">
                             {r.pair}
                           </span>
@@ -284,39 +340,53 @@ export default function AmdHistoryPage() {
                                 : "Bearish"}
                             </span>
                           )}
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full border font-bold ${badge.cls}`}
-                          >
-                            {badge.label}
-                          </span>
+                          {!isDraft && (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full border font-bold ${badge.cls}`}
+                            >
+                              {badge.label}
+                            </span>
+                          )}
                           {r.checklist_score !== null && (
-                            <span className="text-xs text-gray-500">
+                            <span
+                              className={`text-xs ${
+                                isDraft
+                                  ? "text-yellow-300"
+                                  : "text-gray-500"
+                              }`}
+                            >
                               · {r.checklist_score}/10
                             </span>
                           )}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
-                        <div>
-                          <p className="text-gray-500">Entry</p>
-                          <p className="font-bold tabular-nums text-yellow-400">
-                            {r.entry ? formatPrice(r.entry) : "—"}
-                          </p>
+                      {isDraft ? (
+                        <p className="text-xs text-yellow-300/80 mt-2">
+                          Not yet complete — open to continue
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
+                          <div>
+                            <p className="text-gray-500">Entry</p>
+                            <p className="font-bold tabular-nums text-yellow-400">
+                              {r.entry ? formatPrice(r.entry) : "—"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500">SL</p>
+                            <p className="font-bold tabular-nums text-red-400">
+                              {r.sl ? formatPrice(r.sl) : "—"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500">TP</p>
+                            <p className="font-bold tabular-nums text-green-400">
+                              {r.tp ? formatPrice(r.tp) : "—"}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-gray-500">SL</p>
-                          <p className="font-bold tabular-nums text-red-400">
-                            {r.sl ? formatPrice(r.sl) : "—"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500">TP</p>
-                          <p className="font-bold tabular-nums text-green-400">
-                            {r.tp ? formatPrice(r.tp) : "—"}
-                          </p>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}

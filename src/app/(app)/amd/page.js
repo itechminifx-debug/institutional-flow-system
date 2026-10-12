@@ -3,10 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import {
-  AMD_TYPES,
-  evaluateAmd,
-} from "@/lib/amdEngine";
+import { AMD_TYPES, evaluateAmd } from "@/lib/amdEngine";
 import {
   computeCe,
   rankRejectionBlocks,
@@ -70,11 +67,16 @@ export default function AmdPage() {
   const [riskPercent, setRiskPercent] = useState(1);
 
   const [saving, setSaving] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState(null);
   const [error, setError] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingSetupId, setExistingSetupId] = useState(null);
   const [showWarningModal, setShowWarningModal] = useState(false);
+
+  // Draft awareness
+  const [draftCount, setDraftCount] = useState(0);
 
   // ----------------------------------------------------------
   // LOAD
@@ -94,6 +96,15 @@ export default function AmdPage() {
       if (prof) {
         setAccountSize(prof.account_size || 0);
         setRiskPercent(prof.risk_percent || 1);
+      }
+
+      // Count drafts (for the banner — skip in edit mode)
+      if (!isEdit) {
+        const { count } = await supabase
+          .from("amd_setups")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "draft");
+        setDraftCount(count || 0);
       }
 
       if (!isEdit) return;
@@ -270,7 +281,7 @@ export default function AmdPage() {
   ]);
 
   // ----------------------------------------------------------
-  // EMA + enriched verdict (HTF + sweep layer)
+  // EMA + enriched verdict
   // ----------------------------------------------------------
   const ema = computeEmaDirection({
     emaPrice: form.ema50Price,
@@ -344,51 +355,47 @@ export default function AmdPage() {
   const hasWarnings = warningReasons.length > 0;
 
   // ----------------------------------------------------------
-  // SAVE
+  // HAS ANY INPUT (for enabling Save Draft)
   // ----------------------------------------------------------
-  async function handleSave(force = false) {
-    if (!evaluation.checklistVerdict.passed) {
-      setError(
-        `AMD checklist needs ${7 - evaluation.score} more pass${
-          7 - evaluation.score === 1 ? "" : "es"
-        } before saving.`
-      );
-      return;
-    }
-    if (!evaluation.trade || !activeRb) {
-      setError("Trade could not be computed — check entry and SL.");
-      return;
-    }
-    if (!enrichedVerdict) {
-      setError("Verdict not ready.");
-      return;
-    }
+  const hasAnyInput =
+    form.rangeHigh ||
+    form.rangeLow ||
+    form.mssReference ||
+    form.fvgHigh ||
+    form.fvgLow ||
+    form.closePrice ||
+    sweepCandle.open ||
+    sweepCandle.high ||
+    sweepCandle.low ||
+    sweepCandle.close ||
+    closeCandle.open ||
+    closeCandle.high ||
+    closeCandle.low ||
+    closeCandle.close;
 
-    if (hasWarnings && !force) {
-      setShowWarningModal(true);
-      return;
-    }
-    setShowWarningModal(false);
-
-    setSaving(true);
-    setError("");
-
+  // ----------------------------------------------------------
+  // SAVE — shared logic
+  // ----------------------------------------------------------
+  async function saveAmd({ isDraft }) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
       setError("Not authenticated.");
-      setSaving(false);
-      return;
+      return null;
     }
 
     const trade = evaluation.trade;
+    const verdictToSave = isDraft
+      ? evaluation.verdict
+      : enrichedVerdict?.verdict || evaluation.verdict || "WAIT";
 
     const payload = {
       user_id: user.id,
       pair: form.pair,
       timeframe: form.timeframe,
       sequence_type: form.sequenceType,
+      status: isDraft ? "draft" : "complete",
 
       range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
       range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
@@ -418,31 +425,31 @@ export default function AmdPage() {
         ? parseFloat(form.nextLiquidityLevel)
         : null,
 
-      active_rb_high: activeRb.high,
-      active_rb_low: activeRb.low,
-      active_rb_ce: trade.entry,
+      active_rb_high: activeRb?.high ?? null,
+      active_rb_low: activeRb?.low ?? null,
+      active_rb_ce: trade?.entry ?? null,
 
       current_close: form.closePrice ? parseFloat(form.closePrice) : null,
       premium_discount: evaluation.baseNegotiation?.side || null,
-      verdict: enrichedVerdict.verdict,
-      entry: trade.entry,
-      sl: trade.sl,
-      tp: trade.tp,
-      rr: trade.rr,
-      lot_size: trade.lotSize || null,
-      risk_amount: trade.riskAmount || null,
-      pip_size: trade.pipSize,
-      sl_pips: trade.slPips,
-      tp_pips: trade.tpPips,
+      verdict: verdictToSave,
+      entry: trade?.entry ?? null,
+      sl: trade?.sl ?? null,
+      tp: trade?.tp ?? null,
+      rr: trade?.rr ?? null,
+      lot_size: trade?.lotSize ?? null,
+      risk_amount: trade?.riskAmount ?? null,
+      pip_size: trade?.pipSize ?? (parseFloat(form.pipSize) || 1),
+      sl_pips: trade?.slPips ?? null,
+      tp_pips: trade?.tpPips ?? null,
 
       ema50_price: form.ema50Price ? parseFloat(form.ema50Price) : null,
       ema50_direction: ema.direction,
       ema50_position: ema.position,
-      ema50_aligned: alignment?.key === "aligned",
+      ema50_aligned: alignment?.key === "aligned" || false,
       htf_bias_override: form.htfBiasInput,
       sweep_direction: form.sweepDirection,
-      htf_conflict: enrichedVerdict.hasHtfConflict || false,
-      sweep_override: enrichedVerdict.hasSweepOverride || false,
+      htf_conflict: enrichedVerdict?.hasHtfConflict || false,
+      sweep_override: enrichedVerdict?.hasSweepOverride || false,
 
       checklist_score: evaluation.score,
       checklist_passed: evaluation.checklistVerdict.passed,
@@ -473,8 +480,7 @@ export default function AmdPage() {
         .single();
       if (updErr) {
         setError(updErr.message);
-        setSaving(false);
-        return;
+        return null;
       }
       setupRow = data;
       await supabase.from("amd_rbs").delete().eq("setup_id", existingSetupId);
@@ -486,34 +492,93 @@ export default function AmdPage() {
         .single();
       if (insErr) {
         setError(insErr.message);
-        setSaving(false);
-        return;
+        return null;
       }
       setupRow = data;
+      setExistingSetupId(data.id);
     }
 
-    // Insert child RBs
-    const rbRows = rankedRbs.map((rb) => ({
-      user_id: user.id,
-      setup_id: setupRow.id,
-      pair: form.pair,
-      rb_high: rb.high,
-      rb_low: rb.low,
-      rb_ce: computeCe(rb.high, rb.low),
-      rank: rb.rank,
-      is_active: rb.id === activeRb.id,
-    }));
+    // Child RBs — always save (even partial)
+    if (rankedRbs.length > 0) {
+      const rbRows = rankedRbs.map((rb) => ({
+        user_id: user.id,
+        setup_id: setupRow.id,
+        pair: form.pair,
+        rb_high: rb.high,
+        rb_low: rb.low,
+        rb_ce: computeCe(rb.high, rb.low),
+        rank: rb.rank,
+        is_active: activeRb ? rb.id === activeRb.id : false,
+      }));
+      const { error: rbErr } = await supabase.from("amd_rbs").insert(rbRows);
+      if (rbErr) {
+        setError(rbErr.message);
+        return null;
+      }
+    }
 
-    const { error: rbErr } = await supabase.from("amd_rbs").insert(rbRows);
-    if (rbErr) {
-      setError(rbErr.message);
-      setSaving(false);
+    return setupRow;
+  }
+
+  // ----------------------------------------------------------
+  // SAVE DRAFT
+  // ----------------------------------------------------------
+  async function handleSaveDraft() {
+    if (!hasAnyInput) {
+      setError("Fill something in first before saving a draft.");
       return;
     }
 
+    setSavingDraft(true);
+    setError("");
+
+    const row = await saveAmd({ isDraft: true });
+
+    setSavingDraft(false);
+    if (!row) return;
+
+    setDraftSavedAt(new Date());
+    setSaved(false);
+  }
+
+  // ----------------------------------------------------------
+  // SAVE FINAL
+  // ----------------------------------------------------------
+  async function handleSaveFinal(force = false) {
+    if (!evaluation.checklistVerdict.passed) {
+      setError(
+        `AMD checklist needs ${7 - evaluation.score} more pass${
+          7 - evaluation.score === 1 ? "" : "es"
+        } before saving as final. Use Save Draft to keep your work.`
+      );
+      return;
+    }
+    if (!evaluation.trade) {
+      setError("Trade could not be computed — check entry and SL.");
+      return;
+    }
+    if (!enrichedVerdict) {
+      setError("Verdict not ready.");
+      return;
+    }
+
+    if (hasWarnings && !force) {
+      setShowWarningModal(true);
+      return;
+    }
+    setShowWarningModal(false);
+
+    setSaving(true);
+    setError("");
+
+    const row = await saveAmd({ isDraft: false });
+
     setSaving(false);
+    if (!row) return;
+
+    setDraftSavedAt(null);
     setSaved(true);
-    setTimeout(() => router.push(`/amd/${setupRow.id}`), 800);
+    setTimeout(() => router.push(`/amd/${row.id}`), 800);
   }
 
   // ----------------------------------------------------------
@@ -529,18 +594,8 @@ export default function AmdPage() {
     );
   }
 
-  const hasAnyInput =
-    form.rangeHigh ||
-    form.rangeLow ||
-    form.mssReference ||
-    form.fvgHigh ||
-    form.fvgLow ||
-    form.closePrice ||
-    sweepCandle.high ||
-    sweepCandle.low ||
-    closeCandle.close;
-
   const typeInfo = AMD_TYPES.find((t) => t.key === form.sequenceType);
+  const canSaveFinal = evaluation.checklistVerdict.passed && evaluation.trade;
 
   // ----------------------------------------------------------
   // RENDER
@@ -557,6 +612,23 @@ export default function AmdPage() {
             Distribution moves the market.
           </p>
         </div>
+
+        {/* Draft indicator banner */}
+        {!isEdit && draftCount > 0 && (
+          <div className="p-3 rounded-lg bg-yellow-950/30 border border-yellow-800 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs text-yellow-200">
+              📝 You have <strong>{draftCount}</strong> draft
+              {draftCount === 1 ? "" : "s"} waiting.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push("/amd/journal")}
+              className="text-xs px-3 py-1.5 rounded-lg bg-yellow-800 hover:bg-yellow-700 text-white font-semibold"
+            >
+              Open Journal
+            </button>
+          </div>
+        )}
 
         {/* Context */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -605,7 +677,7 @@ export default function AmdPage() {
           </div>
         </div>
 
-        {/* PHASE A — Accumulation */}
+        {/* PHASE A */}
         <div className="p-4 rounded-lg bg-gray-900 border border-blue-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-blue-300">
             🟦 Phase A — Accumulation
@@ -667,7 +739,7 @@ export default function AmdPage() {
           </div>
         </div>
 
-        {/* PHASE M — Manipulation */}
+        {/* PHASE M */}
         <div className="p-4 rounded-lg bg-gray-900 border border-red-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-red-300">
             🟥 Phase M — Manipulation
@@ -696,7 +768,7 @@ export default function AmdPage() {
           </div>
         </div>
 
-        {/* PHASE D — Distribution */}
+        {/* PHASE D */}
         <div className="p-4 rounded-lg bg-gray-900 border border-green-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-green-300">
             🟩 Phase D — Distribution
@@ -745,7 +817,6 @@ export default function AmdPage() {
             </div>
           </div>
 
-          {/* Rejection Blocks */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-300">
@@ -832,7 +903,6 @@ export default function AmdPage() {
             })}
           </div>
 
-          {/* Close candle */}
           <div>
             <p className="text-xs font-semibold text-gray-300 mb-2">
               Close Candle (the trigger)
@@ -984,7 +1054,6 @@ export default function AmdPage() {
             </div>
           )}
 
-          {/* Mindset gate */}
           <button
             type="button"
             onClick={() => setManualMindset((m) => !m)}
@@ -1081,6 +1150,17 @@ export default function AmdPage() {
           </div>
         )}
 
+        {draftSavedAt && (
+          <div className="p-3 rounded-lg bg-yellow-900/40 border border-yellow-700 text-yellow-100 text-sm">
+            📝 Draft saved ·{" "}
+            {draftSavedAt.toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}{" "}
+            — keep editing, or Save as Final when ready.
+          </div>
+        )}
+
         {saved && (
           <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">
             ✅ {isEdit ? "Updated" : "Saved"} — redirecting...
@@ -1094,33 +1174,55 @@ export default function AmdPage() {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={() => handleSave(false)}
-          disabled={saving || !evaluation.checklistVerdict.passed}
-          className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
-            evaluation.checklistVerdict.passed
-              ? "bg-green-700 hover:bg-green-600"
-              : "bg-yellow-800 hover:bg-yellow-700"
-          }`}
-        >
-          {saving
-            ? "Saving..."
-            : isEdit
-            ? `✏️ Update AMD Setup (${evaluation.score}/10)`
-            : evaluation.checklistVerdict.passed
-            ? `✅ Save AMD Setup (${evaluation.score}/10)`
-            : `💾 AMD Checklist ${evaluation.score}/10 — Need ${
-                7 - evaluation.score
-              } More`}
-        </button>
+        {/* TWO BUTTONS — Save Draft + Save as Final */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Save Draft — always enabled when there's input */}
+          <button
+            type="button"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || saving || !hasAnyInput}
+            className="w-full py-4 rounded-lg font-bold disabled:opacity-50 bg-yellow-800 hover:bg-yellow-700 text-white"
+          >
+            {savingDraft
+              ? "Saving draft..."
+              : "📝 Save Draft"}
+          </button>
+
+          {/* Save as Final — only when checklist passes */}
+          <button
+            type="button"
+            onClick={() => handleSaveFinal(false)}
+            disabled={saving || savingDraft || !canSaveFinal}
+            className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
+              canSaveFinal
+                ? "bg-green-700 hover:bg-green-600"
+                : "bg-gray-800"
+            }`}
+          >
+            {saving
+              ? "Saving..."
+              : isEdit
+              ? `✅ Save as Final (${evaluation.score}/10)`
+              : canSaveFinal
+              ? `✅ Save as Final (${evaluation.score}/10)`
+              : `💾 Need ${7 - evaluation.score} more to finalize`}
+          </button>
+        </div>
+
+        {/* Hint */}
+        {!canSaveFinal && hasAnyInput && (
+          <p className="text-xs text-yellow-300 text-center">
+            Not complete yet — use <strong>Save Draft</strong> to keep your
+            work. Come back anytime.
+          </p>
+        )}
       </div>
 
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}
         onCancel={() => setShowWarningModal(false)}
-        onConfirm={() => handleSave(true)}
+        onConfirm={() => handleSaveFinal(true)}
         saving={saving}
       />
     </main>

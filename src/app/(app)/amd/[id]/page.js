@@ -27,6 +27,8 @@ export default function AmdDetailPage() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
 
+  const isDraft = row?.status === "draft";
+
   // ----------------------------------------------------------
   // LOAD
   // ----------------------------------------------------------
@@ -121,7 +123,7 @@ export default function AmdDetailPage() {
   const alignment = enrichedVerdict?.emaAlignment;
 
   // ----------------------------------------------------------
-  // TRADE (from stored row — preferred, preserves lot size)
+  // TRADE
   // ----------------------------------------------------------
   const trade = useMemo(() => {
     if (!row?.entry || !row?.sl || !row?.tp) return null;
@@ -140,7 +142,7 @@ export default function AmdDetailPage() {
   }, [row]);
 
   // ----------------------------------------------------------
-  // IRL/ERL (from stored columns)
+  // IRL / ERL
   // ----------------------------------------------------------
   const irlErl = useMemo(() => {
     if (!row) return null;
@@ -173,7 +175,7 @@ export default function AmdDetailPage() {
   }, [enrichedVerdict, alignment]);
 
   // ----------------------------------------------------------
-  // SAVE NOTES — journal update
+  // SAVE NOTES
   // ----------------------------------------------------------
   async function handleSaveNotes() {
     setSavingNotes(true);
@@ -198,7 +200,8 @@ export default function AmdDetailPage() {
   // DELETE
   // ----------------------------------------------------------
   async function handleDelete() {
-    if (!confirm("Delete this AMD setup? This cannot be undone.")) return;
+    const label = isDraft ? "this draft" : "this AMD setup";
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
     setDeleting(true);
     const { error: delErr } = await supabase
       .from("amd_setups")
@@ -252,6 +255,32 @@ export default function AmdDetailPage() {
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
+        {/* DRAFT BANNER — top of page if draft */}
+        {isDraft && (
+          <div className="p-4 rounded-lg bg-yellow-950/40 border-2 border-yellow-700 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <p className="text-sm font-bold text-yellow-200">
+                  📝 DRAFT — not yet finalized
+                </p>
+                <p className="text-xs text-yellow-300/90 mt-0.5">
+                  {row.checklist_score ?? 0}/10 gates passed · Last saved{" "}
+                  {row.updated_at
+                    ? new Date(row.updated_at).toLocaleString()
+                    : "—"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push(`/amd?edit=${row.id}`)}
+                className="text-xs px-3 py-2 rounded-lg bg-yellow-700 hover:bg-yellow-600 text-white font-bold"
+              >
+                ▶ Continue editing
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
@@ -326,7 +355,7 @@ export default function AmdDetailPage() {
           />
         )}
 
-        {/* JOURNAL NOTES — editable */}
+        {/* JOURNAL NOTES */}
         <div className="p-4 rounded-lg bg-gray-900 border-2 border-purple-800 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
@@ -448,9 +477,7 @@ export default function AmdDetailPage() {
 
         {/* Candles */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-400">
-            Candles
-          </h2>
+          <h2 className="text-sm font-semibold text-blue-400">Candles</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[
               { label: "Sweep (Manipulation)", c: row.sweep_candle },

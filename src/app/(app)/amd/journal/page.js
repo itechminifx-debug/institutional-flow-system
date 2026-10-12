@@ -14,6 +14,12 @@ const VERDICT_OPTIONS = [
   { key: "WAIT", label: "⏳ WAIT" },
 ];
 
+const STATUS_OPTIONS = [
+  { key: "all", label: "All statuses" },
+  { key: "draft", label: "📝 Drafts only" },
+  { key: "complete", label: "✅ Complete only" },
+];
+
 function verdictBadge(verdict) {
   if (verdict === "BUY") {
     return {
@@ -33,6 +39,20 @@ function verdictBadge(verdict) {
   };
 }
 
+function relativeTime(iso) {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function AmdJournalPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -45,8 +65,7 @@ export default function AmdJournalPage() {
   const [filterPair, setFilterPair] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterVerdict, setFilterVerdict] = useState("all");
-
-  // Search (notes + pair)
+  const [filterStatus, setFilterStatus] = useState("all");
   const [search, setSearch] = useState("");
 
   // Delete
@@ -78,26 +97,42 @@ export default function AmdJournalPage() {
       if (filterPair && r.pair !== filterPair) return false;
       if (filterType !== "all" && r.sequence_type !== filterType) return false;
       if (filterVerdict !== "all" && r.verdict !== filterVerdict) return false;
+      if (filterStatus !== "all" && r.status !== filterStatus) return false;
       if (q) {
         const hay = `${r.pair || ""} ${r.notes || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [rows, filterPair, filterType, filterVerdict, search]);
+  }, [rows, filterPair, filterType, filterVerdict, filterStatus, search]);
 
-  // Stats summary
+  // Split into drafts + complete
+  const drafts = useMemo(
+    () =>
+      filtered
+        .filter((r) => r.status === "draft")
+        .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)),
+    [filtered]
+  );
+
+  const complete = useMemo(
+    () => filtered.filter((r) => r.status !== "draft"),
+    [filtered]
+  );
+
+  // Stats
   const stats = useMemo(() => {
     const total = rows.length;
-    const buys = rows.filter((r) => r.verdict === "BUY").length;
-    const sells = rows.filter((r) => r.verdict === "SELL").length;
-    const waits = rows.filter((r) => r.verdict === "WAIT").length;
-    return { total, buys, sells, waits };
+    const draftsCount = rows.filter((r) => r.status === "draft").length;
+    const completeCount = rows.filter((r) => r.status !== "draft").length;
+    const buys = rows.filter((r) => r.verdict === "BUY" && r.status !== "draft").length;
+    const sells = rows.filter((r) => r.verdict === "SELL" && r.status !== "draft").length;
+    return { total, draftsCount, completeCount, buys, sells };
   }, [rows]);
 
   async function handleDelete(id, e) {
     e.stopPropagation();
-    if (!confirm("Delete this AMD setup? This cannot be undone.")) return;
+    if (!confirm("Delete this setup? This cannot be undone.")) return;
 
     setDeletingId(id);
     const { error: delErr } = await supabase
@@ -118,7 +153,109 @@ export default function AmdJournalPage() {
     setFilterPair("");
     setFilterType("all");
     setFilterVerdict("all");
+    setFilterStatus("all");
     setSearch("");
+  }
+
+  // ----------------------------------------------------------
+  // Row renderer — shared by drafts + complete lists
+  // ----------------------------------------------------------
+  function renderRow(r, isDraftRow) {
+    const badge = verdictBadge(r.verdict);
+    const typeInfo = AMD_TYPES.find((t) => t.key === r.sequence_type);
+    const hasNotes = r.notes && r.notes.trim().length > 0;
+    const draftScore = r.checklist_score ?? 0;
+
+    return (
+      <div
+        key={r.id}
+        onClick={() => router.push(`/amd/${r.id}`)}
+        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+          isDraftRow
+            ? "bg-yellow-950/20 border-yellow-800/60 hover:border-yellow-600"
+            : "bg-gray-900 border-gray-800 hover:border-blue-700"
+        }`}
+      >
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {isDraftRow && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 border border-yellow-700 text-yellow-200 font-bold">
+                📝 DRAFT
+              </span>
+            )}
+            <span className="text-sm font-bold">{r.pair}</span>
+            <span className="text-xs text-gray-500">· {r.timeframe}</span>
+            {typeInfo && (
+              <span className="text-xs text-gray-400">
+                · {typeInfo.emoji}{" "}
+                {r.sequence_type === "bullish" ? "Bullish" : "Bearish"}
+              </span>
+            )}
+            {!isDraftRow && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full border font-bold ${badge.cls}`}
+              >
+                {badge.label}
+              </span>
+            )}
+            {isDraftRow ? (
+              <span className="text-xs text-yellow-300">
+                · {draftScore}/10
+              </span>
+            ) : (
+              r.checklist_score !== null && (
+                <span className="text-xs text-gray-500">
+                  · {r.checklist_score}/10
+                </span>
+              )
+            )}
+            {hasNotes && (
+              <span className="text-xs text-purple-300">📓 notes</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={(e) => handleDelete(r.id, e)}
+            disabled={deletingId === r.id}
+            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+          >
+            {deletingId === r.id ? "..." : "✕"}
+          </button>
+        </div>
+
+        {isDraftRow ? (
+          <p className="text-xs text-yellow-300/80 mt-2">
+            Last saved {relativeTime(r.updated_at || r.created_at)}
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
+              <div>
+                <p className="text-gray-500">Entry</p>
+                <p className="font-bold tabular-nums text-yellow-400">
+                  {r.entry ? formatPrice(r.entry) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">SL</p>
+                <p className="font-bold tabular-nums text-red-400">
+                  {r.sl ? formatPrice(r.sl) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">TP</p>
+                <p className="font-bold tabular-nums text-green-400">
+                  {r.tp ? formatPrice(r.tp) : "—"}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {new Date(r.created_at).toLocaleString()}
+            </p>
+          </>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -143,10 +280,22 @@ export default function AmdJournalPage() {
 
         {/* Stats */}
         {!loading && rows.length > 0 && (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
               <p className="text-xs text-gray-500">Total</p>
               <p className="text-lg font-bold">{stats.total}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-gray-900 border border-yellow-800/60 text-center">
+              <p className="text-xs text-gray-500">📝 Drafts</p>
+              <p className="text-lg font-bold text-yellow-300">
+                {stats.draftsCount}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-gray-900 border border-gray-700 text-center">
+              <p className="text-xs text-gray-500">✅ Complete</p>
+              <p className="text-lg font-bold text-gray-200">
+                {stats.completeCount}
+              </p>
             </div>
             <div className="p-3 rounded-lg bg-gray-900 border border-green-900/60 text-center">
               <p className="text-xs text-gray-500">BUY</p>
@@ -156,12 +305,8 @@ export default function AmdJournalPage() {
             </div>
             <div className="p-3 rounded-lg bg-gray-900 border border-red-900/60 text-center">
               <p className="text-xs text-gray-500">SELL</p>
-              <p className="text-lg font-bold text-red-300">{stats.sells}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-gray-900 border border-yellow-900/60 text-center">
-              <p className="text-xs text-gray-500">WAIT</p>
-              <p className="text-lg font-bold text-yellow-300">
-                {stats.waits}
+              <p className="text-lg font-bold text-red-300">
+                {stats.sells}
               </p>
             </div>
           </div>
@@ -171,7 +316,6 @@ export default function AmdJournalPage() {
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">Filters</h2>
 
-          {/* Search */}
           <div>
             <label className="block text-xs mb-1 text-gray-400">
               Search (pair or notes)
@@ -185,12 +329,31 @@ export default function AmdJournalPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <PairPicker
               value={filterPair}
               onChange={setFilterPair}
               label="Pair (any)"
             />
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                Status
+              </label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
                 AMD Type
@@ -233,6 +396,7 @@ export default function AmdJournalPage() {
             {(filterPair ||
               filterType !== "all" ||
               filterVerdict !== "all" ||
+              filterStatus !== "all" ||
               search) && (
               <button
                 type="button"
@@ -282,89 +446,31 @@ export default function AmdJournalPage() {
           </div>
         )}
 
-        {/* Row list */}
-        {!loading && filtered.length > 0 && (
+        {/* DRAFTS SECTION */}
+        {!loading && drafts.length > 0 && (
           <div className="space-y-2">
-            {filtered.map((r) => {
-              const badge = verdictBadge(r.verdict);
-              const typeInfo = AMD_TYPES.find(
-                (t) => t.key === r.sequence_type
-              );
-              const hasNotes = r.notes && r.notes.trim().length > 0;
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-yellow-800/60" />
+              <p className="text-xs font-bold text-yellow-300 uppercase tracking-wider whitespace-nowrap">
+                📝 Drafts ({drafts.length})
+              </p>
+              <div className="flex-1 h-px bg-yellow-800/60" />
+            </div>
+            {drafts.map((r) => renderRow(r, true))}
+          </div>
+        )}
 
-              return (
-                <div
-                  key={r.id}
-                  onClick={() => router.push(`/amd/${r.id}`)}
-                  className="p-3 rounded-lg bg-gray-900 border border-gray-800 hover:border-blue-700 cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold">{r.pair}</span>
-                      <span className="text-xs text-gray-500">
-                        · {r.timeframe}
-                      </span>
-                      {typeInfo && (
-                        <span className="text-xs text-gray-400">
-                          · {typeInfo.emoji}{" "}
-                          {r.sequence_type === "bullish"
-                            ? "Bullish"
-                            : "Bearish"}
-                        </span>
-                      )}
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full border font-bold ${badge.cls}`}
-                      >
-                        {badge.label}
-                      </span>
-                      {r.checklist_score !== null && (
-                        <span className="text-xs text-gray-500">
-                          · {r.checklist_score}/10
-                        </span>
-                      )}
-                      {hasNotes && (
-                        <span className="text-xs text-purple-300">
-                          📓 notes
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDelete(r.id, e)}
-                      disabled={deletingId === r.id}
-                      className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
-                    >
-                      {deletingId === r.id ? "..." : "✕"}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
-                    <div>
-                      <p className="text-gray-500">Entry</p>
-                      <p className="font-bold tabular-nums text-yellow-400">
-                        {r.entry ? formatPrice(r.entry) : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">SL</p>
-                      <p className="font-bold tabular-nums text-red-400">
-                        {r.sl ? formatPrice(r.sl) : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">TP</p>
-                      <p className="font-bold tabular-nums text-green-400">
-                        {r.tp ? formatPrice(r.tp) : "—"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-gray-500 mt-2">
-                    {new Date(r.created_at).toLocaleString()}
-                  </p>
-                </div>
-              );
-            })}
+        {/* COMPLETE SECTION */}
+        {!loading && complete.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-gray-800" />
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                ✅ Complete ({complete.length})
+              </p>
+              <div className="flex-1 h-px bg-gray-800" />
+            </div>
+            {complete.map((r) => renderRow(r, false))}
           </div>
         )}
       </div>
