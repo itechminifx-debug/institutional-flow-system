@@ -17,6 +17,14 @@ const GROUPS = [
     ],
   },
   {
+    title: "AMD System",
+    links: [
+      { href: "/amd", label: "AMD Setup" },
+      { href: "/amd/journal", label: "AMD Journal" },
+      { href: "/amd/history", label: "AMD History" },
+    ],
+  },
+  {
     title: "Structure",
     links: [
       { href: "/mss", label: "MSS" },
@@ -64,7 +72,6 @@ const GROUPS = [
   },
 ];
 
-// Flatten once for active-link computation
 const ALL_LINKS = GROUPS.flatMap((g) => g.links);
 
 function computeActiveHref(pathname) {
@@ -73,7 +80,6 @@ function computeActiveHref(pathname) {
     (l) => pathname === l.href || pathname.startsWith(l.href + "/")
   );
   if (matches.length === 0) return null;
-  // Longest href wins — fixes history vs parent double-highlight
   return matches.sort((a, b) => b.href.length - a.href.length)[0].href;
 }
 
@@ -82,7 +88,6 @@ export default function Sidebar() {
   const [open, setOpen] = useState(false);
   const activeHref = computeActiveHref(pathname);
 
-  // Close mobile drawer on route change
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -105,7 +110,6 @@ export default function Sidebar() {
         <div className="w-6" />
       </div>
 
-      {/* Mobile overlay */}
       {open && (
         <div
           className="md:hidden fixed inset-0 z-30 bg-black/60"
@@ -113,7 +117,6 @@ export default function Sidebar() {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 z-40 h-screen w-[220px] bg-black border-r border-gray-800 overflow-y-auto
           transform transition-transform duration-200
@@ -121,7 +124,6 @@ export default function Sidebar() {
           md:translate-x-0
           pt-3`}
       >
-        {/* Logo (desktop) */}
         <div className="hidden md:block px-4 pb-3 border-b border-gray-800">
           <Link href="/dashboard" className="font-bold text-sm">
             IFS
@@ -129,31 +131,44 @@ export default function Sidebar() {
         </div>
 
         <nav className="px-2 py-3 space-y-4">
-          {GROUPS.map((group) => (
-            <div key={group.title}>
-              <p className="px-3 mb-1 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
-                {group.title}
-              </p>
-              <div className="space-y-0.5">
-                {group.links.map((link) => {
-                  const active = link.href === activeHref;
-                  return (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className={`block px-3 py-1.5 rounded-md text-xs transition ${
-                        active
-                          ? "bg-blue-600 text-white font-medium"
-                          : "text-gray-400 hover:text-white hover:bg-gray-900"
-                      }`}
-                    >
-                      {link.label}
-                    </Link>
-                  );
-                })}
+          {GROUPS.map((group) => {
+            const isAmdGroup = group.title === "AMD System";
+            return (
+              <div key={group.title}>
+                <p
+                  className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
+                    isAmdGroup ? "text-blue-400" : "text-gray-500"
+                  }`}
+                >
+                  {group.title}
+                </p>
+                <div
+                  className={`space-y-0.5 ${
+                    isAmdGroup
+                      ? "pl-2 border-l-2 border-blue-800/60 ml-2"
+                      : ""
+                  }`}
+                >
+                  {group.links.map((link) => {
+                    const active = link.href === activeHref;
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className={`block px-3 py-1.5 rounded-md text-xs transition ${
+                          active
+                            ? "bg-blue-600 text-white font-medium"
+                            : "text-gray-400 hover:text-white hover:bg-gray-900"
+                        }`}
+                      >
+                        {link.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
       </aside>
     </>
