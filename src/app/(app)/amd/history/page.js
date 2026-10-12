@@ -13,9 +13,6 @@ const STATUS_OPTIONS = [
   { key: "complete", label: "✅ Complete only" },
 ];
 
-// ------------------------------------------------------------
-// Date grouping helpers
-// ------------------------------------------------------------
 function startOfDay(d) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -39,11 +36,8 @@ function groupLabel(isoDate) {
   });
 }
 
-// For drafts we use updated_at; for complete we use created_at.
 function rowDate(r) {
-  return r.status === "draft"
-    ? r.updated_at || r.created_at
-    : r.created_at;
+  return r.status === "draft" ? r.updated_at || r.created_at : r.created_at;
 }
 
 function groupRowsByDay(rows) {
@@ -58,9 +52,7 @@ function groupRowsByDay(rows) {
     .map(([key, items]) => ({
       key,
       label: groupLabel(key),
-      items: items.sort(
-        (a, b) => new Date(rowDate(b)) - new Date(rowDate(a))
-      ),
+      items: items.sort((a, b) => new Date(rowDate(b)) - new Date(rowDate(a))),
     }));
 }
 
@@ -88,6 +80,7 @@ export default function AmdHistoryPage() {
   const supabase = createClient();
 
   const [rows, setRows] = useState([]);
+  const [screenshotCounts, setScreenshotCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterPair, setFilterPair] = useState("");
@@ -106,7 +99,23 @@ export default function AmdHistoryPage() {
         setLoading(false);
         return;
       }
+
       setRows(data || []);
+
+      if (data && data.length > 0) {
+        const setupIds = data.map((r) => r.id);
+        const { data: shotsData } = await supabase
+          .from("amd_screenshots")
+          .select("setup_id")
+          .in("setup_id", setupIds);
+
+        const counts = {};
+        (shotsData || []).forEach((s) => {
+          counts[s.setup_id] = (counts[s.setup_id] || 0) + 1;
+        });
+        setScreenshotCounts(counts);
+      }
+
       setLoading(false);
     }
     load();
@@ -123,26 +132,21 @@ export default function AmdHistoryPage() {
 
   const groups = useMemo(() => groupRowsByDay(filtered), [filtered]);
 
-  // Overall stats
   const stats = useMemo(() => {
     const total = rows.length;
     const drafts = rows.filter((r) => r.status === "draft").length;
-    const complete = rows.filter((r) => r.status !== "draft").length;
     const buys = rows.filter(
       (r) => r.verdict === "BUY" && r.status !== "draft"
     ).length;
     const sells = rows.filter(
       (r) => r.verdict === "SELL" && r.status !== "draft"
     ).length;
-    const bull = rows.filter((r) => r.sequence_type === "bullish").length;
-    const bear = rows.filter((r) => r.sequence_type === "bearish").length;
-    return { total, drafts, complete, buys, sells, bull, bear };
+    return { total, drafts, buys, sells };
   }, [rows]);
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
-        {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold">📜 AMD History</h1>
@@ -168,7 +172,6 @@ export default function AmdHistoryPage() {
           </div>
         </div>
 
-        {/* Stats */}
         {!loading && rows.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
@@ -196,7 +199,6 @@ export default function AmdHistoryPage() {
           </div>
         )}
 
-        {/* Filter */}
         {!loading && rows.length > 0 && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -243,21 +245,18 @@ export default function AmdHistoryPage() {
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">
             {error}
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div className="p-6 text-center text-gray-400 text-sm">
             Loading history...
           </div>
         )}
 
-        {/* Empty */}
         {!loading && rows.length === 0 && (
           <div className="p-6 rounded-lg bg-blue-950/30 border border-blue-900/50 text-center space-y-3">
             <p className="text-sm text-blue-200">
@@ -273,19 +272,16 @@ export default function AmdHistoryPage() {
           </div>
         )}
 
-        {/* No matches */}
         {!loading && rows.length > 0 && filtered.length === 0 && (
           <div className="p-6 text-center text-gray-400 text-sm">
             No AMD setups match the current filters.
           </div>
         )}
 
-        {/* Grouped timeline */}
         {!loading && groups.length > 0 && (
           <div className="space-y-5">
             {groups.map((g) => (
               <div key={g.key} className="space-y-2">
-                {/* Date header */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-px bg-gray-800" />
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
@@ -294,7 +290,6 @@ export default function AmdHistoryPage() {
                   <div className="flex-1 h-px bg-gray-800" />
                 </div>
 
-                {/* Rows */}
                 {g.items.map((r) => {
                   const isDraft = r.status === "draft";
                   const badge = verdictBadge(r.verdict);
@@ -305,6 +300,7 @@ export default function AmdHistoryPage() {
                     undefined,
                     { hour: "2-digit", minute: "2-digit" }
                   );
+                  const shotCount = screenshotCounts[r.id] || 0;
 
                   return (
                     <div
@@ -356,6 +352,11 @@ export default function AmdHistoryPage() {
                               }`}
                             >
                               · {r.checklist_score}/10
+                            </span>
+                          )}
+                          {shotCount > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 border border-blue-700 text-blue-200 font-semibold">
+                              📸 {shotCount}
                             </span>
                           )}
                         </div>

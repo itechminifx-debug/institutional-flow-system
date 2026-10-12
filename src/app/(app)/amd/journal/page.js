@@ -58,6 +58,7 @@ export default function AmdJournalPage() {
   const supabase = createClient();
 
   const [rows, setRows] = useState([]);
+  const [screenshotCounts, setScreenshotCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -84,7 +85,24 @@ export default function AmdJournalPage() {
         setLoading(false);
         return;
       }
+
       setRows(data || []);
+
+      // Load screenshot counts for all setups in one query
+      if (data && data.length > 0) {
+        const setupIds = data.map((r) => r.id);
+        const { data: shotsData } = await supabase
+          .from("amd_screenshots")
+          .select("setup_id")
+          .in("setup_id", setupIds);
+
+        const counts = {};
+        (shotsData || []).forEach((s) => {
+          counts[s.setup_id] = (counts[s.setup_id] || 0) + 1;
+        });
+        setScreenshotCounts(counts);
+      }
+
       setLoading(false);
     }
     load();
@@ -106,12 +124,15 @@ export default function AmdJournalPage() {
     });
   }, [rows, filterPair, filterType, filterVerdict, filterStatus, search]);
 
-  // Split into drafts + complete
   const drafts = useMemo(
     () =>
       filtered
         .filter((r) => r.status === "draft")
-        .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)),
+        .sort(
+          (a, b) =>
+            new Date(b.updated_at || b.created_at) -
+            new Date(a.updated_at || a.created_at)
+        ),
     [filtered]
   );
 
@@ -120,13 +141,16 @@ export default function AmdJournalPage() {
     [filtered]
   );
 
-  // Stats
   const stats = useMemo(() => {
     const total = rows.length;
     const draftsCount = rows.filter((r) => r.status === "draft").length;
     const completeCount = rows.filter((r) => r.status !== "draft").length;
-    const buys = rows.filter((r) => r.verdict === "BUY" && r.status !== "draft").length;
-    const sells = rows.filter((r) => r.verdict === "SELL" && r.status !== "draft").length;
+    const buys = rows.filter(
+      (r) => r.verdict === "BUY" && r.status !== "draft"
+    ).length;
+    const sells = rows.filter(
+      (r) => r.verdict === "SELL" && r.status !== "draft"
+    ).length;
     return { total, draftsCount, completeCount, buys, sells };
   }, [rows]);
 
@@ -157,14 +181,12 @@ export default function AmdJournalPage() {
     setSearch("");
   }
 
-  // ----------------------------------------------------------
-  // Row renderer — shared by drafts + complete lists
-  // ----------------------------------------------------------
   function renderRow(r, isDraftRow) {
     const badge = verdictBadge(r.verdict);
     const typeInfo = AMD_TYPES.find((t) => t.key === r.sequence_type);
     const hasNotes = r.notes && r.notes.trim().length > 0;
     const draftScore = r.checklist_score ?? 0;
+    const shotCount = screenshotCounts[r.id] || 0;
 
     return (
       <div
@@ -208,6 +230,11 @@ export default function AmdJournalPage() {
                   · {r.checklist_score}/10
                 </span>
               )
+            )}
+            {shotCount > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 border border-blue-700 text-blue-200 font-semibold">
+                📸 {shotCount}
+              </span>
             )}
             {hasNotes && (
               <span className="text-xs text-purple-300">📓 notes</span>
@@ -261,12 +288,11 @@ export default function AmdJournalPage() {
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
-        {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold">📓 AMD Journal</h1>
             <p className="text-gray-400 text-sm">
-              Every AMD setup — with notes, outcome, and lessons.
+              Every AMD setup — with notes, screenshots, and lessons.
             </p>
           </div>
           <button
@@ -278,7 +304,6 @@ export default function AmdJournalPage() {
           </button>
         </div>
 
-        {/* Stats */}
         {!loading && rows.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 text-center">
@@ -312,7 +337,6 @@ export default function AmdJournalPage() {
           </div>
         )}
 
-        {/* Filters */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <h2 className="text-sm font-semibold text-blue-400">Filters</h2>
 
@@ -409,21 +433,18 @@ export default function AmdJournalPage() {
           </div>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">
             {error}
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div className="p-6 text-center text-gray-400 text-sm">
             Loading journal...
           </div>
         )}
 
-        {/* Empty state */}
         {!loading && rows.length === 0 && (
           <div className="p-6 rounded-lg bg-blue-950/30 border border-blue-900/50 text-center space-y-3">
             <p className="text-sm text-blue-200">
@@ -439,14 +460,12 @@ export default function AmdJournalPage() {
           </div>
         )}
 
-        {/* No matches */}
         {!loading && rows.length > 0 && filtered.length === 0 && (
           <div className="p-6 text-center text-gray-400 text-sm">
             No AMD setups match the current filters.
           </div>
         )}
 
-        {/* DRAFTS SECTION */}
         {!loading && drafts.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-3">
@@ -460,7 +479,6 @@ export default function AmdJournalPage() {
           </div>
         )}
 
-        {/* COMPLETE SECTION */}
         {!loading && complete.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-3">

@@ -11,6 +11,8 @@ import {
   computeWarningReasons,
 } from "@/lib/verdictEngine";
 import AmdCard from "@/components/AmdCard";
+import ScreenshotUploader from "@/components/ScreenshotUploader";
+import ScreenshotGallery from "@/components/ScreenshotGallery";
 
 export default function AmdDetailPage() {
   const params = useParams();
@@ -20,6 +22,8 @@ export default function AmdDetailPage() {
 
   const [row, setRow] = useState(null);
   const [rbs, setRbs] = useState([]);
+  const [screenshots, setScreenshots] = useState([]);
+  const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -36,6 +40,11 @@ export default function AmdDetailPage() {
     if (!id) return;
     async function load() {
       setLoading(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) setUserId(user.id);
 
       const { data: setupData, error: setupErr } = await supabase
         .from("amd_setups")
@@ -55,8 +64,15 @@ export default function AmdDetailPage() {
         .eq("setup_id", id)
         .order("created_at", { ascending: false });
 
+      const { data: shotsData } = await supabase
+        .from("amd_screenshots")
+        .select("*")
+        .eq("setup_id", id)
+        .order("created_at", { ascending: true });
+
       setRow(setupData);
       setRbs(rbData || []);
+      setScreenshots(shotsData || []);
       setNotesDraft(setupData.notes || "");
       setLoading(false);
     }
@@ -255,7 +271,7 @@ export default function AmdDetailPage() {
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
-        {/* DRAFT BANNER — top of page if draft */}
+        {/* DRAFT BANNER */}
         {isDraft && (
           <div className="p-4 rounded-lg bg-yellow-950/40 border-2 border-yellow-700 space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -354,6 +370,41 @@ export default function AmdDetailPage() {
             warnings={warningReasons}
           />
         )}
+
+        {/* 📸 SCREENSHOTS — big display section */}
+        <div className="p-4 rounded-lg bg-gray-900 border-2 border-blue-800 space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-blue-300">
+              📸 Chart Screenshots
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {screenshots.length} image{screenshots.length === 1 ? "" : "s"}{" "}
+              attached · Click any to enlarge
+            </p>
+          </div>
+
+          <ScreenshotGallery
+            screenshots={screenshots}
+            onDelete={(deletedId) =>
+              setScreenshots((prev) =>
+                prev.filter((s) => s.id !== deletedId)
+              )
+            }
+          />
+
+          {/* Add more screenshots — always available */}
+          <div className="pt-3 border-t border-gray-800">
+            <p className="text-xs font-semibold text-gray-400 mb-2">
+              Add more screenshots
+            </p>
+            <ScreenshotUploader
+              setupId={row.id}
+              userId={userId}
+              screenshots={screenshots}
+              onChange={setScreenshots}
+            />
+          </div>
+        </div>
 
         {/* JOURNAL NOTES */}
         <div className="p-4 rounded-lg bg-gray-900 border-2 border-purple-800 space-y-3">

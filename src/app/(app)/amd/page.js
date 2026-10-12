@@ -22,6 +22,8 @@ import { computeIrlErl } from "@/lib/irlErlEngine";
 import PairPicker from "@/components/PairPicker";
 import WarningModal from "@/components/WarningModal";
 import AmdCard from "@/components/AmdCard";
+import ScreenshotUploader from "@/components/ScreenshotUploader";
+import ScreenshotGallery from "@/components/ScreenshotGallery";
 
 function emptyCandle() {
   return { open: "", high: "", low: "", close: "" };
@@ -65,6 +67,10 @@ export default function AmdPage() {
 
   const [accountSize, setAccountSize] = useState(0);
   const [riskPercent, setRiskPercent] = useState(1);
+  const [userId, setUserId] = useState(null);
+
+  // Screenshots
+  const [screenshots, setScreenshots] = useState([]);
 
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -74,8 +80,6 @@ export default function AmdPage() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [existingSetupId, setExistingSetupId] = useState(null);
   const [showWarningModal, setShowWarningModal] = useState(false);
-
-  // Draft awareness
   const [draftCount, setDraftCount] = useState(0);
 
   // ----------------------------------------------------------
@@ -87,6 +91,7 @@ export default function AmdPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
 
       const { data: prof } = await supabase
         .from("profiles")
@@ -98,16 +103,15 @@ export default function AmdPage() {
         setRiskPercent(prof.risk_percent || 1);
       }
 
-      // Count drafts (for the banner — skip in edit mode)
       if (!isEdit) {
         const { count } = await supabase
           .from("amd_setups")
           .select("*", { count: "exact", head: true })
           .eq("status", "draft");
         setDraftCount(count || 0);
+        return;
       }
 
-      if (!isEdit) return;
       setLoadingEdit(true);
 
       const { data: setupData, error: setupErr } = await supabase
@@ -127,6 +131,15 @@ export default function AmdPage() {
         .select("*")
         .eq("setup_id", setupData.id)
         .order("created_at", { ascending: false });
+
+      // Load screenshots
+      const { data: shotsData } = await supabase
+        .from("amd_screenshots")
+        .select("*")
+        .eq("setup_id", setupData.id)
+        .order("created_at", { ascending: true });
+
+      setScreenshots(shotsData || []);
 
       setForm((f) => ({
         ...f,
@@ -354,9 +367,6 @@ export default function AmdPage() {
   );
   const hasWarnings = warningReasons.length > 0;
 
-  // ----------------------------------------------------------
-  // HAS ANY INPUT (for enabling Save Draft)
-  // ----------------------------------------------------------
   const hasAnyInput =
     form.rangeHigh ||
     form.rangeLow ||
@@ -498,7 +508,6 @@ export default function AmdPage() {
       setExistingSetupId(data.id);
     }
 
-    // Child RBs — always save (even partial)
     if (rankedRbs.length > 0) {
       const rbRows = rankedRbs.map((rb) => ({
         user_id: user.id,
@@ -605,7 +614,9 @@ export default function AmdPage() {
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
           <h1 className="text-2xl font-bold">
-            {isEdit ? "Edit AMD Setup" : "AMD — Accumulation → Manipulation → Distribution"}
+            {isEdit
+              ? "Edit AMD Setup"
+              : "AMD — Accumulation → Manipulation → Distribution"}
           </h1>
           <p className="text-gray-400 text-sm">
             Accumulation builds the range. Manipulation traps retail.
@@ -613,7 +624,6 @@ export default function AmdPage() {
           </p>
         </div>
 
-        {/* Draft indicator banner */}
         {!isEdit && draftCount > 0 && (
           <div className="p-3 rounded-lg bg-yellow-950/30 border border-yellow-800 flex items-center justify-between flex-wrap gap-2">
             <p className="text-xs text-yellow-200">
@@ -1132,6 +1142,33 @@ export default function AmdPage() {
           />
         )}
 
+        {/* 📸 SCREENSHOTS */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-blue-400">
+              📸 Chart Screenshots
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Attach chart images to this AMD setup — for the draft and the
+              final. Max 10 per setup.
+            </p>
+          </div>
+
+          <ScreenshotUploader
+            setupId={existingSetupId}
+            userId={userId}
+            screenshots={screenshots}
+            onChange={setScreenshots}
+          />
+
+          <ScreenshotGallery
+            screenshots={screenshots}
+            onDelete={(id) =>
+              setScreenshots((prev) => prev.filter((s) => s.id !== id))
+            }
+          />
+        </div>
+
         {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           <label className="block text-xs mb-1 text-gray-400">Notes</label>
@@ -1174,21 +1211,16 @@ export default function AmdPage() {
           </div>
         )}
 
-        {/* TWO BUTTONS — Save Draft + Save as Final */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Save Draft — always enabled when there's input */}
           <button
             type="button"
             onClick={handleSaveDraft}
             disabled={savingDraft || saving || !hasAnyInput}
             className="w-full py-4 rounded-lg font-bold disabled:opacity-50 bg-yellow-800 hover:bg-yellow-700 text-white"
           >
-            {savingDraft
-              ? "Saving draft..."
-              : "📝 Save Draft"}
+            {savingDraft ? "Saving draft..." : "📝 Save Draft"}
           </button>
 
-          {/* Save as Final — only when checklist passes */}
           <button
             type="button"
             onClick={() => handleSaveFinal(false)}
@@ -1201,15 +1233,12 @@ export default function AmdPage() {
           >
             {saving
               ? "Saving..."
-              : isEdit
-              ? `✅ Save as Final (${evaluation.score}/10)`
               : canSaveFinal
               ? `✅ Save as Final (${evaluation.score}/10)`
               : `💾 Need ${7 - evaluation.score} more to finalize`}
           </button>
         </div>
 
-        {/* Hint */}
         {!canSaveFinal && hasAnyInput && (
           <p className="text-xs text-yellow-300 text-center">
             Not complete yet — use <strong>Save Draft</strong> to keep your
