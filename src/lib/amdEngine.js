@@ -2,14 +2,6 @@
 // AMD ENGINE
 // ============================================================
 // Accumulation → Manipulation → Distribution
-//
-//   1. Accumulation — range forms, ATR falls
-//   2. Manipulation — sweep of range, close back inside
-//   3. Distribution — MSS → FVGs → RB → reaction closes → entry
-//
-// Reuses:
-//   - computeCe, judgeZoneNegotiation,
-//     premiumDiscountVerdict, atrFilter   (liquidityZoneEngine)
 // ============================================================
 
 import {
@@ -123,7 +115,7 @@ export function amdChecklistVerdict(score) {
 }
 
 // ============================================================
-// PHASE A — ACCUMULATION
+// PHASE A
 // ============================================================
 export function checkRange({ rangeHigh, rangeLow }) {
   const high = num(rangeHigh);
@@ -159,7 +151,7 @@ export function checkAtrFalling({ atrCurrent, atrPrior }) {
 }
 
 // ============================================================
-// PHASE M — MANIPULATION
+// PHASE M
 // ============================================================
 export function checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType }) {
   if (!validCandle(sweepCandle)) {
@@ -230,7 +222,7 @@ export function checkReclaim({ sweepCandle, rangeHigh, rangeLow, sequenceType })
 }
 
 // ============================================================
-// PHASE D — DISTRIBUTION
+// PHASE D
 // ============================================================
 export function checkMSS({ currentClose, mssReference, sequenceType }) {
   const close = num(currentClose);
@@ -260,9 +252,9 @@ export function checkMSS({ currentClose, mssReference, sequenceType }) {
   }
 }
 
-// ------------------------------------------------------------
-// FVG LIST — pick the active FVG
-// ------------------------------------------------------------
+// ============================================================
+// FVG LIST
+// ============================================================
 export function rankFvgs({ fvgs, closePrice, activeRb }) {
   if (!Array.isArray(fvgs) || fvgs.length === 0) return [];
 
@@ -287,7 +279,6 @@ export function rankFvgs({ fvgs, closePrice, activeRb }) {
 
   let activeId = null;
 
-  // Priority 1: FVG containing close price
   if (close !== null) {
     for (const f of sorted) {
       if (close >= f.low && close <= f.high) {
@@ -297,7 +288,6 @@ export function rankFvgs({ fvgs, closePrice, activeRb }) {
     }
   }
 
-  // Priority 2: FVG containing the active RB
   if (!activeId && rHigh !== null && rLow !== null) {
     for (const f of sorted) {
       const overlapLow = Math.max(rLow, f.low);
@@ -309,7 +299,6 @@ export function rankFvgs({ fvgs, closePrice, activeRb }) {
     }
   }
 
-  // Priority 3: nearest FVG
   if (!activeId && close !== null) {
     let closest = null;
     let minDist = Infinity;
@@ -334,11 +323,7 @@ export function rankFvgs({ fvgs, closePrice, activeRb }) {
 
 export function checkFvgList({ rankedFvgs }) {
   if (!rankedFvgs || rankedFvgs.length === 0) {
-    return {
-      pass: false,
-      detail: "No FVGs marked. Add at least one.",
-      data: null,
-    };
+    return { pass: false, detail: "No FVGs marked. Add at least one.", data: null };
   }
 
   const active = rankedFvgs.find((f) => f.isActive) || rankedFvgs[0];
@@ -349,11 +334,7 @@ export function checkFvgList({ rankedFvgs }) {
     detail: `${rankedFvgs.length} FVG${
       rankedFvgs.length === 1 ? "" : "s"
     } marked. Active: ${active.low} – ${active.high} (${size} wide).`,
-    data: {
-      activeFvg: active,
-      allFvgs: rankedFvgs,
-      count: rankedFvgs.length,
-    },
+    data: { activeFvg: active, allFvgs: rankedFvgs, count: rankedFvgs.length },
   };
 }
 
@@ -408,13 +389,8 @@ export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
 }
 
 // ============================================================
-// VERDICT CLOSES — REACTION TIMELINE
+// VERDICT CLOSES
 // ============================================================
-// Each close reacts to a zone. Zones are visited in sequence.
-// The final close becomes the entry.
-// ============================================================
-
-// Detect which zone (if any) a close candle is interacting with
 function detectZoneInteraction({ candle, fvgs, rb, sequenceType }) {
   if (!validCandle(candle)) return { zone: null, detail: "Invalid candle." };
 
@@ -422,7 +398,6 @@ function detectZoneInteraction({ candle, fvgs, rb, sequenceType }) {
   const wickLow = num(candle.low);
   const wickHigh = num(candle.high);
 
-  // Check FVGs first (from oldest to newest for chronological ordering)
   for (const f of fvgs || []) {
     const fHigh = num(f.high);
     const fLow = num(f.low);
@@ -444,7 +419,6 @@ function detectZoneInteraction({ candle, fvgs, rb, sequenceType }) {
     }
   }
 
-  // Check RB
   if (rb) {
     const rHigh = num(rb.high);
     const rLow = num(rb.low);
@@ -469,40 +443,23 @@ function detectZoneInteraction({ candle, fvgs, rb, sequenceType }) {
   return { zone: null, detail: "Close did not interact with any zone." };
 }
 
-// Classify the reaction type for a close
 function classifyReaction({ candle, interaction, sequenceType }) {
   if (!interaction.zone) {
     return { type: "unclassified", detail: "No zone interaction." };
   }
 
   const close = num(candle.close);
-  const open = num(candle.open);
-  const wickLow = num(candle.low);
-  const wickHigh = num(candle.high);
-
   const bullish = sequenceType === "bullish";
 
   if (interaction.zone === "fvg") {
     if (interaction.insideClose) {
-      return {
-        type: "filled",
-        detail: "Imbalance filled — FVG visited.",
-      };
+      return { type: "filled", detail: "Imbalance filled — FVG visited." };
     }
-    // Wick tested but close went out of zone
     const rejected =
       (bullish && close > interaction.zoneRef.high) ||
       (!bullish && close < interaction.zoneRef.low);
-    if (rejected) {
-      return {
-        type: "held",
-        detail: "Zone held — price rejected.",
-      };
-    }
-    return {
-      type: "broke",
-      detail: "Zone tested but not respected.",
-    };
+    if (rejected) return { type: "held", detail: "Zone held — price rejected." };
+    return { type: "broke", detail: "Zone tested but not respected." };
   }
 
   if (interaction.zone === "rb") {
@@ -513,24 +470,19 @@ function classifyReaction({ candle, interaction, sequenceType }) {
         (bullish && side === "discount") || (!bullish && side === "premium");
       return {
         type: correctSide ? "entry" : "filled",
-        detail: `Closed in RB — ${side}.${
-          correctSide ? " Entry signal." : ""
-        }`,
+        detail: `Closed in RB — ${side}.${correctSide ? " Entry signal." : ""}`,
       };
     }
     const rejected =
       (bullish && close > interaction.zoneRef.high) ||
       (!bullish && close < interaction.zoneRef.low);
-    if (rejected) {
-      return { type: "held", detail: "RB held — price rejected." };
-    }
+    if (rejected) return { type: "held", detail: "RB held — price rejected." };
     return { type: "broke", detail: "RB tested but not respected." };
   }
 
   return { type: "unclassified", detail: "Unknown interaction." };
 }
 
-// Evaluate the full verdict closes list
 export function evaluateVerdictCloses({
   verdictCloses,
   fvgs,
@@ -538,18 +490,30 @@ export function evaluateVerdictCloses({
   sequenceType,
   closePrice,
 }) {
+  // Build the empty zone map upfront so it always has the right shape
+  const buildZoneMap = () => {
+    const map = { fvgs: {}, rb: false };
+    if (Array.isArray(fvgs)) {
+      fvgs.forEach((f) => {
+        if (f && f.id) map.fvgs[f.id] = false;
+      });
+    }
+    return map;
+  };
+
   if (!Array.isArray(verdictCloses) || verdictCloses.length === 0) {
     return {
       ranked: [],
-      zonesVisited: {},
+      zonesVisited: buildZoneMap(),
+      allFvgsVisited: false,
       allZonesVisited: false,
       finalClose: null,
       finalEntry: null,
       readiness: 0,
+      count: 0,
     };
   }
 
-  // Order closes by sequence number
   const ordered = [...verdictCloses].sort(
     (a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0)
   );
@@ -576,19 +540,11 @@ export function evaluateVerdictCloses({
       detail: interaction.detail,
       reactionType: reaction.type,
       reactionDetail: reaction.detail,
-      isFinal: false, // will be set below
+      isFinal: false,
     };
   });
 
-  // Build zones-visited map
-  const zonesVisited = {
-    fvgs: {},
-    rb: false,
-  };
-
-  for (const f of fvgs || []) {
-    zonesVisited.fvgs[f.id] = false;
-  }
+  const zonesVisited = buildZoneMap();
 
   for (const r of ranked) {
     if (r.reactedZone === "fvg" && r.reactedZoneRef) {
@@ -599,11 +555,10 @@ export function evaluateVerdictCloses({
     }
   }
 
-  const fvgIds = Object.keys(zonesVisited.fvgs);
+  const fvgIds = Object.keys(zonesVisited.fvgs || {});
   const allFvgsVisited = fvgIds.every((id) => zonesVisited.fvgs[id]);
   const allZonesVisited = allFvgsVisited && zonesVisited.rb;
 
-  // Find the final close — the LAST one with reaction type 'entry'
   let finalClose = null;
   for (let i = ranked.length - 1; i >= 0; i--) {
     if (ranked[i].reactionType === "entry") {
@@ -613,8 +568,7 @@ export function evaluateVerdictCloses({
     }
   }
 
-  // Readiness — 0 to 1
-  const totalChecks = fvgIds.length + 1; // FVGs + RB
+  const totalChecks = fvgIds.length + 1;
   let checksPassed = 0;
   fvgIds.forEach((id) => {
     if (zonesVisited.fvgs[id]) checksPassed++;
@@ -640,10 +594,9 @@ export function evaluateVerdictCloses({
 }
 
 // ============================================================
-// ENTRY GATE — prefers the verdict closes if available
+// ENTRY GATE
 // ============================================================
 export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) {
-  // If we have verdict closes, use the final close instead
   if (
     verdictClosesResult &&
     verdictClosesResult.finalClose &&
@@ -667,7 +620,6 @@ export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) 
     }
   }
 
-  // Fall back to single close candle
   if (!validCandle(closeCandle)) {
     return { pass: false, detail: "Close candle not filled in.", data: null };
   }
@@ -702,7 +654,7 @@ export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) 
 }
 
 // ============================================================
-// BONUS — Wick retest of the MSS
+// WICK RETEST
 // ============================================================
 export function checkWickRetest({
   closeCandle,
@@ -828,21 +780,10 @@ export function evaluateAmd({
 }) {
   const range = checkRange({ rangeHigh, rangeLow });
   const atr = checkAtrFalling({ atrCurrent, atrPrior });
-  const sweep = checkSweep({
-    sweepCandle,
-    rangeHigh,
-    rangeLow,
-    sequenceType,
-  });
-  const reclaim = checkReclaim({
-    sweepCandle,
-    rangeHigh,
-    rangeLow,
-    sequenceType,
-  });
+  const sweep = checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType });
+  const reclaim = checkReclaim({ sweepCandle, rangeHigh, rangeLow, sequenceType });
   const mss = checkMSS({ currentClose, mssReference, sequenceType });
 
-  // FVG list — pick the active one
   const rankedFvgs = rankFvgs({
     fvgs,
     closePrice: currentClose,
@@ -853,7 +794,6 @@ export function evaluateAmd({
 
   const rb = checkRbInActiveFvg({ rbHigh, rbLow, activeFvg });
 
-  // Verdict closes — evaluated against all zones
   const verdictClosesResult = evaluateVerdictCloses({
     verdictCloses,
     fvgs: rankedFvgs,
@@ -862,7 +802,6 @@ export function evaluateAmd({
     closePrice: currentClose,
   });
 
-  // Entry — prefers the verdict closes final close
   const entry = checkEntry({
     closeCandle,
     rbHigh,

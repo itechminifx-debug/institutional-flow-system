@@ -275,6 +275,14 @@ export function computeWarningReasons({
 }) {
   const reasons = [];
 
+  // Safety guard — if verdict is null/undefined, return only extras
+  if (!verdict) {
+    for (const extra of extraReasons) {
+      reasons.push(extra);
+    }
+    return reasons;
+  }
+
   // 1. Critical path danger
   if (pathDanger && pathDanger.topScore >= 8) {
     reasons.push({

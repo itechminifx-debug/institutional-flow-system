@@ -111,16 +111,12 @@ function FvgLadder({ fvgs }) {
               </span>
               <span
                 className={
-                  f.isActive
-                    ? "font-bold text-blue-200"
-                    : "text-gray-300"
+                  f.isActive ? "font-bold text-blue-200" : "text-gray-300"
                 }
               >
                 {formatPrice(f.low)} – {formatPrice(f.high)}
               </span>
-              <span className="text-gray-500">
-                CE {formatPrice(f.fvgCe)}
-              </span>
+              <span className="text-gray-500">CE {formatPrice(f.fvgCe)}</span>
             </div>
             {f.isActive && (
               <span className="text-[10px] font-bold text-blue-200">
@@ -135,16 +131,18 @@ function FvgLadder({ fvgs }) {
 }
 
 // ------------------------------------------------------------
-// Zones Visited panel
+// Zones Visited panel — SAFE VERSION
 // ------------------------------------------------------------
 function ZonesVisitedPanel({ verdictCloses, fvgs }) {
   if (!verdictCloses || !fvgs || fvgs.length === 0) return null;
 
-  const visited = verdictCloses.zonesVisited || { fvgs: {}, rb: false };
-  const total = fvgs.length + 1; // + 1 for RB
+  const visited = verdictCloses.zonesVisited || {};
+  const visitedFvgs = visited.fvgs || {};
+  const visitedRb = visited.rb || false;
+
+  const total = fvgs.length + 1;
   const done =
-    Object.values(visited.fvgs).filter(Boolean).length +
-    (visited.rb ? 1 : 0);
+    Object.values(visitedFvgs).filter(Boolean).length + (visitedRb ? 1 : 0);
 
   return (
     <div className="ml-8 p-3 rounded-lg bg-yellow-950/20 border border-yellow-800 space-y-2">
@@ -164,7 +162,7 @@ function ZonesVisitedPanel({ verdictCloses, fvgs }) {
       </div>
       <div className="space-y-1">
         {fvgs.map((f, i) => {
-          const isVisited = visited.fvgs[f.id];
+          const isVisited = visitedFvgs[f.id];
           return (
             <div
               key={f.id || i}
@@ -172,7 +170,9 @@ function ZonesVisitedPanel({ verdictCloses, fvgs }) {
             >
               <div className="flex items-center gap-2">
                 <span className="text-xs">{isVisited ? "✅" : "⏳"}</span>
-                <span className={isVisited ? "text-green-200" : "text-gray-400"}>
+                <span
+                  className={isVisited ? "text-green-200" : "text-gray-400"}
+                >
                   FVG #{i + 1} — {formatPrice(f.low)} – {formatPrice(f.high)}
                 </span>
               </div>
@@ -184,12 +184,12 @@ function ZonesVisitedPanel({ verdictCloses, fvgs }) {
         })}
         <div className="flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-black/40 border border-gray-800">
           <div className="flex items-center gap-2">
-            <span className="text-xs">{visited.rb ? "✅" : "⏳"}</span>
-            <span className={visited.rb ? "text-green-200" : "text-gray-400"}>
+            <span className="text-xs">{visitedRb ? "✅" : "⏳"}</span>
+            <span className={visitedRb ? "text-green-200" : "text-gray-400"}>
               Rejection Block (active)
             </span>
           </div>
-          {visited.rb && (
+          {visitedRb && (
             <span className="text-[10px] text-green-400">visited</span>
           )}
         </div>
@@ -199,7 +199,7 @@ function ZonesVisitedPanel({ verdictCloses, fvgs }) {
 }
 
 // ------------------------------------------------------------
-// Reaction Timeline panel
+// Reaction Timeline
 // ------------------------------------------------------------
 function reactionStyle(type) {
   switch (type) {
@@ -237,7 +237,11 @@ function reactionStyle(type) {
 }
 
 function ReactionTimeline({ verdictCloses }) {
-  if (!verdictCloses || !verdictCloses.ranked || verdictCloses.ranked.length === 0)
+  if (
+    !verdictCloses ||
+    !verdictCloses.ranked ||
+    verdictCloses.ranked.length === 0
+  )
     return null;
 
   return (
@@ -270,11 +274,16 @@ function ReactionTimeline({ verdictCloses }) {
                 <span className="text-[10px] text-gray-500 tabular-nums">
                   #{r.sequenceNumber}
                 </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${style.cls}`}>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${style.cls}`}
+                >
                   {style.emoji} {style.label}
                 </span>
                 <span className="text-gray-300">
-                  Close {close !== null && close !== undefined ? formatPrice(close) : "—"}
+                  Close{" "}
+                  {close !== null && close !== undefined
+                    ? formatPrice(close)
+                    : "—"}
                 </span>
                 <span className="text-gray-500 truncate max-w-[200px]">
                   {r.detail}
@@ -305,16 +314,14 @@ function WickRetestBadge({ wickRetest }) {
         🎯 {wickRetest.detail}
       </p>
       {wickRetest.emaConfluence && wickRetest.emaDetail && (
-        <p className="text-xs text-purple-300">
-          ✨ {wickRetest.emaDetail}
-        </p>
+        <p className="text-xs text-purple-300">✨ {wickRetest.emaDetail}</p>
       )}
     </div>
   );
 }
 
 // ------------------------------------------------------------
-// IRL / ERL panel
+// IRL / ERL
 // ------------------------------------------------------------
 function IrlErlPanel({ data }) {
   if (!data) return null;
@@ -395,7 +402,7 @@ function IrlErlPanel({ data }) {
 }
 
 // ------------------------------------------------------------
-// Warning panel
+// Warnings
 // ------------------------------------------------------------
 function WarningPanel({ warnings }) {
   if (!warnings || warnings.length === 0) return null;
@@ -477,10 +484,7 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
             <GateRow gate={gates[meta.key]} meta={meta} />
             {meta.key === "fvg" && <FvgLadder fvgs={fvgs} />}
             {meta.key === "rb" && (
-              <ZonesVisitedPanel
-                verdictCloses={verdictCloses}
-                fvgs={fvgs}
-              />
+              <ZonesVisitedPanel verdictCloses={verdictCloses} fvgs={fvgs} />
             )}
             {meta.key === "entry" && (
               <>
@@ -522,7 +526,7 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
         </div>
       )}
 
-      {/* ENTRY / SL / TP block */}
+      {/* ENTRY / SL / TP */}
       {trade && (verdict === "BUY" || verdict === "SELL") && (
         <div className="p-4 rounded-lg bg-blue-950/30 border-2 border-blue-700 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
