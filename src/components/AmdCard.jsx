@@ -79,8 +79,63 @@ function GateRow({ gate, meta }) {
 }
 
 // ------------------------------------------------------------
+// FVG Ladder — shows all FVGs with the active one highlighted
+// ------------------------------------------------------------
+function FvgLadder({ fvgs }) {
+  if (!fvgs || fvgs.length === 0) return null;
+
+  return (
+    <div className="ml-8 p-3 rounded-lg bg-blue-950/20 border border-blue-800 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-xs font-bold text-blue-200">
+          📊 FVG Ladder — {fvgs.length} FVG
+          {fvgs.length === 1 ? "" : "s"} marked
+        </p>
+        <span className="text-[10px] text-blue-300/70">
+          Active is auto-detected
+        </span>
+      </div>
+      <div className="space-y-1">
+        {fvgs.map((f, i) => (
+          <div
+            key={f.id || i}
+            className={`flex items-center justify-between gap-2 px-2 py-1 rounded text-xs ${
+              f.isActive
+                ? "bg-blue-900/40 border border-blue-600"
+                : "bg-black/40 border border-gray-800"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-500 tabular-nums">
+                #{i + 1}
+              </span>
+              <span
+                className={
+                  f.isActive
+                    ? "font-bold text-blue-200"
+                    : "text-gray-300"
+                }
+              >
+                {formatPrice(f.low)} – {formatPrice(f.high)}
+              </span>
+              <span className="text-gray-500">
+                CE {formatPrice(f.fvgCe)}
+              </span>
+            </div>
+            {f.isActive && (
+              <span className="text-[10px] font-bold text-blue-200">
+                🎯 ACTIVE
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
 // Bonus — Wick retest of MSS
-// Shows ONLY when the wick actually retested the MSS.
 // ------------------------------------------------------------
 function WickRetestBadge({ wickRetest }) {
   if (!wickRetest || !wickRetest.pass) return null;
@@ -217,6 +272,7 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
     verdict,
     reasons,
     wickRetest,
+    fvgs,
   } = data;
   const typeInfo = amdTypeInfo(sequenceType);
 
@@ -259,7 +315,9 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
         {AMD_CHECKLIST.map((meta) => (
           <div key={meta.key}>
             <GateRow gate={gates[meta.key]} meta={meta} />
-            {/* Bonus badge — only after gate 8, only if wick retested MSS */}
+            {/* FVG Ladder — after gate 6 */}
+            {meta.key === "fvg" && <FvgLadder fvgs={fvgs} />}
+            {/* Wick retest — after gate 8 */}
             {meta.key === "entry" && <WickRetestBadge wickRetest={wickRetest} />}
           </div>
         ))}

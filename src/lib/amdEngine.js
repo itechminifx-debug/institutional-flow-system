@@ -10,8 +10,6 @@
 // Reuses:
 //   - computeCe, judgeZoneNegotiation,
 //     premiumDiscountVerdict, atrFilter   (liquidityZoneEngine)
-//
-// Does NOT duplicate any existing logic.
 // ============================================================
 
 import {
@@ -70,8 +68,8 @@ export const AMD_CHECKLIST = [
   { key: "sweep",       number: 3,  phase: "M", label: "Did price sweep the range?",    hint: "False break against the true direction" },
   { key: "reclaim",     number: 4,  phase: "M", label: "Did price close back inside?",  hint: "The trap is set — the sweep was false" },
   { key: "mss",         number: 5,  phase: "D", label: "Did an MSS occur?",             hint: "Market Structure Shift — confirmed by close" },
-  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark the FVG high + low" },
-  { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the FVG" },
+  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark all FVGs — the active one is picked automatically" },
+  { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the active FVG" },
   { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "Close candle lands inside the RB" },
   { key: "reward",      number: 9,  phase: "D", label: "Is the reward 1:2+?",           hint: "TP vs Entry vs SL ≥ 2:1" },
   { key: "mindset",     number: 10, phase: "X", label: "Am I calm and disciplined?",    hint: "Manual check — mindset gate" },
@@ -265,33 +263,115 @@ export function checkMSS({ currentClose, mssReference, sequenceType }) {
   }
 }
 
-export function checkFVG({ fvgHigh, fvgLow }) {
-  const high = num(fvgHigh);
-  const low = num(fvgLow);
+// ------------------------------------------------------------
+// FVG LIST HANDLING
+// ------------------------------------------------------------
+// FVGs come in as an array of { id, high, low, addedAt }.
+// The active FVG is chosen based on:
+//   1. Close price inside an FVG → that's the active one
+//   2. Active RB inside an FVG → that's the active one
+//   3. Otherwise → the FVG nearest to the close price
+// ------------------------------------------------------------
 
-  if (high === null || low === null) {
-    return { pass: false, detail: "FVG not marked.", data: null };
+export function rankFvgs({ fvgs, closePrice, activeRb }) {
+  if (!Array.isArray(fvgs) || fvgs.length === 0) return [];
+
+  const cleaned = fvgs
+    .map((f) => ({
+      id: f.id,
+      high: num(f.high),
+      low: num(f.low),
+      addedAt: f.addedAt || new Date().toISOString(),
+    }))
+    .filter((f) => f.high !== null && f.low !== null && f.high > f.low);
+
+  if (cleaned.length === 0) return [];
+
+  const close = num(closePrice);
+  const rHigh = activeRb ? num(activeRb.high) : null;
+  const rLow = activeRb ? num(activeRb.low) : null;
+
+  // Sort by most-recent first (matches RB ranking)
+  const sorted = [...cleaned].sort(
+    (a, b) => new Date(b.addedAt) - new Date(a.addedAt)
+  );
+
+  // Find the active FVG
+  let activeId = null;
+
+  // Priority 1: FVG containing close price
+  if (close !== null) {
+    for (const f of sorted) {
+      if (close >= f.low && close <= f.high) {
+        activeId = f.id;
+        break;
+      }
+    }
   }
-  if (high <= low) {
+
+  // Priority 2: FVG containing the active RB
+  if (!activeId && rHigh !== null && rLow !== null) {
+    for (const f of sorted) {
+      const overlapLow = Math.max(rLow, f.low);
+      const overlapHigh = Math.min(rHigh, f.high);
+      if (overlapHigh > overlapLow) {
+        activeId = f.id;
+        break;
+      }
+    }
+  }
+
+  // Priority 3: nearest FVG to close price (by CE distance)
+  if (!activeId && close !== null) {
+    let closest = null;
+    let minDist = Infinity;
+    for (const f of sorted) {
+      const ce = (f.high + f.low) / 2;
+      const dist = Math.abs(close - ce);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = f.id;
+      }
+    }
+    activeId = closest;
+  }
+
+  return sorted.map((f, i) => ({
+    ...f,
+    fvgCe: computeCe(f.high, f.low),
+    isActive: f.id === activeId,
+    rank: i === 0 ? "newest" : i === sorted.length - 1 ? "oldest" : "middle",
+  }));
+}
+
+export function checkFvgList({ rankedFvgs }) {
+  if (!rankedFvgs || rankedFvgs.length === 0) {
     return {
       pass: false,
-      detail: `FVG high (${high}) must be above FVG low (${low}).`,
+      detail: "No FVGs marked. Add at least one.",
       data: null,
     };
   }
-  const size = Math.round((high - low) * 100) / 100;
+
+  const active = rankedFvgs.find((f) => f.isActive) || rankedFvgs[0];
+  const size = Math.round((active.high - active.low) * 100) / 100;
+
   return {
     pass: true,
-    detail: `FVG marked ${low} – ${high} (${size} wide).`,
-    data: { high, low, ce: computeCe(high, low), size },
+    detail: `${rankedFvgs.length} FVG${
+      rankedFvgs.length === 1 ? "" : "s"
+    } marked. Active: ${active.low} – ${active.high} (${size} wide).`,
+    data: {
+      activeFvg: active,
+      allFvgs: rankedFvgs,
+      count: rankedFvgs.length,
+    },
   };
 }
 
-export function checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow }) {
+export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
   const rHigh = num(rbHigh);
   const rLow = num(rbLow);
-  const fHigh = num(fvgHigh);
-  const fLow = num(fvgLow);
 
   if (rHigh === null || rLow === null) {
     return { pass: false, detail: "RB not marked.", data: null };
@@ -299,8 +379,14 @@ export function checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow }) {
   if (rHigh <= rLow) {
     return { pass: false, detail: "RB high must be above RB low.", data: null };
   }
+  if (!activeFvg) {
+    return { pass: false, detail: "No active FVG.", data: null };
+  }
+
+  const fHigh = num(activeFvg.high);
+  const fLow = num(activeFvg.low);
   if (fHigh === null || fLow === null) {
-    return { pass: false, detail: "FVG missing.", data: null };
+    return { pass: false, detail: "Active FVG invalid.", data: null };
   }
 
   const overlapLow = Math.max(rLow, fLow);
@@ -315,7 +401,7 @@ export function checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow }) {
 
     return {
       pass: true,
-      detail: `RB ${rLow} – ${rHigh} ${position} the FVG.`,
+      detail: `RB ${rLow} – ${rHigh} ${position} the active FVG.`,
       data: {
         rbHigh: rHigh,
         rbLow: rLow,
@@ -328,7 +414,7 @@ export function checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow }) {
 
   return {
     pass: false,
-    detail: `RB ${rLow} – ${rHigh} does not overlap FVG ${fLow} – ${fHigh}.`,
+    detail: `RB ${rLow} – ${rHigh} does not overlap active FVG ${fLow} – ${fHigh}.`,
     data: null,
   };
 }
@@ -368,19 +454,7 @@ export function checkEntry({ closeCandle, rbHigh, rbLow }) {
 }
 
 // ============================================================
-// BONUS — Wick retest of the MSS level
-// ============================================================
-// Not a gate. Bonus confirmation only.
-// Shown on the card ONLY when the wick actually retested the MSS.
-// If EMA 50 sits near the MSS → flagged as extra confluence.
-//
-// Rules:
-//   - Bullish: wick LOW must reach MSS level (or within tolerance BELOW it)
-//   - Bearish: wick HIGH must reach MSS level (or within tolerance ABOVE it)
-//   - Tolerance: 5 pips (fixed) — controls "close enough" cutoff
-//   - EMA confluence: EMA within 10 pips of MSS
-//
-// No DB changes. No scoring impact. Pure read + display.
+// BONUS — Wick retest of the MSS
 // ============================================================
 
 export function checkWickRetest({
@@ -400,8 +474,8 @@ export function checkWickRetest({
   }
 
   const ps = num(pipSize) || 1;
-  const tolerance = 5 * ps; // 5 pips of slack
-  const emaTolerance = 10 * ps; // 10 pips for confluence
+  const tolerance = 5 * ps;
+  const emaTolerance = 10 * ps;
 
   const wickLow = num(closeCandle.low);
   const wickHigh = num(closeCandle.high);
@@ -410,33 +484,25 @@ export function checkWickRetest({
   let detail = null;
 
   if (sequenceType === "bullish") {
-    // For bullish: price should come back DOWN to test the MSS level from above
-    // Wick low should reach MSS (or come within tolerance)
     if (wickLow !== null) {
-      const distance = wickLow - mss; // positive = didn't reach, negative = overshot
+      const distance = wickLow - mss;
       if (distance <= tolerance) {
         pass = true;
         const reached = distance <= 0;
         detail = reached
           ? `Wick low ${wickLow} retested MSS ${mss}.`
-          : `Wick low ${wickLow} came within ${Math.round(
-              distance
-            )} of MSS ${mss}.`;
+          : `Wick low ${wickLow} came within ${Math.round(distance)} of MSS ${mss}.`;
       }
     }
   } else {
-    // For bearish: price should come back UP to test the MSS level from below
-    // Wick high should reach MSS (or come within tolerance)
     if (wickHigh !== null) {
-      const distance = mss - wickHigh; // positive = didn't reach, negative = overshot
+      const distance = mss - wickHigh;
       if (distance <= tolerance) {
         pass = true;
         const reached = distance <= 0;
         detail = reached
           ? `Wick high ${wickHigh} retested MSS ${mss}.`
-          : `Wick high ${wickHigh} came within ${Math.round(
-              distance
-            )} of MSS ${mss}.`;
+          : `Wick high ${wickHigh} came within ${Math.round(distance)} of MSS ${mss}.`;
       }
     }
   }
@@ -445,7 +511,6 @@ export function checkWickRetest({
     return { pass: false, detail: null, emaConfluence: false, emaDetail: null };
   }
 
-  // EMA confluence — only if EMA is provided AND near the MSS
   let emaConfluence = false;
   let emaDetail = null;
 
@@ -509,8 +574,7 @@ export function evaluateAmd({
   sweepCandle,
   currentClose,
   mssReference,
-  fvgHigh,
-  fvgLow,
+  fvgs,
   rbHigh,
   rbLow,
   closeCandle,
@@ -521,7 +585,6 @@ export function evaluateAmd({
   riskPercent = 1,
   ema50Price,
 }) {
-  // Phase gates
   const range = checkRange({ rangeHigh, rangeLow });
   const atr = checkAtrFalling({ atrCurrent, atrPrior });
   const sweep = checkSweep({
@@ -537,8 +600,18 @@ export function evaluateAmd({
     sequenceType,
   });
   const mss = checkMSS({ currentClose, mssReference, sequenceType });
-  const fvg = checkFVG({ fvgHigh, fvgLow });
-  const rb = checkRbInFvg({ rbHigh, rbLow, fvgHigh, fvgLow });
+
+  // ---- FVG list — pick the active one ----
+  const rankedFvgs = rankFvgs({
+    fvgs,
+    closePrice: currentClose,
+    activeRb: rbHigh && rbLow ? { high: rbHigh, low: rbLow } : null,
+  });
+  const fvg = checkFvgList({ rankedFvgs });
+  const activeFvg = fvg.data?.activeFvg || null;
+
+  // ---- RB must overlap the active FVG ----
+  const rb = checkRbInActiveFvg({ rbHigh, rbLow, activeFvg });
   const entry = checkEntry({ closeCandle, rbHigh, rbLow });
 
   // ---- Base negotiation verdict ----
@@ -613,11 +686,9 @@ export function evaluateAmd({
     }
   }
 
-  // ---- Remaining gates ----
   const reward = checkReward({ trade });
   const mindset = checkMindset({ manualAnswer: manualMindset });
 
-  // ---- Score ----
   const answers = {
     range: range.pass,
     atr_falling: atr.pass,
@@ -634,7 +705,6 @@ export function evaluateAmd({
   const score = computeAmdScore(answers);
   const checklistVerdict = amdChecklistVerdict(score);
 
-  // ---- Final verdict ----
   let verdict = "WAIT";
   if (
     checklistVerdict.passed &&
@@ -648,8 +718,6 @@ export function evaluateAmd({
     baseNegotiation || { verdict: "WAIT", reason: "AMD sequence not complete." }
   );
 
-  // ---- BONUS: Wick retest of the MSS ----
-  // Not a gate. Does not affect score or verdict. Just informational.
   const wickRetest = checkWickRetest({
     closeCandle,
     mssReference,
@@ -658,7 +726,6 @@ export function evaluateAmd({
     pipSize,
   });
 
-  // ---- Reasons list ----
   const reasons = [];
   if (!range.pass) reasons.push(`Range: ${range.detail}`);
   if (!atr.pass) reasons.push(`ATR: ${atr.detail}`);
@@ -693,6 +760,9 @@ export function evaluateAmd({
     verdictDisplay,
     trade,
     wickRetest,
+    // FVG list — for the card to display all FVGs
+    fvgs: rankedFvgs,
+    activeFvg,
     reasons,
   };
 }

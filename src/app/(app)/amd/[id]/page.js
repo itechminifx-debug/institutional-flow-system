@@ -22,6 +22,7 @@ export default function AmdDetailPage() {
 
   const [row, setRow] = useState(null);
   const [rbs, setRbs] = useState([]);
+  const [fvgs, setFvgs] = useState([]);
   const [screenshots, setScreenshots] = useState([]);
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -64,14 +65,43 @@ export default function AmdDetailPage() {
         .eq("setup_id", id)
         .order("created_at", { ascending: false });
 
+      const { data: fvgData } = await supabase
+        .from("amd_fvgs")
+        .select("*")
+        .eq("setup_id", id)
+        .order("created_at", { ascending: true });
+
       const { data: shotsData } = await supabase
         .from("amd_screenshots")
         .select("*")
         .eq("setup_id", id)
         .order("created_at", { ascending: true });
 
+      // Load FVGs — with legacy auto-migration
+      let fvgList = [];
+      if (fvgData && fvgData.length > 0) {
+        fvgList = fvgData.map((f, idx) => ({
+          id: Math.random().toString(36).slice(2),
+          high: f.fvg_high?.toString() || "",
+          low: f.fvg_low?.toString() || "",
+          addedAt:
+            f.created_at ||
+            new Date(Date.now() - idx * 1000).toISOString(),
+        }));
+      } else if (setupData.fvg_high || setupData.fvg_low) {
+        fvgList = [
+          {
+            id: Math.random().toString(36).slice(2),
+            high: setupData.fvg_high?.toString() || "",
+            low: setupData.fvg_low?.toString() || "",
+            addedAt: setupData.created_at || new Date().toISOString(),
+          },
+        ];
+      }
+
       setRow(setupData);
       setRbs(rbData || []);
+      setFvgs(fvgList);
       setScreenshots(shotsData || []);
       setNotesDraft(setupData.notes || "");
       setLoading(false);
@@ -98,8 +128,12 @@ export default function AmdDetailPage() {
       sweepCandle: row.sweep_candle,
       currentClose: row.current_close,
       mssReference: row.mss_reference,
-      fvgHigh: row.fvg_high,
-      fvgLow: row.fvg_low,
+      fvgs: fvgs.map((f) => ({
+        id: f.id,
+        high: f.high,
+        low: f.low,
+        addedAt: f.addedAt,
+      })),
       rbHigh,
       rbLow,
       closeCandle: row.close_candle,
@@ -108,9 +142,10 @@ export default function AmdDetailPage() {
       manualMindset: row.checklist_answers?.mindset === true,
       accountSize: 0,
       riskPercent: 0,
+      ema50Price: row.ema50_price,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row, rbs]);
+  }, [row, rbs, fvgs]);
 
   // ----------------------------------------------------------
   // ENRICHED VERDICT
@@ -371,7 +406,7 @@ export default function AmdDetailPage() {
           />
         )}
 
-        {/* 📸 SCREENSHOTS — big display section */}
+        {/* 📸 SCREENSHOTS */}
         <div className="p-4 rounded-lg bg-gray-900 border-2 border-blue-800 space-y-3">
           <div>
             <h2 className="text-sm font-bold text-blue-300">
@@ -392,7 +427,6 @@ export default function AmdDetailPage() {
             }
           />
 
-          {/* Add more screenshots — always available */}
           <div className="pt-3 border-t border-gray-800">
             <p className="text-xs font-semibold text-gray-400 mb-2">
               Add more screenshots
@@ -482,18 +516,6 @@ export default function AmdDetailPage() {
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">FVG High</p>
-              <p className="font-bold tabular-nums">
-                {row.fvg_high !== null ? formatPrice(row.fvg_high) : "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">FVG Low</p>
-              <p className="font-bold tabular-nums">
-                {row.fvg_low !== null ? formatPrice(row.fvg_low) : "—"}
-              </p>
-            </div>
-            <div>
               <p className="text-xs text-gray-500">Next Liquidity Target</p>
               <p className="font-bold tabular-nums">
                 {row.next_liquidity_level !== null
@@ -525,6 +547,54 @@ export default function AmdDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* FVGs */}
+        {fvgs.length > 0 && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <h2 className="text-sm font-semibold text-blue-400">
+              Fair Value Gaps ({fvgs.length})
+            </h2>
+            <div className="space-y-2">
+              {fvgs.map((f, i) => {
+                const active = evaluation?.activeFvg;
+                const isActive =
+                  active &&
+                  parseFloat(f.high) === active.high &&
+                  parseFloat(f.low) === active.low;
+                return (
+                  <div
+                    key={f.id || i}
+                    className={`p-2 rounded border flex items-center justify-between gap-2 text-xs ${
+                      isActive
+                        ? "bg-blue-950/20 border-blue-700"
+                        : "bg-black border-gray-800"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-300">
+                        FVG {i + 1}
+                      </span>
+                      <span className="tabular-nums">
+                        {formatPrice(f.low)} – {formatPrice(f.high)}
+                      </span>
+                      <span className="text-gray-500">
+                        CE{" "}
+                        {formatPrice(
+                          (parseFloat(f.high) + parseFloat(f.low)) / 2
+                        )}
+                      </span>
+                    </div>
+                    {isActive && (
+                      <span className="text-xs text-blue-300 font-semibold">
+                        active
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Candles */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">

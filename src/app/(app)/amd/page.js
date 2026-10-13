@@ -31,6 +31,9 @@ function emptyCandle() {
 function emptyRb() {
   return { id: Math.random().toString(36).slice(2), high: "", low: "" };
 }
+function emptyFvg() {
+  return { id: Math.random().toString(36).slice(2), high: "", low: "" };
+}
 
 export default function AmdPage() {
   const router = useRouter();
@@ -49,8 +52,6 @@ export default function AmdPage() {
     atrCurrent: "",
     atrPrior: "",
     mssReference: "",
-    fvgHigh: "",
-    fvgLow: "",
     nextLiquidityLevel: "",
     closePrice: "",
     ema50Price: "",
@@ -63,13 +64,13 @@ export default function AmdPage() {
   const [sweepCandle, setSweepCandle] = useState(emptyCandle());
   const [closeCandle, setCloseCandle] = useState(emptyCandle());
   const [rbs, setRbs] = useState([emptyRb()]);
+  const [fvgs, setFvgs] = useState([emptyFvg()]);
   const [manualMindset, setManualMindset] = useState(false);
 
   const [accountSize, setAccountSize] = useState(0);
   const [riskPercent, setRiskPercent] = useState(1);
   const [userId, setUserId] = useState(null);
 
-  // Screenshots
   const [screenshots, setScreenshots] = useState([]);
 
   const [saving, setSaving] = useState(false);
@@ -132,7 +133,12 @@ export default function AmdPage() {
         .eq("setup_id", setupData.id)
         .order("created_at", { ascending: false });
 
-      // Load screenshots
+      const { data: fvgData } = await supabase
+        .from("amd_fvgs")
+        .select("*")
+        .eq("setup_id", setupData.id)
+        .order("created_at", { ascending: true });
+
       const { data: shotsData } = await supabase
         .from("amd_screenshots")
         .select("*")
@@ -151,8 +157,6 @@ export default function AmdPage() {
         atrCurrent: setupData.atr_current?.toString() || "",
         atrPrior: setupData.atr_prior?.toString() || "",
         mssReference: setupData.mss_reference?.toString() || "",
-        fvgHigh: setupData.fvg_high?.toString() || "",
-        fvgLow: setupData.fvg_low?.toString() || "",
         nextLiquidityLevel:
           setupData.next_liquidity_level?.toString() || "",
         closePrice: setupData.current_close?.toString() || "",
@@ -193,6 +197,30 @@ export default function AmdPage() {
         );
       }
 
+      // Load FVGs — with auto-migration from legacy fvg_high/fvg_low
+      if (fvgData && fvgData.length > 0) {
+        setFvgs(
+          fvgData.map((f, idx) => ({
+            id: Math.random().toString(36).slice(2),
+            high: f.fvg_high?.toString() || "",
+            low: f.fvg_low?.toString() || "",
+            addedAt:
+              f.created_at ||
+              new Date(Date.now() - idx * 1000).toISOString(),
+          }))
+        );
+      } else if (setupData.fvg_high || setupData.fvg_low) {
+        // Legacy single FVG — migrate it into the list
+        setFvgs([
+          {
+            id: Math.random().toString(36).slice(2),
+            high: setupData.fvg_high?.toString() || "",
+            low: setupData.fvg_low?.toString() || "",
+            addedAt: setupData.created_at || new Date().toISOString(),
+          },
+        ]);
+      }
+
       if (setupData.checklist_answers?.mindset) {
         setManualMindset(true);
       }
@@ -224,6 +252,17 @@ export default function AmdPage() {
   function removeRb(id) {
     setRbs((prev) => prev.filter((rb) => rb.id !== id));
   }
+  function updateFvg(id, field, value) {
+    setFvgs((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, [field]: value } : f))
+    );
+  }
+  function addFvg() {
+    setFvgs((prev) => [...prev, emptyFvg()]);
+  }
+  function removeFvg(id) {
+    setFvgs((prev) => prev.filter((f) => f.id !== id));
+  }
 
   // ----------------------------------------------------------
   // RANKED RBS + ACTIVE RB
@@ -252,48 +291,46 @@ export default function AmdPage() {
   // AMD EVALUATION
   // ----------------------------------------------------------
   const evaluation = useMemo(() => {
-  return evaluateAmd({
-    sequenceType: form.sequenceType,
-    rangeHigh: form.rangeHigh,
-    rangeLow: form.rangeLow,
-    atrCurrent: form.atrCurrent,
-    atrPrior: form.atrPrior,
+    return evaluateAmd({
+      sequenceType: form.sequenceType,
+      rangeHigh: form.rangeHigh,
+      rangeLow: form.rangeLow,
+      atrCurrent: form.atrCurrent,
+      atrPrior: form.atrPrior,
+      sweepCandle,
+      currentClose: form.closePrice,
+      mssReference: form.mssReference,
+      fvgs,
+      rbHigh,
+      rbLow,
+      closeCandle,
+      nextLiquidityLevel: form.nextLiquidityLevel,
+      pipSize: parseFloat(form.pipSize) || 1,
+      manualMindset,
+      accountSize,
+      riskPercent,
+      ema50Price: form.ema50Price,
+    });
+  }, [
+    form.sequenceType,
+    form.rangeHigh,
+    form.rangeLow,
+    form.atrCurrent,
+    form.atrPrior,
+    form.mssReference,
+    form.closePrice,
+    form.nextLiquidityLevel,
+    form.pipSize,
+    form.ema50Price,
     sweepCandle,
-    currentClose: form.closePrice,
-    mssReference: form.mssReference,
-    fvgHigh: form.fvgHigh,
-    fvgLow: form.fvgLow,
+    closeCandle,
+    fvgs,
     rbHigh,
     rbLow,
-    closeCandle,
-    nextLiquidityLevel: form.nextLiquidityLevel,
-    pipSize: parseFloat(form.pipSize) || 1,
     manualMindset,
     accountSize,
     riskPercent,
-    ema50Price: form.ema50Price,
-  });
-}, [
-  form.sequenceType,
-  form.rangeHigh,
-  form.rangeLow,
-  form.atrCurrent,
-  form.atrPrior,
-  form.mssReference,
-  form.fvgHigh,
-  form.fvgLow,
-  form.closePrice,
-  form.nextLiquidityLevel,
-  form.pipSize,
-  form.ema50Price,
-  sweepCandle,
-  closeCandle,
-  rbHigh,
-  rbLow,
-  manualMindset,
-  accountSize,
-  riskPercent,
-]);
+  ]);
 
   // ----------------------------------------------------------
   // EMA + enriched verdict
@@ -373,8 +410,6 @@ export default function AmdPage() {
     form.rangeHigh ||
     form.rangeLow ||
     form.mssReference ||
-    form.fvgHigh ||
-    form.fvgLow ||
     form.closePrice ||
     sweepCandle.open ||
     sweepCandle.high ||
@@ -383,7 +418,8 @@ export default function AmdPage() {
     closeCandle.open ||
     closeCandle.high ||
     closeCandle.low ||
-    closeCandle.close;
+    closeCandle.close ||
+    fvgs.some((f) => f.high || f.low);
 
   // ----------------------------------------------------------
   // SAVE — shared logic
@@ -401,6 +437,10 @@ export default function AmdPage() {
     const verdictToSave = isDraft
       ? evaluation.verdict
       : enrichedVerdict?.verdict || evaluation.verdict || "WAIT";
+
+    // Save the ACTIVE FVG's values into the legacy fvg_high/fvg_low columns
+    // for backward compatibility. Also save full FVG list in amd_fvgs.
+    const activeFvg = evaluation.activeFvg;
 
     const payload = {
       user_id: user.id,
@@ -425,8 +465,11 @@ export default function AmdPage() {
       mss_reference: form.mssReference
         ? parseFloat(form.mssReference)
         : null,
-      fvg_high: form.fvgHigh ? parseFloat(form.fvgHigh) : null,
-      fvg_low: form.fvgLow ? parseFloat(form.fvgLow) : null,
+
+      // Legacy columns: store the ACTIVE FVG's values
+      fvg_high: activeFvg?.high ?? null,
+      fvg_low: activeFvg?.low ?? null,
+
       close_candle: {
         open: parseFloat(closeCandle.open) || null,
         high: parseFloat(closeCandle.high) || null,
@@ -496,6 +539,7 @@ export default function AmdPage() {
       }
       setupRow = data;
       await supabase.from("amd_rbs").delete().eq("setup_id", existingSetupId);
+      await supabase.from("amd_fvgs").delete().eq("setup_id", existingSetupId);
     } else {
       const { data, error: insErr } = await supabase
         .from("amd_setups")
@@ -510,6 +554,7 @@ export default function AmdPage() {
       setExistingSetupId(data.id);
     }
 
+    // Save RBs
     if (rankedRbs.length > 0) {
       const rbRows = rankedRbs.map((rb) => ({
         user_id: user.id,
@@ -524,6 +569,39 @@ export default function AmdPage() {
       const { error: rbErr } = await supabase.from("amd_rbs").insert(rbRows);
       if (rbErr) {
         setError(rbErr.message);
+        return null;
+      }
+    }
+
+    // Save FVGs
+    const cleanFvgs = fvgs
+      .map((f) => ({
+        id: f.id,
+        high: parseFloat(f.high),
+        low: parseFloat(f.low),
+        addedAt: f.addedAt || new Date().toISOString(),
+      }))
+      .filter((f) => !isNaN(f.high) && !isNaN(f.low) && f.high > f.low);
+
+    if (cleanFvgs.length > 0) {
+      const fvgRows = cleanFvgs.map((f) => {
+        const isActive =
+          evaluation.activeFvg && f.high === evaluation.activeFvg.high && f.low === evaluation.activeFvg.low;
+        return {
+          user_id: user.id,
+          setup_id: setupRow.id,
+          pair: form.pair,
+          fvg_high: f.high,
+          fvg_low: f.low,
+          fvg_ce: computeCe(f.high, f.low),
+          is_active: isActive,
+        };
+      });
+      const { error: fvgErr } = await supabase
+        .from("amd_fvgs")
+        .insert(fvgRows);
+      if (fvgErr) {
+        setError(fvgErr.message);
         return null;
       }
     }
@@ -595,15 +673,15 @@ export default function AmdPage() {
   // ----------------------------------------------------------
   // LOADING
   // ----------------------------------------------------------
- if (loadingEdit && isEdit) {
-  return (
-    <main className="min-h-screen p-6 bg-black text-white">
-      <div className="max-w-3xl mx-auto text-gray-400">
-        Loading AMD setup...
-      </div>
-    </main>
-  );
-}
+  if (loadingEdit && isEdit) {
+    return (
+      <main className="min-h-screen p-6 bg-black text-white">
+        <div className="max-w-3xl mx-auto text-gray-400">
+          Loading AMD setup...
+        </div>
+      </main>
+    );
+  }
 
   const typeInfo = AMD_TYPES.find((t) => t.key === form.sequenceType);
   const canSaveFinal = evaluation.checklistVerdict.passed && evaluation.trade;
@@ -786,7 +864,7 @@ export default function AmdPage() {
             🟩 Phase D — Distribution
           </h2>
           <p className="text-xs text-gray-500">
-            The move. MSS → FVG → RB → retest → entry.
+            The move. MSS → FVGs → RB → retest → entry.
           </p>
 
           <div>
@@ -802,33 +880,103 @@ export default function AmdPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                FVG High
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.fvgHigh}
-                onChange={(e) => update("fvgHigh", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
+          {/* FVG LIST */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-300">
+                  Fair Value Gaps
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Mark every FVG around the accumulation / manipulation area.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={addFvg}
+                className="text-xs px-2 py-1 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/40"
+              >
+                + Add FVG
+              </button>
             </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                FVG Low
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={form.fvgLow}
-                onChange={(e) => update("fvgLow", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
-              />
-            </div>
+
+            {fvgs.map((f, i) => {
+              const active = evaluation.activeFvg;
+              const isActive =
+                active &&
+                parseFloat(f.high) === active.high &&
+                parseFloat(f.low) === active.low;
+
+              return (
+                <div
+                  key={f.id}
+                  className={`grid grid-cols-12 gap-2 items-end p-2 rounded border ${
+                    isActive
+                      ? "bg-blue-950/20 border-blue-700 ring-1 ring-blue-700"
+                      : "bg-black border-gray-800"
+                  }`}
+                >
+                  <div className="col-span-2">
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded-full border ${
+                        isActive
+                          ? "bg-blue-900/40 border-blue-700 text-blue-200"
+                          : "bg-gray-800/60 border-gray-700 text-gray-300"
+                      }`}
+                    >
+                      FVG {i + 1}
+                    </span>
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-xs mb-1 text-gray-500">
+                      FVG Low
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={f.low}
+                      onChange={(e) =>
+                        updateFvg(f.id, "low", e.target.value)
+                      }
+                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-xs mb-1 text-gray-500">
+                      FVG High
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={f.high}
+                      onChange={(e) =>
+                        updateFvg(f.id, "high", e.target.value)
+                      }
+                      className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                    />
+                  </div>
+                  <div className="col-span-2 text-right">
+                    {fvgs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeFvg(f.id)}
+                        className="text-red-400 text-xs hover:text-red-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                    {isActive && (
+                      <span className="block text-xs text-blue-300 font-semibold mt-1">
+                        active
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
+          {/* RB LIST */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-300">
@@ -915,6 +1063,7 @@ export default function AmdPage() {
             })}
           </div>
 
+          {/* Close candle */}
           <div>
             <p className="text-xs font-semibold text-gray-300 mb-2">
               Close Candle (the trigger)
@@ -1252,9 +1401,9 @@ export default function AmdPage() {
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}
-        onCancel={() => setShowWarningModal(false)}
+        onClose={() => setShowWarningModal(false)}
         onConfirm={() => handleSaveFinal(true)}
-        saving={saving}
+        loading={saving}
       />
     </main>
   );
