@@ -367,6 +367,109 @@ export function checkEntry({ closeCandle, rbHigh, rbLow }) {
   };
 }
 
+// ============================================================
+// BONUS — Wick retest of the MSS level
+// ============================================================
+// Not a gate. Bonus confirmation only.
+// Shown on the card ONLY when the wick actually retested the MSS.
+// If EMA 50 sits near the MSS → flagged as extra confluence.
+//
+// Rules:
+//   - Bullish: wick LOW must reach MSS level (or within tolerance BELOW it)
+//   - Bearish: wick HIGH must reach MSS level (or within tolerance ABOVE it)
+//   - Tolerance: 5 pips (fixed) — controls "close enough" cutoff
+//   - EMA confluence: EMA within 10 pips of MSS
+//
+// No DB changes. No scoring impact. Pure read + display.
+// ============================================================
+
+export function checkWickRetest({
+  closeCandle,
+  mssReference,
+  ema50Price,
+  sequenceType,
+  pipSize,
+}) {
+  if (!validCandle(closeCandle)) {
+    return { pass: false, detail: null, emaConfluence: false, emaDetail: null };
+  }
+
+  const mss = num(mssReference);
+  if (mss === null) {
+    return { pass: false, detail: null, emaConfluence: false, emaDetail: null };
+  }
+
+  const ps = num(pipSize) || 1;
+  const tolerance = 5 * ps; // 5 pips of slack
+  const emaTolerance = 10 * ps; // 10 pips for confluence
+
+  const wickLow = num(closeCandle.low);
+  const wickHigh = num(closeCandle.high);
+
+  let pass = false;
+  let detail = null;
+
+  if (sequenceType === "bullish") {
+    // For bullish: price should come back DOWN to test the MSS level from above
+    // Wick low should reach MSS (or come within tolerance)
+    if (wickLow !== null) {
+      const distance = wickLow - mss; // positive = didn't reach, negative = overshot
+      if (distance <= tolerance) {
+        pass = true;
+        const reached = distance <= 0;
+        detail = reached
+          ? `Wick low ${wickLow} retested MSS ${mss}.`
+          : `Wick low ${wickLow} came within ${Math.round(
+              distance
+            )} of MSS ${mss}.`;
+      }
+    }
+  } else {
+    // For bearish: price should come back UP to test the MSS level from below
+    // Wick high should reach MSS (or come within tolerance)
+    if (wickHigh !== null) {
+      const distance = mss - wickHigh; // positive = didn't reach, negative = overshot
+      if (distance <= tolerance) {
+        pass = true;
+        const reached = distance <= 0;
+        detail = reached
+          ? `Wick high ${wickHigh} retested MSS ${mss}.`
+          : `Wick high ${wickHigh} came within ${Math.round(
+              distance
+            )} of MSS ${mss}.`;
+      }
+    }
+  }
+
+  if (!pass) {
+    return { pass: false, detail: null, emaConfluence: false, emaDetail: null };
+  }
+
+  // EMA confluence — only if EMA is provided AND near the MSS
+  let emaConfluence = false;
+  let emaDetail = null;
+
+  const ema = num(ema50Price);
+  if (ema !== null) {
+    const emaDistance = Math.abs(ema - mss);
+    if (emaDistance <= emaTolerance) {
+      emaConfluence = true;
+      emaDetail = `EMA 50 at ${ema} sits near MSS ${mss} — adds strength.`;
+    }
+  }
+
+  return {
+    pass: true,
+    detail,
+    emaConfluence,
+    emaDetail,
+  };
+}
+
+// ============================================================
+// REWARD + MINDSET GATES
+// ============================================================
+
 export function checkReward({ trade }) {
   if (!trade) {
     return { pass: false, detail: "Trade not yet computable.", data: null };
@@ -416,6 +519,7 @@ export function evaluateAmd({
   manualMindset = false,
   accountSize = 0,
   riskPercent = 1,
+  ema50Price,
 }) {
   // Phase gates
   const range = checkRange({ rangeHigh, rangeLow });
@@ -438,9 +542,6 @@ export function evaluateAmd({
   const entry = checkEntry({ closeCandle, rbHigh, rbLow });
 
   // ---- Base negotiation verdict ----
-  // Uses judgeZoneNegotiation (RB CE premium/discount).
-  // AMD fix: if judge returns WAIT (close within its tolerance of CE),
-  // but the CLOSE CANDLE clearly sits on one side of CE, use that side.
   let baseNegotiation = null;
   if (rb.pass && entry.pass) {
     baseNegotiation = judgeZoneNegotiation({
@@ -500,7 +601,6 @@ export function evaluateAmd({
           tpPips: ps > 0 ? Math.round(reward / ps) : null,
         };
 
-        // Lot size estimate
         if (accountSize > 0 && risk > 0) {
           const riskAmount = (accountSize * (riskPercent || 1)) / 100;
           const pips = risk / ps;
@@ -548,6 +648,16 @@ export function evaluateAmd({
     baseNegotiation || { verdict: "WAIT", reason: "AMD sequence not complete." }
   );
 
+  // ---- BONUS: Wick retest of the MSS ----
+  // Not a gate. Does not affect score or verdict. Just informational.
+  const wickRetest = checkWickRetest({
+    closeCandle,
+    mssReference,
+    ema50Price,
+    sequenceType,
+    pipSize,
+  });
+
   // ---- Reasons list ----
   const reasons = [];
   if (!range.pass) reasons.push(`Range: ${range.detail}`);
@@ -582,6 +692,7 @@ export function evaluateAmd({
     verdict,
     verdictDisplay,
     trade,
+    wickRetest,
     reasons,
   };
 }

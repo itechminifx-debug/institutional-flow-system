@@ -79,6 +79,27 @@ function GateRow({ gate, meta }) {
 }
 
 // ------------------------------------------------------------
+// Bonus — Wick retest of MSS
+// Shows ONLY when the wick actually retested the MSS.
+// ------------------------------------------------------------
+function WickRetestBadge({ wickRetest }) {
+  if (!wickRetest || !wickRetest.pass) return null;
+
+  return (
+    <div className="ml-8 p-3 rounded-lg bg-purple-950/30 border border-purple-700 space-y-1">
+      <p className="text-xs font-bold text-purple-200">
+        🎯 {wickRetest.detail}
+      </p>
+      {wickRetest.emaConfluence && wickRetest.emaDetail && (
+        <p className="text-xs text-purple-300">
+          ✨ {wickRetest.emaDetail}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
 // IRL / ERL panel
 // ------------------------------------------------------------
 function IrlErlPanel({ data }) {
@@ -187,7 +208,16 @@ function WarningPanel({ warnings }) {
 export default function AmdCard({ data, trade, irlErl, warnings }) {
   if (!data) return null;
 
-  const { sequenceType, gates, score, checklistVerdict, verdictDisplay, verdict, reasons } = data;
+  const {
+    sequenceType,
+    gates,
+    score,
+    checklistVerdict,
+    verdictDisplay,
+    verdict,
+    reasons,
+    wickRetest,
+  } = data;
   const typeInfo = amdTypeInfo(sequenceType);
 
   const verdictColor =
@@ -227,7 +257,11 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
       {/* 10-gate checklist */}
       <div className="space-y-2">
         {AMD_CHECKLIST.map((meta) => (
-          <GateRow key={meta.key} gate={gates[meta.key]} meta={meta} />
+          <div key={meta.key}>
+            <GateRow gate={gates[meta.key]} meta={meta} />
+            {/* Bonus badge — only after gate 8, only if wick retested MSS */}
+            {meta.key === "entry" && <WickRetestBadge wickRetest={wickRetest} />}
+          </div>
         ))}
       </div>
 
