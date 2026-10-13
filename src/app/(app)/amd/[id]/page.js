@@ -23,6 +23,7 @@ export default function AmdDetailPage() {
   const [row, setRow] = useState(null);
   const [rbs, setRbs] = useState([]);
   const [fvgs, setFvgs] = useState([]);
+  const [verdictCloses, setVerdictCloses] = useState([]);
   const [screenshots, setScreenshots] = useState([]);
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -71,13 +72,19 @@ export default function AmdDetailPage() {
         .eq("setup_id", id)
         .order("created_at", { ascending: true });
 
+      const { data: vcData } = await supabase
+        .from("amd_verdict_closes")
+        .select("*")
+        .eq("setup_id", id)
+        .order("sequence_number", { ascending: true });
+
       const { data: shotsData } = await supabase
         .from("amd_screenshots")
         .select("*")
         .eq("setup_id", id)
         .order("created_at", { ascending: true });
 
-      // Load FVGs — with legacy auto-migration
+      // FVGs — with legacy auto-migration
       let fvgList = [];
       if (fvgData && fvgData.length > 0) {
         fvgList = fvgData.map((f, idx) => ({
@@ -99,9 +106,25 @@ export default function AmdDetailPage() {
         ];
       }
 
+      // Verdict closes
+      let vcList = [];
+      if (vcData && vcData.length > 0) {
+        vcList = vcData.map((vc, idx) => ({
+          id: Math.random().toString(36).slice(2),
+          sequenceNumber: vc.sequence_number ?? idx + 1,
+          candle: {
+            open: vc.candle?.open?.toString() || "",
+            high: vc.candle?.high?.toString() || "",
+            low: vc.candle?.low?.toString() || "",
+            close: vc.candle?.close?.toString() || "",
+          },
+        }));
+      }
+
       setRow(setupData);
       setRbs(rbData || []);
       setFvgs(fvgList);
+      setVerdictCloses(vcList);
       setScreenshots(shotsData || []);
       setNotesDraft(setupData.notes || "");
       setLoading(false);
@@ -137,6 +160,11 @@ export default function AmdDetailPage() {
       rbHigh,
       rbLow,
       closeCandle: row.close_candle,
+      verdictCloses: verdictCloses.map((vc) => ({
+        id: vc.id,
+        sequenceNumber: vc.sequenceNumber,
+        candle: vc.candle,
+      })),
       nextLiquidityLevel: row.next_liquidity_level,
       pipSize: row.pip_size || 1,
       manualMindset: row.checklist_answers?.mindset === true,
@@ -145,7 +173,7 @@ export default function AmdDetailPage() {
       ema50Price: row.ema50_price,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row, rbs, fvgs]);
+  }, [row, rbs, fvgs, verdictCloses]);
 
   // ----------------------------------------------------------
   // ENRICHED VERDICT
@@ -547,6 +575,91 @@ export default function AmdDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Verdict Closes */}
+        {verdictCloses.length > 0 && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <h2 className="text-sm font-semibold text-blue-400">
+              Verdict Closes ({verdictCloses.length})
+            </h2>
+            <div className="space-y-2">
+              {verdictCloses.map((vc, i) => {
+                const ranked = evaluation?.verdictCloses?.ranked?.[i];
+                const isFinal = ranked?.isFinal;
+                const reactionType = ranked?.reactionType || "unclassified";
+
+                const styleMap = {
+                  entry: "bg-green-900/40 border-green-700 text-green-200",
+                  filled: "bg-blue-900/40 border-blue-700 text-blue-200",
+                  held: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+                  broke: "bg-red-900/40 border-red-700 text-red-200",
+                  unclassified:
+                    "bg-gray-900/40 border-gray-700 text-gray-300",
+                };
+
+                return (
+                  <div
+                    key={vc.id || i}
+                    className={`p-2 rounded border ${
+                      isFinal
+                        ? "bg-green-950/20 border-green-700 ring-1 ring-green-700"
+                        : "bg-black border-gray-800"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-400">
+                        Close #{vc.sequenceNumber ?? i + 1}
+                      </span>
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded-full border font-bold ${
+                          styleMap[reactionType]
+                        }`}
+                      >
+                        {reactionType.toUpperCase()}
+                      </span>
+                      {isFinal && (
+                        <span className="text-xs text-green-300 font-bold">
+                          🎯 FINAL
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 mt-1 text-xs">
+                      <div>
+                        <span className="text-gray-500">O </span>
+                        <span className="tabular-nums">
+                          {vc.candle?.open ?? "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">H </span>
+                        <span className="tabular-nums">
+                          {vc.candle?.high ?? "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">L </span>
+                        <span className="tabular-nums">
+                          {vc.candle?.low ?? "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">C </span>
+                        <span className="tabular-nums">
+                          {vc.candle?.close ?? "—"}
+                        </span>
+                      </div>
+                    </div>
+                    {ranked?.detail && (
+                      <p className="text-xs text-gray-500 mt-1 italic">
+                        {ranked.detail}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* FVGs */}
         {fvgs.length > 0 && (

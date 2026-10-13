@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { AMD_TYPES, evaluateAmd } from "@/lib/amdEngine";
+import { AMD_TYPES, evaluateAmd, evaluateVerdictCloses } from "@/lib/amdEngine";
 import {
   computeCe,
   rankRejectionBlocks,
@@ -33,6 +33,12 @@ function emptyRb() {
 }
 function emptyFvg() {
   return { id: Math.random().toString(36).slice(2), high: "", low: "" };
+}
+function emptyVerdictClose() {
+  return {
+    id: Math.random().toString(36).slice(2),
+    candle: emptyCandle(),
+  };
 }
 
 export default function AmdPage() {
@@ -65,6 +71,7 @@ export default function AmdPage() {
   const [closeCandle, setCloseCandle] = useState(emptyCandle());
   const [rbs, setRbs] = useState([emptyRb()]);
   const [fvgs, setFvgs] = useState([emptyFvg()]);
+  const [verdictCloses, setVerdictCloses] = useState([]);
   const [manualMindset, setManualMindset] = useState(false);
 
   const [accountSize, setAccountSize] = useState(0);
@@ -139,6 +146,12 @@ export default function AmdPage() {
         .eq("setup_id", setupData.id)
         .order("created_at", { ascending: true });
 
+      const { data: vcData } = await supabase
+        .from("amd_verdict_closes")
+        .select("*")
+        .eq("setup_id", setupData.id)
+        .order("sequence_number", { ascending: true });
+
       const { data: shotsData } = await supabase
         .from("amd_screenshots")
         .select("*")
@@ -197,7 +210,7 @@ export default function AmdPage() {
         );
       }
 
-      // Load FVGs — with auto-migration from legacy fvg_high/fvg_low
+      // Load FVGs — with legacy auto-migration
       if (fvgData && fvgData.length > 0) {
         setFvgs(
           fvgData.map((f, idx) => ({
@@ -210,7 +223,6 @@ export default function AmdPage() {
           }))
         );
       } else if (setupData.fvg_high || setupData.fvg_low) {
-        // Legacy single FVG — migrate it into the list
         setFvgs([
           {
             id: Math.random().toString(36).slice(2),
@@ -219,6 +231,21 @@ export default function AmdPage() {
             addedAt: setupData.created_at || new Date().toISOString(),
           },
         ]);
+      }
+
+      // Load verdict closes
+      if (vcData && vcData.length > 0) {
+        setVerdictCloses(
+          vcData.map((vc) => ({
+            id: Math.random().toString(36).slice(2),
+            candle: {
+              open: vc.candle?.open?.toString() || "",
+              high: vc.candle?.high?.toString() || "",
+              low: vc.candle?.low?.toString() || "",
+              close: vc.candle?.close?.toString() || "",
+            },
+          }))
+        );
       }
 
       if (setupData.checklist_answers?.mindset) {
@@ -264,6 +291,33 @@ export default function AmdPage() {
     setFvgs((prev) => prev.filter((f) => f.id !== id));
   }
 
+  // Verdict closes
+  function updateVerdictClose(id, field, value) {
+    setVerdictCloses((prev) =>
+      prev.map((vc) =>
+        vc.id === id
+          ? { ...vc, candle: { ...vc.candle, [field]: value } }
+          : vc
+      )
+    );
+  }
+  function addVerdictClose() {
+    setVerdictCloses((prev) => [...prev, emptyVerdictClose()]);
+  }
+  function removeVerdictClose(id) {
+    setVerdictCloses((prev) => prev.filter((vc) => vc.id !== id));
+  }
+  function pullFromCloseCandle() {
+    // Convenience: copy the single close candle into a new verdict close
+    setVerdictCloses((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(36).slice(2),
+        candle: { ...closeCandle },
+      },
+    ]);
+  }
+
   // ----------------------------------------------------------
   // RANKED RBS + ACTIVE RB
   // ----------------------------------------------------------
@@ -304,6 +358,7 @@ export default function AmdPage() {
       rbHigh,
       rbLow,
       closeCandle,
+      verdictCloses,
       nextLiquidityLevel: form.nextLiquidityLevel,
       pipSize: parseFloat(form.pipSize) || 1,
       manualMindset,
@@ -325,6 +380,7 @@ export default function AmdPage() {
     sweepCandle,
     closeCandle,
     fvgs,
+    verdictCloses,
     rbHigh,
     rbLow,
     manualMindset,
@@ -419,10 +475,17 @@ export default function AmdPage() {
     closeCandle.high ||
     closeCandle.low ||
     closeCandle.close ||
-    fvgs.some((f) => f.high || f.low);
+    fvgs.some((f) => f.high || f.low) ||
+    verdictCloses.some(
+      (vc) =>
+        vc.candle.open ||
+        vc.candle.high ||
+        vc.candle.low ||
+        vc.candle.close
+    );
 
   // ----------------------------------------------------------
-  // SAVE — shared logic
+  // SAVE
   // ----------------------------------------------------------
   async function saveAmd({ isDraft }) {
     const {
@@ -438,8 +501,6 @@ export default function AmdPage() {
       ? evaluation.verdict
       : enrichedVerdict?.verdict || evaluation.verdict || "WAIT";
 
-    // Save the ACTIVE FVG's values into the legacy fvg_high/fvg_low columns
-    // for backward compatibility. Also save full FVG list in amd_fvgs.
     const activeFvg = evaluation.activeFvg;
 
     const payload = {
@@ -540,6 +601,10 @@ export default function AmdPage() {
       setupRow = data;
       await supabase.from("amd_rbs").delete().eq("setup_id", existingSetupId);
       await supabase.from("amd_fvgs").delete().eq("setup_id", existingSetupId);
+      await supabase
+        .from("amd_verdict_closes")
+        .delete()
+        .eq("setup_id", existingSetupId);
     } else {
       const { data, error: insErr } = await supabase
         .from("amd_setups")
@@ -579,14 +644,15 @@ export default function AmdPage() {
         id: f.id,
         high: parseFloat(f.high),
         low: parseFloat(f.low),
-        addedAt: f.addedAt || new Date().toISOString(),
       }))
       .filter((f) => !isNaN(f.high) && !isNaN(f.low) && f.high > f.low);
 
     if (cleanFvgs.length > 0) {
       const fvgRows = cleanFvgs.map((f) => {
         const isActive =
-          evaluation.activeFvg && f.high === evaluation.activeFvg.high && f.low === evaluation.activeFvg.low;
+          evaluation.activeFvg &&
+          f.high === evaluation.activeFvg.high &&
+          f.low === evaluation.activeFvg.low;
         return {
           user_id: user.id,
           setup_id: setupRow.id,
@@ -602,6 +668,52 @@ export default function AmdPage() {
         .insert(fvgRows);
       if (fvgErr) {
         setError(fvgErr.message);
+        return null;
+      }
+    }
+
+    // Save verdict closes
+    const cleanVerdictCloses = verdictCloses
+      .map((vc, idx) => ({
+        sequence_number: idx + 1,
+        candle: {
+          open: parseFloat(vc.candle.open) || null,
+          high: parseFloat(vc.candle.high) || null,
+          low: parseFloat(vc.candle.low) || null,
+          close: parseFloat(vc.candle.close) || null,
+        },
+      }))
+      .filter(
+        (vc) =>
+          vc.candle.open !== null &&
+          vc.candle.high !== null &&
+          vc.candle.low !== null &&
+          vc.candle.close !== null
+      );
+
+    if (cleanVerdictCloses.length > 0) {
+      // Pull auto-detected data from the evaluation
+      const rankedResults = evaluation.verdictCloses?.ranked || [];
+      const vcRows = cleanVerdictCloses.map((vc) => {
+        const match = rankedResults.find(
+          (r) => r.sequenceNumber === vc.sequence_number
+        );
+        return {
+          user_id: user.id,
+          setup_id: setupRow.id,
+          pair: form.pair,
+          sequence_number: vc.sequence_number,
+          candle: vc.candle,
+          reacted_zone_type: match?.reactedZone || null,
+          reaction_type: match?.reactionType || null,
+          is_final: match?.isFinal || false,
+        };
+      });
+      const { error: vcErr } = await supabase
+        .from("amd_verdict_closes")
+        .insert(vcRows);
+      if (vcErr) {
+        setError(vcErr.message);
         return null;
       }
     }
@@ -864,7 +976,7 @@ export default function AmdPage() {
             🟩 Phase D — Distribution
           </h2>
           <p className="text-xs text-gray-500">
-            The move. MSS → FVGs → RB → retest → entry.
+            The move. MSS → FVGs → RB → verdict closes → entry.
           </p>
 
           <div>
@@ -1063,10 +1175,137 @@ export default function AmdPage() {
             })}
           </div>
 
-          {/* Close candle */}
+          {/* VERDICT CLOSES */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-300">
+                  Verdict Closes (Reaction Closes)
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Add each close as price reacts to a zone. The final entry
+                  close comes last.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={pullFromCloseCandle}
+                  className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  title="Copy the current close candle into the verdict list"
+                >
+                  ⤓ From close candle
+                </button>
+                <button
+                  type="button"
+                  onClick={addVerdictClose}
+                  className="text-xs px-2 py-1 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/40"
+                >
+                  + Add Close
+                </button>
+              </div>
+            </div>
+
+            {verdictCloses.length === 0 && (
+              <p className="text-xs text-gray-500 italic p-2 rounded bg-black border border-gray-800">
+                No verdict closes yet. Add them as price reacts to FVGs and
+                the RB.
+              </p>
+            )}
+
+            {verdictCloses.map((vc, i) => {
+              const ranked = evaluation.verdictCloses?.ranked?.[i];
+              const isFinal = ranked?.isFinal;
+              const reactionType = ranked?.reactionType || "unclassified";
+
+              const styleMap = {
+                entry: "bg-green-900/40 border-green-700 text-green-200",
+                filled: "bg-blue-900/40 border-blue-700 text-blue-200",
+                held: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+                broke: "bg-red-900/40 border-red-700 text-red-200",
+                unclassified: "bg-gray-900/40 border-gray-700 text-gray-300",
+              };
+
+              return (
+                <div
+                  key={vc.id}
+                  className={`p-2 rounded border ${
+                    isFinal
+                      ? "bg-green-950/20 border-green-700 ring-1 ring-green-700"
+                      : "bg-black border-gray-800"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-400">
+                        Close #{i + 1}
+                      </span>
+                      {ranked?.reactedZone && (
+                        <span className="text-xs text-gray-500">
+                          →{" "}
+                          {ranked.reactedZone === "fvg"
+                            ? "FVG"
+                            : ranked.reactedZone === "rb"
+                            ? "RB"
+                            : ranked.reactedZone}
+                        </span>
+                      )}
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded-full border ${
+                          styleMap[reactionType]
+                        }`}
+                      >
+                        {reactionType.toUpperCase()}
+                      </span>
+                      {isFinal && (
+                        <span className="text-xs text-green-300 font-bold">
+                          🎯 FINAL
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeVerdictClose(vc.id)}
+                      className="text-red-400 text-xs hover:text-red-300"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {["open", "high", "low", "close"].map((f) => (
+                      <div key={f}>
+                        <label className="block text-[10px] mb-0.5 text-gray-500 uppercase">
+                          {f}
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={vc.candle[f]}
+                          onChange={(e) =>
+                            updateVerdictClose(vc.id, f, e.target.value)
+                          }
+                          className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {ranked?.detail && (
+                    <p className="text-xs text-gray-500 mt-2 italic">
+                      {ranked.detail}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Close candle (single — used as fallback / final) */}
           <div>
             <p className="text-xs font-semibold text-gray-300 mb-2">
-              Close Candle (the trigger)
+              Close Candle (single — used as final close if no verdict closes
+              are entered)
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {["open", "high", "low", "close"].map((f) => (
@@ -1401,9 +1640,9 @@ export default function AmdPage() {
       <WarningModal
         open={showWarningModal}
         warningReasons={warningReasons}
-        onClose={() => setShowWarningModal(false)}
+        onCancel={() => setShowWarningModal(false)}
         onConfirm={() => handleSaveFinal(true)}
-        loading={saving}
+        saving={saving}
       />
     </main>
   );

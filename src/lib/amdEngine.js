@@ -5,7 +5,7 @@
 //
 //   1. Accumulation — range forms, ATR falls
 //   2. Manipulation — sweep of range, close back inside
-//   3. Distribution — MSS → FVG → RB → retest → close → entry
+//   3. Distribution — MSS → FVGs → RB → reaction closes → entry
 //
 // Reuses:
 //   - computeCe, judgeZoneNegotiation,
@@ -60,7 +60,7 @@ function validCandle(c) {
 }
 
 // ============================================================
-// THE 10-GATE CHECKLIST
+// CHECKLIST
 // ============================================================
 export const AMD_CHECKLIST = [
   { key: "range",       number: 1,  phase: "A", label: "Is price in a range?",          hint: "Mark the range high + low" },
@@ -70,7 +70,7 @@ export const AMD_CHECKLIST = [
   { key: "mss",         number: 5,  phase: "D", label: "Did an MSS occur?",             hint: "Market Structure Shift — confirmed by close" },
   { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark all FVGs — the active one is picked automatically" },
   { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the active FVG" },
-  { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "Close candle lands inside the RB" },
+  { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "Verdict close landed in the RB — or final close candle" },
   { key: "reward",      number: 9,  phase: "D", label: "Is the reward 1:2+?",           hint: "TP vs Entry vs SL ≥ 2:1" },
   { key: "mindset",     number: 10, phase: "X", label: "Am I calm and disciplined?",    hint: "Manual check — mindset gate" },
 ];
@@ -125,7 +125,6 @@ export function amdChecklistVerdict(score) {
 // ============================================================
 // PHASE A — ACCUMULATION
 // ============================================================
-
 export function checkRange({ rangeHigh, rangeLow }) {
   const high = num(rangeHigh);
   const low = num(rangeLow);
@@ -162,7 +161,6 @@ export function checkAtrFalling({ atrCurrent, atrPrior }) {
 // ============================================================
 // PHASE M — MANIPULATION
 // ============================================================
-
 export function checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType }) {
   if (!validCandle(sweepCandle)) {
     return { pass: false, detail: "Sweep candle not filled in.", data: null };
@@ -234,7 +232,6 @@ export function checkReclaim({ sweepCandle, rangeHigh, rangeLow, sequenceType })
 // ============================================================
 // PHASE D — DISTRIBUTION
 // ============================================================
-
 export function checkMSS({ currentClose, mssReference, sequenceType }) {
   const close = num(currentClose);
   const ref = num(mssReference);
@@ -264,15 +261,8 @@ export function checkMSS({ currentClose, mssReference, sequenceType }) {
 }
 
 // ------------------------------------------------------------
-// FVG LIST HANDLING
+// FVG LIST — pick the active FVG
 // ------------------------------------------------------------
-// FVGs come in as an array of { id, high, low, addedAt }.
-// The active FVG is chosen based on:
-//   1. Close price inside an FVG → that's the active one
-//   2. Active RB inside an FVG → that's the active one
-//   3. Otherwise → the FVG nearest to the close price
-// ------------------------------------------------------------
-
 export function rankFvgs({ fvgs, closePrice, activeRb }) {
   if (!Array.isArray(fvgs) || fvgs.length === 0) return [];
 
@@ -291,12 +281,10 @@ export function rankFvgs({ fvgs, closePrice, activeRb }) {
   const rHigh = activeRb ? num(activeRb.high) : null;
   const rLow = activeRb ? num(activeRb.low) : null;
 
-  // Sort by most-recent first (matches RB ranking)
   const sorted = [...cleaned].sort(
     (a, b) => new Date(b.addedAt) - new Date(a.addedAt)
   );
 
-  // Find the active FVG
   let activeId = null;
 
   // Priority 1: FVG containing close price
@@ -321,7 +309,7 @@ export function rankFvgs({ fvgs, closePrice, activeRb }) {
     }
   }
 
-  // Priority 3: nearest FVG to close price (by CE distance)
+  // Priority 3: nearest FVG
   if (!activeId && close !== null) {
     let closest = null;
     let minDist = Infinity;
@@ -419,7 +407,267 @@ export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
   };
 }
 
-export function checkEntry({ closeCandle, rbHigh, rbLow }) {
+// ============================================================
+// VERDICT CLOSES — REACTION TIMELINE
+// ============================================================
+// Each close reacts to a zone. Zones are visited in sequence.
+// The final close becomes the entry.
+// ============================================================
+
+// Detect which zone (if any) a close candle is interacting with
+function detectZoneInteraction({ candle, fvgs, rb, sequenceType }) {
+  if (!validCandle(candle)) return { zone: null, detail: "Invalid candle." };
+
+  const close = num(candle.close);
+  const wickLow = num(candle.low);
+  const wickHigh = num(candle.high);
+
+  // Check FVGs first (from oldest to newest for chronological ordering)
+  for (const f of fvgs || []) {
+    const fHigh = num(f.high);
+    const fLow = num(f.low);
+    if (fHigh === null || fLow === null) continue;
+
+    const insideClose = close >= fLow && close <= fHigh;
+    const wickTested = wickLow <= fHigh && wickHigh >= fLow;
+
+    if (insideClose || wickTested) {
+      return {
+        zone: "fvg",
+        zoneRef: f,
+        insideClose,
+        wickTested,
+        detail: insideClose
+          ? `Closed inside FVG ${fLow} – ${fHigh}.`
+          : `Wick tested FVG ${fLow} – ${fHigh}.`,
+      };
+    }
+  }
+
+  // Check RB
+  if (rb) {
+    const rHigh = num(rb.high);
+    const rLow = num(rb.low);
+    if (rHigh !== null && rLow !== null) {
+      const insideClose = close >= rLow && close <= rHigh;
+      const wickTested = wickLow <= rHigh && wickHigh >= rLow;
+
+      if (insideClose || wickTested) {
+        return {
+          zone: "rb",
+          zoneRef: rb,
+          insideClose,
+          wickTested,
+          detail: insideClose
+            ? `Closed inside RB ${rLow} – ${rHigh}.`
+            : `Wick tested RB ${rLow} – ${rHigh}.`,
+        };
+      }
+    }
+  }
+
+  return { zone: null, detail: "Close did not interact with any zone." };
+}
+
+// Classify the reaction type for a close
+function classifyReaction({ candle, interaction, sequenceType }) {
+  if (!interaction.zone) {
+    return { type: "unclassified", detail: "No zone interaction." };
+  }
+
+  const close = num(candle.close);
+  const open = num(candle.open);
+  const wickLow = num(candle.low);
+  const wickHigh = num(candle.high);
+
+  const bullish = sequenceType === "bullish";
+
+  if (interaction.zone === "fvg") {
+    if (interaction.insideClose) {
+      return {
+        type: "filled",
+        detail: "Imbalance filled — FVG visited.",
+      };
+    }
+    // Wick tested but close went out of zone
+    const rejected =
+      (bullish && close > interaction.zoneRef.high) ||
+      (!bullish && close < interaction.zoneRef.low);
+    if (rejected) {
+      return {
+        type: "held",
+        detail: "Zone held — price rejected.",
+      };
+    }
+    return {
+      type: "broke",
+      detail: "Zone tested but not respected.",
+    };
+  }
+
+  if (interaction.zone === "rb") {
+    if (interaction.insideClose) {
+      const rbCe = computeCe(interaction.zoneRef.high, interaction.zoneRef.low);
+      const side = close > rbCe ? "premium" : close < rbCe ? "discount" : "at-ce";
+      const correctSide =
+        (bullish && side === "discount") || (!bullish && side === "premium");
+      return {
+        type: correctSide ? "entry" : "filled",
+        detail: `Closed in RB — ${side}.${
+          correctSide ? " Entry signal." : ""
+        }`,
+      };
+    }
+    const rejected =
+      (bullish && close > interaction.zoneRef.high) ||
+      (!bullish && close < interaction.zoneRef.low);
+    if (rejected) {
+      return { type: "held", detail: "RB held — price rejected." };
+    }
+    return { type: "broke", detail: "RB tested but not respected." };
+  }
+
+  return { type: "unclassified", detail: "Unknown interaction." };
+}
+
+// Evaluate the full verdict closes list
+export function evaluateVerdictCloses({
+  verdictCloses,
+  fvgs,
+  rb,
+  sequenceType,
+  closePrice,
+}) {
+  if (!Array.isArray(verdictCloses) || verdictCloses.length === 0) {
+    return {
+      ranked: [],
+      zonesVisited: {},
+      allZonesVisited: false,
+      finalClose: null,
+      finalEntry: null,
+      readiness: 0,
+    };
+  }
+
+  // Order closes by sequence number
+  const ordered = [...verdictCloses].sort(
+    (a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0)
+  );
+
+  const ranked = ordered.map((vc, i) => {
+    const interaction = detectZoneInteraction({
+      candle: vc.candle,
+      fvgs,
+      rb,
+      sequenceType,
+    });
+    const reaction = classifyReaction({
+      candle: vc.candle,
+      interaction,
+      sequenceType,
+    });
+
+    return {
+      id: vc.id,
+      sequenceNumber: vc.sequenceNumber ?? i + 1,
+      candle: vc.candle,
+      reactedZone: interaction.zone,
+      reactedZoneRef: interaction.zoneRef,
+      detail: interaction.detail,
+      reactionType: reaction.type,
+      reactionDetail: reaction.detail,
+      isFinal: false, // will be set below
+    };
+  });
+
+  // Build zones-visited map
+  const zonesVisited = {
+    fvgs: {},
+    rb: false,
+  };
+
+  for (const f of fvgs || []) {
+    zonesVisited.fvgs[f.id] = false;
+  }
+
+  for (const r of ranked) {
+    if (r.reactedZone === "fvg" && r.reactedZoneRef) {
+      zonesVisited.fvgs[r.reactedZoneRef.id] = true;
+    }
+    if (r.reactedZone === "rb") {
+      zonesVisited.rb = true;
+    }
+  }
+
+  const fvgIds = Object.keys(zonesVisited.fvgs);
+  const allFvgsVisited = fvgIds.every((id) => zonesVisited.fvgs[id]);
+  const allZonesVisited = allFvgsVisited && zonesVisited.rb;
+
+  // Find the final close — the LAST one with reaction type 'entry'
+  let finalClose = null;
+  for (let i = ranked.length - 1; i >= 0; i--) {
+    if (ranked[i].reactionType === "entry") {
+      finalClose = ranked[i];
+      ranked[i].isFinal = true;
+      break;
+    }
+  }
+
+  // Readiness — 0 to 1
+  const totalChecks = fvgIds.length + 1; // FVGs + RB
+  let checksPassed = 0;
+  fvgIds.forEach((id) => {
+    if (zonesVisited.fvgs[id]) checksPassed++;
+  });
+  if (zonesVisited.rb) checksPassed++;
+  const readiness = totalChecks > 0 ? checksPassed / totalChecks : 0;
+
+  return {
+    ranked,
+    zonesVisited,
+    allFvgsVisited,
+    allZonesVisited,
+    finalClose,
+    finalEntry: finalClose
+      ? {
+          close: num(finalClose.candle?.close),
+          candle: finalClose.candle,
+        }
+      : null,
+    readiness,
+    count: ranked.length,
+  };
+}
+
+// ============================================================
+// ENTRY GATE — prefers the verdict closes if available
+// ============================================================
+export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) {
+  // If we have verdict closes, use the final close instead
+  if (
+    verdictClosesResult &&
+    verdictClosesResult.finalClose &&
+    verdictClosesResult.allZonesVisited
+  ) {
+    const candle = verdictClosesResult.finalClose.candle;
+    const close = num(candle.close);
+    const rHigh = num(rbHigh);
+    const rLow = num(rbLow);
+    if (close !== null && rHigh !== null && rLow !== null) {
+      if (close >= rLow && close <= rHigh) {
+        const rbCe = computeCe(rHigh, rLow);
+        const side =
+          close > rbCe ? "premium" : close < rbCe ? "discount" : "at-ce";
+        return {
+          pass: true,
+          detail: `Final verdict close ${close} inside RB — ${side}. All zones visited.`,
+          data: { close, side, rbCe },
+        };
+      }
+    }
+  }
+
+  // Fall back to single close candle
   if (!validCandle(closeCandle)) {
     return { pass: false, detail: "Close candle not filled in.", data: null };
   }
@@ -456,7 +704,6 @@ export function checkEntry({ closeCandle, rbHigh, rbLow }) {
 // ============================================================
 // BONUS — Wick retest of the MSS
 // ============================================================
-
 export function checkWickRetest({
   closeCandle,
   mssReference,
@@ -523,18 +770,12 @@ export function checkWickRetest({
     }
   }
 
-  return {
-    pass: true,
-    detail,
-    emaConfluence,
-    emaDetail,
-  };
+  return { pass: true, detail, emaConfluence, emaDetail };
 }
 
 // ============================================================
-// REWARD + MINDSET GATES
+// REWARD + MINDSET
 // ============================================================
-
 export function checkReward({ trade }) {
   if (!trade) {
     return { pass: false, detail: "Trade not yet computable.", data: null };
@@ -564,7 +805,6 @@ export function checkMindset({ manualAnswer }) {
 // ============================================================
 // FULL EVALUATION
 // ============================================================
-
 export function evaluateAmd({
   sequenceType,
   rangeHigh,
@@ -578,6 +818,7 @@ export function evaluateAmd({
   rbHigh,
   rbLow,
   closeCandle,
+  verdictCloses = [],
   nextLiquidityLevel,
   pipSize,
   manualMindset = false,
@@ -601,7 +842,7 @@ export function evaluateAmd({
   });
   const mss = checkMSS({ currentClose, mssReference, sequenceType });
 
-  // ---- FVG list — pick the active one ----
+  // FVG list — pick the active one
   const rankedFvgs = rankFvgs({
     fvgs,
     closePrice: currentClose,
@@ -610,11 +851,25 @@ export function evaluateAmd({
   const fvg = checkFvgList({ rankedFvgs });
   const activeFvg = fvg.data?.activeFvg || null;
 
-  // ---- RB must overlap the active FVG ----
   const rb = checkRbInActiveFvg({ rbHigh, rbLow, activeFvg });
-  const entry = checkEntry({ closeCandle, rbHigh, rbLow });
 
-  // ---- Base negotiation verdict ----
+  // Verdict closes — evaluated against all zones
+  const verdictClosesResult = evaluateVerdictCloses({
+    verdictCloses,
+    fvgs: rankedFvgs,
+    rb: rbHigh && rbLow ? { id: "active_rb", high: rbHigh, low: rbLow } : null,
+    sequenceType,
+    closePrice: currentClose,
+  });
+
+  // Entry — prefers the verdict closes final close
+  const entry = checkEntry({
+    closeCandle,
+    rbHigh,
+    rbLow,
+    verdictClosesResult,
+  });
+
   let baseNegotiation = null;
   if (rb.pass && entry.pass) {
     baseNegotiation = judgeZoneNegotiation({
@@ -638,13 +893,12 @@ export function evaluateAmd({
         rbBroken: null,
         strength: "normal",
         reason: isAbove
-          ? "Closed in the PREMIUM of the RB (via close candle) — SELL."
-          : "Closed in the DISCOUNT of the RB (via close candle) — BUY.",
+          ? "Closed in the PREMIUM of the RB (via verdict close) — SELL."
+          : "Closed in the DISCOUNT of the RB (via verdict close) — BUY.",
       };
     }
   }
 
-  // ---- Trade computation ----
   let trade = null;
   if (
     baseNegotiation &&
@@ -760,9 +1014,9 @@ export function evaluateAmd({
     verdictDisplay,
     trade,
     wickRetest,
-    // FVG list — for the card to display all FVGs
     fvgs: rankedFvgs,
     activeFvg,
+    verdictCloses: verdictClosesResult,
     reasons,
   };
 }

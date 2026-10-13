@@ -79,7 +79,7 @@ function GateRow({ gate, meta }) {
 }
 
 // ------------------------------------------------------------
-// FVG Ladder — shows all FVGs with the active one highlighted
+// FVG Ladder
 // ------------------------------------------------------------
 function FvgLadder({ fvgs }) {
   if (!fvgs || fvgs.length === 0) return null;
@@ -135,7 +135,166 @@ function FvgLadder({ fvgs }) {
 }
 
 // ------------------------------------------------------------
-// Bonus — Wick retest of MSS
+// Zones Visited panel
+// ------------------------------------------------------------
+function ZonesVisitedPanel({ verdictCloses, fvgs }) {
+  if (!verdictCloses || !fvgs || fvgs.length === 0) return null;
+
+  const visited = verdictCloses.zonesVisited || { fvgs: {}, rb: false };
+  const total = fvgs.length + 1; // + 1 for RB
+  const done =
+    Object.values(visited.fvgs).filter(Boolean).length +
+    (visited.rb ? 1 : 0);
+
+  return (
+    <div className="ml-8 p-3 rounded-lg bg-yellow-950/20 border border-yellow-800 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-xs font-bold text-yellow-200">
+          🗺️ Zones Visited — {done}/{total}
+        </p>
+        {verdictCloses.allZonesVisited ? (
+          <span className="text-[10px] font-bold text-green-300">
+            ✅ ALL ZONES VISITED
+          </span>
+        ) : (
+          <span className="text-[10px] text-yellow-300/70">
+            Waiting for price to fill all zones
+          </span>
+        )}
+      </div>
+      <div className="space-y-1">
+        {fvgs.map((f, i) => {
+          const isVisited = visited.fvgs[f.id];
+          return (
+            <div
+              key={f.id || i}
+              className="flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-black/40 border border-gray-800"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-xs">{isVisited ? "✅" : "⏳"}</span>
+                <span className={isVisited ? "text-green-200" : "text-gray-400"}>
+                  FVG #{i + 1} — {formatPrice(f.low)} – {formatPrice(f.high)}
+                </span>
+              </div>
+              {isVisited && (
+                <span className="text-[10px] text-green-400">visited</span>
+              )}
+            </div>
+          );
+        })}
+        <div className="flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-black/40 border border-gray-800">
+          <div className="flex items-center gap-2">
+            <span className="text-xs">{visited.rb ? "✅" : "⏳"}</span>
+            <span className={visited.rb ? "text-green-200" : "text-gray-400"}>
+              Rejection Block (active)
+            </span>
+          </div>
+          {visited.rb && (
+            <span className="text-[10px] text-green-400">visited</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+// Reaction Timeline panel
+// ------------------------------------------------------------
+function reactionStyle(type) {
+  switch (type) {
+    case "entry":
+      return {
+        emoji: "🎯",
+        cls: "bg-green-900/40 border-green-600 text-green-200",
+        label: "ENTRY",
+      };
+    case "filled":
+      return {
+        emoji: "🟩",
+        cls: "bg-blue-900/40 border-blue-700 text-blue-200",
+        label: "FILLED",
+      };
+    case "held":
+      return {
+        emoji: "🟡",
+        cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+        label: "HELD",
+      };
+    case "broke":
+      return {
+        emoji: "🔴",
+        cls: "bg-red-900/40 border-red-700 text-red-200",
+        label: "BROKE",
+      };
+    default:
+      return {
+        emoji: "⚪",
+        cls: "bg-gray-900/40 border-gray-700 text-gray-300",
+        label: "—",
+      };
+  }
+}
+
+function ReactionTimeline({ verdictCloses }) {
+  if (!verdictCloses || !verdictCloses.ranked || verdictCloses.ranked.length === 0)
+    return null;
+
+  return (
+    <div className="ml-8 p-3 rounded-lg bg-purple-950/20 border border-purple-800 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-xs font-bold text-purple-200">
+          📋 Reaction Timeline — {verdictCloses.count} close
+          {verdictCloses.count === 1 ? "" : "s"}
+        </p>
+        {verdictCloses.finalClose && (
+          <span className="text-[10px] font-bold text-green-300">
+            ✅ FINAL ENTRY DETECTED
+          </span>
+        )}
+      </div>
+      <div className="space-y-1">
+        {verdictCloses.ranked.map((r, i) => {
+          const style = reactionStyle(r.reactionType);
+          const close = r.candle?.close;
+          return (
+            <div
+              key={r.id || i}
+              className={`flex items-center justify-between gap-2 px-2 py-1 rounded text-xs border ${
+                r.isFinal
+                  ? "bg-green-950/40 border-green-600 ring-1 ring-green-700"
+                  : "bg-black/40 border-gray-800"
+              }`}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] text-gray-500 tabular-nums">
+                  #{r.sequenceNumber}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${style.cls}`}>
+                  {style.emoji} {style.label}
+                </span>
+                <span className="text-gray-300">
+                  Close {close !== null && close !== undefined ? formatPrice(close) : "—"}
+                </span>
+                <span className="text-gray-500 truncate max-w-[200px]">
+                  {r.detail}
+                </span>
+              </div>
+              {r.isFinal && (
+                <span className="text-[10px] font-bold text-green-300">
+                  🎯 FINAL
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+// Wick retest bonus
 // ------------------------------------------------------------
 function WickRetestBadge({ wickRetest }) {
   if (!wickRetest || !wickRetest.pass) return null;
@@ -273,6 +432,7 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
     reasons,
     wickRetest,
     fvgs,
+    verdictCloses,
   } = data;
   const typeInfo = amdTypeInfo(sequenceType);
 
@@ -315,10 +475,19 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
         {AMD_CHECKLIST.map((meta) => (
           <div key={meta.key}>
             <GateRow gate={gates[meta.key]} meta={meta} />
-            {/* FVG Ladder — after gate 6 */}
             {meta.key === "fvg" && <FvgLadder fvgs={fvgs} />}
-            {/* Wick retest — after gate 8 */}
-            {meta.key === "entry" && <WickRetestBadge wickRetest={wickRetest} />}
+            {meta.key === "rb" && (
+              <ZonesVisitedPanel
+                verdictCloses={verdictCloses}
+                fvgs={fvgs}
+              />
+            )}
+            {meta.key === "entry" && (
+              <>
+                <ReactionTimeline verdictCloses={verdictCloses} />
+                <WickRetestBadge wickRetest={wickRetest} />
+              </>
+            )}
           </div>
         ))}
       </div>
