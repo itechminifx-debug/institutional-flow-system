@@ -2,6 +2,17 @@
 // AMD ENGINE
 // ============================================================
 // Accumulation → Manipulation → Distribution
+//
+// Full engine with:
+//   - Range / ATR / Sweep / Reclaim / MSS gates
+//   - FVG list (multiple) with auto-active pick
+//   - RB inside active FVG
+//   - Verdict closes list with zone classification
+//   - MSS sequence tracking (tip test / sweep / retest / contested)
+//   - RB reaction judgment (breakout / discount / premium / wrong side)
+//   - Entry gate: RB close is THE entry
+//   - Wick retest bonus
+//   - Reward + mindset gates
 // ============================================================
 
 import {
@@ -60,9 +71,9 @@ export const AMD_CHECKLIST = [
   { key: "sweep",       number: 3,  phase: "M", label: "Did price sweep the range?",    hint: "False break against the true direction" },
   { key: "reclaim",     number: 4,  phase: "M", label: "Did price close back inside?",  hint: "The trap is set — the sweep was false" },
   { key: "mss",         number: 5,  phase: "D", label: "Did an MSS occur?",             hint: "Market Structure Shift — confirmed by close" },
-  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark all FVGs — the active one is picked automatically" },
+  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark all FVGs — active one is picked automatically" },
   { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the active FVG" },
-  { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "Verdict close landed in the RB — or final close candle" },
+  { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "RB close on the correct side — or MSS sequence complete" },
   { key: "reward",      number: 9,  phase: "D", label: "Is the reward 1:2+?",           hint: "TP vs Entry vs SL ≥ 2:1" },
   { key: "mindset",     number: 10, phase: "X", label: "Am I calm and disciplined?",    hint: "Manual check — mindset gate" },
 ];
@@ -389,108 +400,201 @@ export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
 }
 
 // ============================================================
-// VERDICT CLOSES
+// MSS SEQUENCE — classify a verdict close against the MSS
 // ============================================================
-function detectZoneInteraction({ candle, fvgs, rb, sequenceType }) {
-  if (!validCandle(candle)) return { zone: null, detail: "Invalid candle." };
+// Classifications:
+//   tip_test  — wick touched MSS candle extreme
+//   sweep     — body closed past MSS reference (right direction)
+//   retest    — wick touched MSS reference from correct side + close stayed correct
+//   contested — body closed on the wrong side of MSS reference
+// ============================================================
+export function classifyMssStep({
+  candle,
+  mssReference,
+  mssCandleHigh,
+  mssCandleLow,
+  sequenceType,
+}) {
+  if (!validCandle(candle)) return null;
 
+  const ref = num(mssReference);
+  const mssHigh = num(mssCandleHigh);
+  const mssLow = num(mssCandleLow);
+
+  const open = num(candle.open);
   const close = num(candle.close);
   const wickLow = num(candle.low);
   const wickHigh = num(candle.high);
 
-  for (const f of fvgs || []) {
-    const fHigh = num(f.high);
-    const fLow = num(f.low);
-    if (fHigh === null || fLow === null) continue;
+  const bullish = sequenceType === "bullish";
 
-    const insideClose = close >= fLow && close <= fHigh;
-    const wickTested = wickLow <= fHigh && wickHigh >= fLow;
-
-    if (insideClose || wickTested) {
-      return {
-        zone: "fvg",
-        zoneRef: f,
-        insideClose,
-        wickTested,
-        detail: insideClose
-          ? `Closed inside FVG ${fLow} – ${fHigh}.`
-          : `Wick tested FVG ${fLow} – ${fHigh}.`,
-      };
-    }
-  }
-
-  if (rb) {
-    const rHigh = num(rb.high);
-    const rLow = num(rb.low);
-    if (rHigh !== null && rLow !== null) {
-      const insideClose = close >= rLow && close <= rHigh;
-      const wickTested = wickLow <= rHigh && wickHigh >= rLow;
-
-      if (insideClose || wickTested) {
+  // ---- Contested / Sweep check (based on body close vs MSS reference) ----
+  if (ref !== null) {
+    if (bullish) {
+      if (close < ref) {
         return {
-          zone: "rb",
-          zoneRef: rb,
-          insideClose,
-          wickTested,
-          detail: insideClose
-            ? `Closed inside RB ${rLow} – ${rHigh}.`
-            : `Wick tested RB ${rLow} – ${rHigh}.`,
+          step: "contested",
+          detail: `Closed ${close} — below MSS ${ref}. Contested.`,
+        };
+      }
+      if (close > ref) {
+        return {
+          step: "sweep",
+          detail: `Body closed ${close} above MSS ${ref}. Liquidity sweep.`,
+        };
+      }
+    } else {
+      if (close > ref) {
+        return {
+          step: "contested",
+          detail: `Closed ${close} — above MSS ${ref}. Contested.`,
+        };
+      }
+      if (close < ref) {
+        return {
+          step: "sweep",
+          detail: `Body closed ${close} below MSS ${ref}. Liquidity sweep.`,
         };
       }
     }
   }
 
-  return { zone: null, detail: "Close did not interact with any zone." };
-}
-
-function classifyReaction({ candle, interaction, sequenceType }) {
-  if (!interaction.zone) {
-    return { type: "unclassified", detail: "No zone interaction." };
-  }
-
-  const close = num(candle.close);
-  const bullish = sequenceType === "bullish";
-
-  if (interaction.zone === "fvg") {
-    if (interaction.insideClose) {
-      return { type: "filled", detail: "Imbalance filled — FVG visited." };
-    }
-    const rejected =
-      (bullish && close > interaction.zoneRef.high) ||
-      (!bullish && close < interaction.zoneRef.low);
-    if (rejected) return { type: "held", detail: "Zone held — price rejected." };
-    return { type: "broke", detail: "Zone tested but not respected." };
-  }
-
-  if (interaction.zone === "rb") {
-    if (interaction.insideClose) {
-      const rbCe = computeCe(interaction.zoneRef.high, interaction.zoneRef.low);
-      const side = close > rbCe ? "premium" : close < rbCe ? "discount" : "at-ce";
-      const correctSide =
-        (bullish && side === "discount") || (!bullish && side === "premium");
+  // ---- Tip test (wick touched MSS candle extreme) ----
+  if (bullish && mssHigh !== null) {
+    if (wickHigh >= mssHigh) {
       return {
-        type: correctSide ? "entry" : "filled",
-        detail: `Closed in RB — ${side}.${correctSide ? " Entry signal." : ""}`,
+        step: "tip_test",
+        detail: `Wick high ${wickHigh} touched MSS candle extreme ${mssHigh}.`,
       };
     }
-    const rejected =
-      (bullish && close > interaction.zoneRef.high) ||
-      (!bullish && close < interaction.zoneRef.low);
-    if (rejected) return { type: "held", detail: "RB held — price rejected." };
-    return { type: "broke", detail: "RB tested but not respected." };
+  } else if (!bullish && mssLow !== null) {
+    if (wickLow <= mssLow) {
+      return {
+        step: "tip_test",
+        detail: `Wick low ${wickLow} touched MSS candle extreme ${mssLow}.`,
+      };
+    }
   }
 
-  return { type: "unclassified", detail: "Unknown interaction." };
+  // ---- Retest (wick touched MSS reference from correct side, close stayed) ----
+  if (ref !== null) {
+    if (bullish && wickLow <= ref && close > ref) {
+      return {
+        step: "retest",
+        detail: `Wick low ${wickLow} tested MSS ${ref} — closed above. Retest confirmed.`,
+      };
+    }
+    if (!bullish && wickHigh >= ref && close < ref) {
+      return {
+        step: "retest",
+        detail: `Wick high ${wickHigh} tested MSS ${ref} — closed below. Retest confirmed.`,
+      };
+    }
+  }
+
+  return null;
 }
 
+// ============================================================
+// RB REACTION — classify a verdict close against the RB
+// ============================================================
+// Returns one of:
+//   rb_breakout   — close past RB in the trade direction (strong)
+//   rb_discount   — close inside RB discount side (bullish entry zone)
+//   rb_premium    — close inside RB premium side (bearish entry zone)
+//   rb_wrong_side — close on the wrong side of the RB
+// ============================================================
+export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
+  if (!validCandle(candle)) return null;
+
+  const rHigh = num(rbHigh);
+  const rLow = num(rbLow);
+  const close = num(candle.close);
+  if (rHigh === null || rLow === null || close === null) return null;
+
+  const bullish = sequenceType === "bullish";
+  const ce = computeCe(rHigh, rLow);
+
+  // Bullish AMD
+  if (bullish) {
+    if (close > rHigh) {
+      return {
+        reaction: "rb_breakout",
+        detail: `Closed ${close} ABOVE RB ${rLow} – ${rHigh}. Breakout — strong bullish.`,
+        strength: "strong",
+      };
+    }
+    if (close < rLow) {
+      return {
+        reaction: "rb_wrong_side",
+        detail: `Closed ${close} below RB — weak, expect pullback.`,
+        strength: "weak",
+      };
+    }
+    // inside RB
+    if (close >= rLow && close <= rHigh) {
+      if (close < ce) {
+        return {
+          reaction: "rb_discount",
+          detail: `Closed ${close} in RB DISCOUNT (below CE ${ce}). Buyers defended — BUY.`,
+          strength: "strong",
+        };
+      }
+      return {
+        reaction: "rb_premium",
+        detail: `Closed ${close} in RB PREMIUM (above CE ${ce}). Sellers present — expect pullback.`,
+        strength: "weak",
+      };
+    }
+  }
+
+  // Bearish AMD
+  if (!bullish) {
+    if (close < rLow) {
+      return {
+        reaction: "rb_breakout",
+        detail: `Closed ${close} BELOW RB ${rLow} – ${rHigh}. Breakdown — strong bearish.`,
+        strength: "strong",
+      };
+    }
+    if (close > rHigh) {
+      return {
+        reaction: "rb_wrong_side",
+        detail: `Closed ${close} above RB — weak, expect pullback.`,
+        strength: "weak",
+      };
+    }
+    if (close >= rLow && close <= rHigh) {
+      if (close > ce) {
+        return {
+          reaction: "rb_premium",
+          detail: `Closed ${close} in RB PREMIUM (above CE ${ce}). Sellers defended — SELL.`,
+          strength: "strong",
+        };
+      }
+      return {
+        reaction: "rb_discount",
+        detail: `Closed ${close} in RB DISCOUNT (below CE ${ce}). Buyers present — expect pullback.`,
+        strength: "weak",
+      };
+    }
+  }
+
+  return null;
+}
+
+// ============================================================
+// VERDICT CLOSES — evaluate the full list
+// ============================================================
 export function evaluateVerdictCloses({
   verdictCloses,
   fvgs,
   rb,
+  mssReference,
+  mssCandleHigh,
+  mssCandleLow,
   sequenceType,
-  closePrice,
 }) {
-  // Build the empty zone map upfront so it always has the right shape
   const buildZoneMap = () => {
     const map = { fvgs: {}, rb: false };
     if (Array.isArray(fvgs)) {
@@ -505,6 +609,12 @@ export function evaluateVerdictCloses({
     return {
       ranked: [],
       zonesVisited: buildZoneMap(),
+      mssSequence: {
+        tipTest: false,
+        sweep: false,
+        retest: false,
+        contested: false,
+      },
       allFvgsVisited: false,
       allZonesVisited: false,
       finalClose: null,
@@ -518,52 +628,130 @@ export function evaluateVerdictCloses({
     (a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0)
   );
 
+  const mssSequence = {
+    tipTest: false,
+    sweep: false,
+    retest: false,
+    contested: false,
+  };
+
   const ranked = ordered.map((vc, i) => {
-    const interaction = detectZoneInteraction({
+    // ---- FVG interaction ----
+    let fvgInteraction = null;
+    for (const f of fvgs || []) {
+      const fHigh = num(f.high);
+      const fLow = num(f.low);
+      if (fHigh === null || fLow === null) continue;
+
+      const close = num(vc.candle.close);
+      const wickLow = num(vc.candle.low);
+      const wickHigh = num(vc.candle.high);
+
+      const insideClose = close >= fLow && close <= fHigh;
+      const wickTested = wickLow <= fHigh && wickHigh >= fLow;
+
+      if (insideClose || wickTested) {
+        fvgInteraction = {
+          zone: "fvg",
+          zoneRef: f,
+          insideClose,
+          detail: insideClose
+            ? `Closed inside FVG ${fLow} – ${fHigh}.`
+            : `Wick tested FVG ${fLow} – ${fHigh}.`,
+        };
+        break;
+      }
+    }
+
+    // ---- RB reaction ----
+    const rbReaction = rb
+      ? classifyRbReaction({
+          candle: vc.candle,
+          rbHigh: rb.high,
+          rbLow: rb.low,
+          sequenceType,
+        })
+      : null;
+
+    // ---- MSS step ----
+    const mssStep = classifyMssStep({
       candle: vc.candle,
-      fvgs,
-      rb,
+      mssReference,
+      mssCandleHigh,
+      mssCandleLow,
       sequenceType,
     });
-    const reaction = classifyReaction({
-      candle: vc.candle,
-      interaction,
-      sequenceType,
-    });
+
+    // ---- Track MSS sequence completion ----
+    if (mssStep) {
+      if (mssStep.step === "tip_test") mssSequence.tipTest = true;
+      if (mssStep.step === "sweep") mssSequence.sweep = true;
+      if (mssStep.step === "retest") mssSequence.retest = true;
+      if (mssStep.step === "contested") mssSequence.contested = true;
+    }
+
+    // ---- Pick a primary reaction type for the timeline ----
+    let primaryType = "unclassified";
+    let primaryDetail = null;
+
+    // Priority: RB > MSS > FVG
+    if (rbReaction) {
+      primaryType = rbReaction.reaction;
+      primaryDetail = rbReaction.detail;
+    } else if (mssStep) {
+      primaryType = mssStep.step;
+      primaryDetail = mssStep.detail;
+    } else if (fvgInteraction) {
+      const close = num(vc.candle.close);
+      const bullish = sequenceType === "bullish";
+      if (fvgInteraction.insideClose) {
+        primaryType = "filled";
+        primaryDetail = fvgInteraction.detail;
+      } else {
+        const rejected =
+          (bullish && close > fvgInteraction.zoneRef.high) ||
+          (!bullish && close < fvgInteraction.zoneRef.low);
+        primaryType = rejected ? "held" : "broke";
+        primaryDetail = fvgInteraction.detail;
+      }
+    }
 
     return {
       id: vc.id,
       sequenceNumber: vc.sequenceNumber ?? i + 1,
       candle: vc.candle,
-      reactedZone: interaction.zone,
-      reactedZoneRef: interaction.zoneRef,
-      detail: interaction.detail,
-      reactionType: reaction.type,
-      reactionDetail: reaction.detail,
+      reactedZone: rbReaction ? "rb" : mssStep ? "mss" : fvgInteraction ? "fvg" : null,
+      reactedZoneRef: fvgInteraction?.zoneRef || null,
+      mssStep: mssStep?.step || null,
+      rbReaction: rbReaction?.reaction || null,
+      rbStrength: rbReaction?.strength || null,
+      detail: primaryDetail,
+      reactionType: primaryType,
       isFinal: false,
     };
   });
 
+  // Zones visited map
   const zonesVisited = buildZoneMap();
-
   for (const r of ranked) {
     if (r.reactedZone === "fvg" && r.reactedZoneRef) {
       zonesVisited.fvgs[r.reactedZoneRef.id] = true;
     }
-    if (r.reactedZone === "rb") {
-      zonesVisited.rb = true;
-    }
+    if (r.reactedZone === "rb") zonesVisited.rb = true;
   }
 
   const fvgIds = Object.keys(zonesVisited.fvgs || {});
   const allFvgsVisited = fvgIds.every((id) => zonesVisited.fvgs[id]);
   const allZonesVisited = allFvgsVisited && zonesVisited.rb;
 
+  // Final close = latest close with a STRONG RB reaction
   let finalClose = null;
   for (let i = ranked.length - 1; i >= 0; i--) {
-    if (ranked[i].reactionType === "entry") {
-      finalClose = ranked[i];
+    const r = ranked[i];
+    if (r.rbStrength === "strong") {
+      finalClose = r;
       ranked[i].isFinal = true;
+      r.reactionType = "entry";
       break;
     }
   }
@@ -579,6 +767,7 @@ export function evaluateVerdictCloses({
   return {
     ranked,
     zonesVisited,
+    mssSequence,
     allFvgsVisited,
     allZonesVisited,
     finalClose,
@@ -586,6 +775,7 @@ export function evaluateVerdictCloses({
       ? {
           close: num(finalClose.candle?.close),
           candle: finalClose.candle,
+          reaction: finalClose.rbReaction,
         }
       : null,
     readiness,
@@ -597,29 +787,25 @@ export function evaluateVerdictCloses({
 // ENTRY GATE
 // ============================================================
 export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) {
-  if (
-    verdictClosesResult &&
-    verdictClosesResult.finalClose &&
-    verdictClosesResult.allZonesVisited
-  ) {
+  // Path A: verdict closes with a strong RB reaction
+  if (verdictClosesResult && verdictClosesResult.finalClose) {
     const candle = verdictClosesResult.finalClose.candle;
     const close = num(candle.close);
     const rHigh = num(rbHigh);
     const rLow = num(rbLow);
     if (close !== null && rHigh !== null && rLow !== null) {
-      if (close >= rLow && close <= rHigh) {
-        const rbCe = computeCe(rHigh, rLow);
-        const side =
-          close > rbCe ? "premium" : close < rbCe ? "discount" : "at-ce";
-        return {
-          pass: true,
-          detail: `Final verdict close ${close} inside RB — ${side}. All zones visited.`,
-          data: { close, side, rbCe },
-        };
-      }
+      const rbCe = computeCe(rHigh, rLow);
+      const side =
+        close > rbCe ? "premium" : close < rbCe ? "discount" : "at-ce";
+      return {
+        pass: true,
+        detail: `Verdict close ${close} in RB — ${side}. ${verdictClosesResult.finalClose.detail || ""}`,
+        data: { close, side, rbCe, source: "verdict_closes" },
+      };
     }
   }
 
+  // Path B: single close candle (fallback)
   if (!validCandle(closeCandle)) {
     return { pass: false, detail: "Close candle not filled in.", data: null };
   }
@@ -636,7 +822,7 @@ export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) 
     return {
       pass: true,
       detail: `Closed ${close} inside RB — ${side}.`,
-      data: { close, side, rbCe },
+      data: { close, side, rbCe, source: "single_close" },
     };
   }
   if (close > rHigh) {
@@ -654,7 +840,7 @@ export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) 
 }
 
 // ============================================================
-// WICK RETEST
+// WICK RETEST BONUS
 // ============================================================
 export function checkWickRetest({
   closeCandle,
@@ -766,6 +952,8 @@ export function evaluateAmd({
   sweepCandle,
   currentClose,
   mssReference,
+  mssCandleHigh,
+  mssCandleLow,
   fvgs,
   rbHigh,
   rbLow,
@@ -798,8 +986,10 @@ export function evaluateAmd({
     verdictCloses,
     fvgs: rankedFvgs,
     rb: rbHigh && rbLow ? { id: "active_rb", high: rbHigh, low: rbLow } : null,
+    mssReference,
+    mssCandleHigh,
+    mssCandleLow,
     sequenceType,
-    closePrice: currentClose,
   });
 
   const entry = checkEntry({

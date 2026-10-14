@@ -40,7 +40,7 @@ function PhaseBadge({ phase }) {
 }
 
 // ------------------------------------------------------------
-// Single gate row
+// Gate row
 // ------------------------------------------------------------
 function GateRow({ gate, meta }) {
   const pass = gate?.pass;
@@ -131,7 +131,98 @@ function FvgLadder({ fvgs }) {
 }
 
 // ------------------------------------------------------------
-// Zones Visited panel — SAFE VERSION
+// MSS Sequence panel
+// ------------------------------------------------------------
+function MssSequencePanel({ mssSequence }) {
+  if (!mssSequence) return null;
+
+  const { tipTest, sweep, retest, contested } = mssSequence;
+  const total = 3;
+  const done = [tipTest, sweep, retest].filter(Boolean).length;
+
+  return (
+    <div className="ml-8 p-3 rounded-lg bg-purple-950/20 border border-purple-800 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-xs font-bold text-purple-200">
+          🎯 MSS Sequence — {done}/{total}
+        </p>
+        {contested ? (
+          <span className="text-[10px] font-bold text-yellow-300">
+            ⚠️ CONTESTED — WAIT
+          </span>
+        ) : done === total ? (
+          <span className="text-[10px] font-bold text-green-300">
+            ✅ SEQUENCE COMPLETE
+          </span>
+        ) : (
+          <span className="text-[10px] text-purple-300/70">
+            Waiting for full sequence
+          </span>
+        )}
+      </div>
+      <div className="space-y-1">
+        <div
+          className={`flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-black/40 border ${
+            tipTest ? "border-green-700" : "border-gray-800"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs">{tipTest ? "✅" : "⏳"}</span>
+            <span className={tipTest ? "text-green-200" : "text-gray-400"}>
+              1. Tip test — wick touched MSS candle extreme
+            </span>
+          </div>
+          {tipTest && (
+            <span className="text-[10px] text-green-400">done</span>
+          )}
+        </div>
+        <div
+          className={`flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-black/40 border ${
+            sweep ? "border-green-700" : "border-gray-800"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs">{sweep ? "✅" : "⏳"}</span>
+            <span className={sweep ? "text-green-200" : "text-gray-400"}>
+              2. Sweep — body closed past MSS
+            </span>
+          </div>
+          {sweep && (
+            <span className="text-[10px] text-green-400">done</span>
+          )}
+        </div>
+        <div
+          className={`flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-black/40 border ${
+            retest ? "border-green-700" : "border-gray-800"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs">{retest ? "✅" : "⏳"}</span>
+            <span className={retest ? "text-green-200" : "text-gray-400"}>
+              3. Final retest — wick touched MSS + close stayed
+            </span>
+          </div>
+          {retest && (
+            <span className="text-[10px] text-green-400">done</span>
+          )}
+        </div>
+        {contested && (
+          <div className="flex items-center justify-between gap-2 px-2 py-1 rounded text-xs bg-yellow-950/40 border border-yellow-700">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">⚠️</span>
+              <span className="text-yellow-200">
+                Contested — a close went the wrong way
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+// Zones Visited panel
 // ------------------------------------------------------------
 function ZonesVisitedPanel({ verdictCloses, fvgs }) {
   if (!verdictCloses || !fvgs || fvgs.length === 0) return null;
@@ -202,38 +293,74 @@ function ZonesVisitedPanel({ verdictCloses, fvgs }) {
 // Reaction Timeline
 // ------------------------------------------------------------
 function reactionStyle(type) {
-  switch (type) {
-    case "entry":
-      return {
-        emoji: "🎯",
-        cls: "bg-green-900/40 border-green-600 text-green-200",
-        label: "ENTRY",
-      };
-    case "filled":
-      return {
-        emoji: "🟩",
-        cls: "bg-blue-900/40 border-blue-700 text-blue-200",
-        label: "FILLED",
-      };
-    case "held":
-      return {
-        emoji: "🟡",
-        cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
-        label: "HELD",
-      };
-    case "broke":
-      return {
-        emoji: "🔴",
-        cls: "bg-red-900/40 border-red-700 text-red-200",
-        label: "BROKE",
-      };
-    default:
-      return {
-        emoji: "⚪",
-        cls: "bg-gray-900/40 border-gray-700 text-gray-300",
-        label: "—",
-      };
-  }
+  const map = {
+    entry: {
+      emoji: "🎯",
+      cls: "bg-green-900/40 border-green-600 text-green-200",
+      label: "ENTRY",
+    },
+    rb_breakout: {
+      emoji: "🚀",
+      cls: "bg-green-900/40 border-green-600 text-green-200",
+      label: "RB BREAKOUT",
+    },
+    rb_discount: {
+      emoji: "🟢",
+      cls: "bg-green-900/40 border-green-700 text-green-200",
+      label: "RB DISCOUNT",
+    },
+    rb_premium: {
+      emoji: "🟡",
+      cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+      label: "RB PREMIUM",
+    },
+    rb_wrong_side: {
+      emoji: "🔴",
+      cls: "bg-red-900/40 border-red-700 text-red-200",
+      label: "RB WRONG SIDE",
+    },
+    tip_test: {
+      emoji: "🎯",
+      cls: "bg-purple-900/40 border-purple-700 text-purple-200",
+      label: "TIP TEST",
+    },
+    sweep: {
+      emoji: "🌊",
+      cls: "bg-blue-900/40 border-blue-700 text-blue-200",
+      label: "SWEEP",
+    },
+    retest: {
+      emoji: "🔁",
+      cls: "bg-purple-900/40 border-purple-700 text-purple-200",
+      label: "RETEST",
+    },
+    contested: {
+      emoji: "⚠️",
+      cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+      label: "CONTESTED",
+    },
+    filled: {
+      emoji: "🟩",
+      cls: "bg-blue-900/40 border-blue-700 text-blue-200",
+      label: "FILLED",
+    },
+    held: {
+      emoji: "🟡",
+      cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+      label: "HELD",
+    },
+    broke: {
+      emoji: "🔴",
+      cls: "bg-red-900/40 border-red-700 text-red-200",
+      label: "BROKE",
+    },
+    unclassified: {
+      emoji: "⚪",
+      cls: "bg-gray-900/40 border-gray-700 text-gray-300",
+      label: "—",
+    },
+  };
+  return map[type] || map.unclassified;
 }
 
 function ReactionTimeline({ verdictCloses }) {
@@ -285,9 +412,6 @@ function ReactionTimeline({ verdictCloses }) {
                     ? formatPrice(close)
                     : "—"}
                 </span>
-                <span className="text-gray-500 truncate max-w-[200px]">
-                  {r.detail}
-                </span>
               </div>
               {r.isFinal && (
                 <span className="text-[10px] font-bold text-green-300">
@@ -298,6 +422,18 @@ function ReactionTimeline({ verdictCloses }) {
           );
         })}
       </div>
+      {verdictCloses.ranked.length > 0 && (
+        <div className="pt-2 border-t border-purple-800/50 space-y-1">
+          {verdictCloses.ranked
+            .filter((r) => r.detail)
+            .slice(-3)
+            .map((r, i) => (
+              <p key={i} className="text-[10px] text-gray-400 italic">
+                #{r.sequenceNumber}: {r.detail}
+              </p>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -477,14 +613,22 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
         </div>
       </div>
 
-      {/* 10-gate checklist */}
+      {/* Checklist */}
       <div className="space-y-2">
         {AMD_CHECKLIST.map((meta) => (
           <div key={meta.key}>
             <GateRow gate={gates[meta.key]} meta={meta} />
             {meta.key === "fvg" && <FvgLadder fvgs={fvgs} />}
             {meta.key === "rb" && (
-              <ZonesVisitedPanel verdictCloses={verdictCloses} fvgs={fvgs} />
+              <>
+                <ZonesVisitedPanel
+                  verdictCloses={verdictCloses}
+                  fvgs={fvgs}
+                />
+                <MssSequencePanel
+                  mssSequence={verdictCloses?.mssSequence}
+                />
+              </>
             )}
             {meta.key === "entry" && (
               <>
@@ -526,7 +670,7 @@ export default function AmdCard({ data, trade, irlErl, warnings }) {
         </div>
       )}
 
-      {/* ENTRY / SL / TP */}
+      {/* Entry Card */}
       {trade && (verdict === "BUY" || verdict === "SELL") && (
         <div className="p-4 rounded-lg bg-blue-950/30 border-2 border-blue-700 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">

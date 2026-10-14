@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { AMD_TYPES, evaluateAmd, evaluateVerdictCloses } from "@/lib/amdEngine";
+import { AMD_TYPES, evaluateAmd } from "@/lib/amdEngine";
 import {
   computeCe,
   rankRejectionBlocks,
@@ -58,6 +58,8 @@ export default function AmdPage() {
     atrCurrent: "",
     atrPrior: "",
     mssReference: "",
+    mssCandleHigh: "",
+    mssCandleLow: "",
     nextLiquidityLevel: "",
     closePrice: "",
     ema50Price: "",
@@ -170,6 +172,8 @@ export default function AmdPage() {
         atrCurrent: setupData.atr_current?.toString() || "",
         atrPrior: setupData.atr_prior?.toString() || "",
         mssReference: setupData.mss_reference?.toString() || "",
+        mssCandleHigh: setupData.mss_candle_high?.toString() || "",
+        mssCandleLow: setupData.mss_candle_low?.toString() || "",
         nextLiquidityLevel:
           setupData.next_liquidity_level?.toString() || "",
         closePrice: setupData.current_close?.toString() || "",
@@ -210,7 +214,6 @@ export default function AmdPage() {
         );
       }
 
-      // Load FVGs — with legacy auto-migration
       if (fvgData && fvgData.length > 0) {
         setFvgs(
           fvgData.map((f, idx) => ({
@@ -233,7 +236,6 @@ export default function AmdPage() {
         ]);
       }
 
-      // Load verdict closes
       if (vcData && vcData.length > 0) {
         setVerdictCloses(
           vcData.map((vc) => ({
@@ -290,8 +292,6 @@ export default function AmdPage() {
   function removeFvg(id) {
     setFvgs((prev) => prev.filter((f) => f.id !== id));
   }
-
-  // Verdict closes
   function updateVerdictClose(id, field, value) {
     setVerdictCloses((prev) =>
       prev.map((vc) =>
@@ -308,7 +308,6 @@ export default function AmdPage() {
     setVerdictCloses((prev) => prev.filter((vc) => vc.id !== id));
   }
   function pullFromCloseCandle() {
-    // Convenience: copy the single close candle into a new verdict close
     setVerdictCloses((prev) => [
       ...prev,
       {
@@ -354,6 +353,8 @@ export default function AmdPage() {
       sweepCandle,
       currentClose: form.closePrice,
       mssReference: form.mssReference,
+      mssCandleHigh: form.mssCandleHigh,
+      mssCandleLow: form.mssCandleLow,
       fvgs,
       rbHigh,
       rbLow,
@@ -373,6 +374,8 @@ export default function AmdPage() {
     form.atrCurrent,
     form.atrPrior,
     form.mssReference,
+    form.mssCandleHigh,
+    form.mssCandleLow,
     form.closePrice,
     form.nextLiquidityLevel,
     form.pipSize,
@@ -466,6 +469,8 @@ export default function AmdPage() {
     form.rangeHigh ||
     form.rangeLow ||
     form.mssReference ||
+    form.mssCandleHigh ||
+    form.mssCandleLow ||
     form.closePrice ||
     sweepCandle.open ||
     sweepCandle.high ||
@@ -526,8 +531,13 @@ export default function AmdPage() {
       mss_reference: form.mssReference
         ? parseFloat(form.mssReference)
         : null,
+      mss_candle_high: form.mssCandleHigh
+        ? parseFloat(form.mssCandleHigh)
+        : null,
+      mss_candle_low: form.mssCandleLow
+        ? parseFloat(form.mssCandleLow)
+        : null,
 
-      // Legacy columns: store the ACTIVE FVG's values
       fvg_high: activeFvg?.high ?? null,
       fvg_low: activeFvg?.low ?? null,
 
@@ -692,7 +702,6 @@ export default function AmdPage() {
       );
 
     if (cleanVerdictCloses.length > 0) {
-      // Pull auto-detected data from the evaluation
       const rankedResults = evaluation.verdictCloses?.ranked || [];
       const vcRows = cleanVerdictCloses.map((vc) => {
         const match = rankedResults.find(
@@ -979,9 +988,10 @@ export default function AmdPage() {
             The move. MSS → FVGs → RB → verdict closes → entry.
           </p>
 
+          {/* MSS Reference */}
           <div>
             <label className="block text-xs mb-1 text-gray-400">
-              MSS Reference
+              MSS Reference (the broken level)
             </label>
             <input
               type="number"
@@ -992,8 +1002,40 @@ export default function AmdPage() {
             />
           </div>
 
+          {/* MSS Candle High/Low */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                MSS Candle High
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.mssCandleHigh}
+                onChange={(e) => update("mssCandleHigh", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                MSS Candle Low
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form.mssCandleLow}
+                onChange={(e) => update("mssCandleLow", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 focus:border-blue-500 outline-none text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 -mt-2">
+            The high and low of the candle that broke structure. Used for the
+            MSS tip test.
+          </p>
+
           {/* FVG LIST */}
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-gray-300">
@@ -1089,7 +1131,7 @@ export default function AmdPage() {
           </div>
 
           {/* RB LIST */}
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-300">
                 Rejection Blocks
@@ -1176,15 +1218,14 @@ export default function AmdPage() {
           </div>
 
           {/* VERDICT CLOSES */}
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-gray-300">
                   Verdict Closes (Reaction Closes)
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Add each close as price reacts to a zone. The final entry
-                  close comes last.
+                  Add each close as price reacts. The RB close is the entry.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1208,8 +1249,8 @@ export default function AmdPage() {
 
             {verdictCloses.length === 0 && (
               <p className="text-xs text-gray-500 italic p-2 rounded bg-black border border-gray-800">
-                No verdict closes yet. Add them as price reacts to FVGs and
-                the RB.
+                No verdict closes yet. Add them as price reacts to the MSS,
+                FVGs, and the RB.
               </p>
             )}
 
@@ -1220,10 +1261,34 @@ export default function AmdPage() {
 
               const styleMap = {
                 entry: "bg-green-900/40 border-green-700 text-green-200",
+                rb_breakout: "bg-green-900/40 border-green-600 text-green-200",
+                rb_discount: "bg-green-900/40 border-green-700 text-green-200",
+                rb_premium: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+                rb_wrong_side: "bg-red-900/40 border-red-700 text-red-200",
+                tip_test: "bg-purple-900/40 border-purple-700 text-purple-200",
+                sweep: "bg-blue-900/40 border-blue-700 text-blue-200",
+                retest: "bg-purple-900/40 border-purple-700 text-purple-200",
+                contested: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
                 filled: "bg-blue-900/40 border-blue-700 text-blue-200",
                 held: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
                 broke: "bg-red-900/40 border-red-700 text-red-200",
                 unclassified: "bg-gray-900/40 border-gray-700 text-gray-300",
+              };
+
+              const labelMap = {
+                entry: "🎯 ENTRY",
+                rb_breakout: "🚀 RB BREAKOUT",
+                rb_discount: "🟢 RB DISCOUNT",
+                rb_premium: "🟡 RB PREMIUM",
+                rb_wrong_side: "🔴 RB WRONG SIDE",
+                tip_test: "🎯 TIP TEST",
+                sweep: "🌊 SWEEP",
+                retest: "🔁 RETEST",
+                contested: "⚠️ CONTESTED",
+                filled: "🟩 FILLED",
+                held: "🟡 HELD",
+                broke: "🔴 BROKE",
+                unclassified: "⚪ —",
               };
 
               return (
@@ -1240,28 +1305,13 @@ export default function AmdPage() {
                       <span className="text-xs text-gray-400">
                         Close #{i + 1}
                       </span>
-                      {ranked?.reactedZone && (
-                        <span className="text-xs text-gray-500">
-                          →{" "}
-                          {ranked.reactedZone === "fvg"
-                            ? "FVG"
-                            : ranked.reactedZone === "rb"
-                            ? "RB"
-                            : ranked.reactedZone}
-                        </span>
-                      )}
                       <span
-                        className={`text-xs px-1.5 py-0.5 rounded-full border ${
-                          styleMap[reactionType]
+                        className={`text-xs px-1.5 py-0.5 rounded-full border font-bold ${
+                          styleMap[reactionType] || styleMap.unclassified
                         }`}
                       >
-                        {reactionType.toUpperCase()}
+                        {labelMap[reactionType] || labelMap.unclassified}
                       </span>
-                      {isFinal && (
-                        <span className="text-xs text-green-300 font-bold">
-                          🎯 FINAL
-                        </span>
-                      )}
                     </div>
                     <button
                       type="button"
@@ -1301,11 +1351,10 @@ export default function AmdPage() {
             })}
           </div>
 
-          {/* Close candle (single — used as fallback / final) */}
-          <div>
+          {/* Single close candle (fallback) */}
+          <div className="pt-2">
             <p className="text-xs font-semibold text-gray-300 mb-2">
-              Close Candle (single — used as final close if no verdict closes
-              are entered)
+              Close Candle (single — fallback if no verdict closes)
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {["open", "high", "low", "close"].map((f) => (
@@ -1522,7 +1571,7 @@ export default function AmdPage() {
           </div>
         )}
 
-        {/* THE CARD */}
+        {/* CARD */}
         {hasAnyInput && (
           <AmdCard
             data={evaluation}
@@ -1532,7 +1581,7 @@ export default function AmdPage() {
           />
         )}
 
-        {/* 📸 SCREENSHOTS */}
+        {/* SCREENSHOTS */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-blue-400">

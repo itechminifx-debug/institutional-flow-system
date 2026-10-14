@@ -151,6 +151,8 @@ export default function AmdDetailPage() {
       sweepCandle: row.sweep_candle,
       currentClose: row.current_close,
       mssReference: row.mss_reference,
+      mssCandleHigh: row.mss_candle_high,
+      mssCandleLow: row.mss_candle_low,
       fvgs: fvgs.map((f) => ({
         id: f.id,
         high: f.high,
@@ -328,6 +330,39 @@ export default function AmdDetailPage() {
 
   const typeInfo = amdTypeInfo(row.sequence_type);
 
+  // Reaction label / color helper (reused from input page)
+  const reactionStyleMap = {
+    entry: "bg-green-900/40 border-green-700 text-green-200",
+    rb_breakout: "bg-green-900/40 border-green-600 text-green-200",
+    rb_discount: "bg-green-900/40 border-green-700 text-green-200",
+    rb_premium: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+    rb_wrong_side: "bg-red-900/40 border-red-700 text-red-200",
+    tip_test: "bg-purple-900/40 border-purple-700 text-purple-200",
+    sweep: "bg-blue-900/40 border-blue-700 text-blue-200",
+    retest: "bg-purple-900/40 border-purple-700 text-purple-200",
+    contested: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+    filled: "bg-blue-900/40 border-blue-700 text-blue-200",
+    held: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
+    broke: "bg-red-900/40 border-red-700 text-red-200",
+    unclassified: "bg-gray-900/40 border-gray-700 text-gray-300",
+  };
+
+  const reactionLabelMap = {
+    entry: "🎯 ENTRY",
+    rb_breakout: "🚀 RB BREAKOUT",
+    rb_discount: "🟢 RB DISCOUNT",
+    rb_premium: "🟡 RB PREMIUM",
+    rb_wrong_side: "🔴 RB WRONG SIDE",
+    tip_test: "🎯 TIP TEST",
+    sweep: "🌊 SWEEP",
+    retest: "🔁 RETEST",
+    contested: "⚠️ CONTESTED",
+    filled: "🟩 FILLED",
+    held: "🟡 HELD",
+    broke: "🔴 BROKE",
+    unclassified: "⚪ —",
+  };
+
   // ----------------------------------------------------------
   // RENDER
   // ----------------------------------------------------------
@@ -434,7 +469,7 @@ export default function AmdDetailPage() {
           />
         )}
 
-        {/* 📸 SCREENSHOTS */}
+        {/* SCREENSHOTS */}
         <div className="p-4 rounded-lg bg-gray-900 border-2 border-blue-800 space-y-3">
           <div>
             <h2 className="text-sm font-bold text-blue-300">
@@ -544,6 +579,22 @@ export default function AmdDetailPage() {
               </p>
             </div>
             <div>
+              <p className="text-xs text-gray-500">MSS Candle High</p>
+              <p className="font-bold tabular-nums">
+                {row.mss_candle_high !== null
+                  ? formatPrice(row.mss_candle_high)
+                  : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">MSS Candle Low</p>
+              <p className="font-bold tabular-nums">
+                {row.mss_candle_low !== null
+                  ? formatPrice(row.mss_candle_low)
+                  : "—"}
+              </p>
+            </div>
+            <div>
               <p className="text-xs text-gray-500">Next Liquidity Target</p>
               <p className="font-bold tabular-nums">
                 {row.next_liquidity_level !== null
@@ -588,15 +639,6 @@ export default function AmdDetailPage() {
                 const isFinal = ranked?.isFinal;
                 const reactionType = ranked?.reactionType || "unclassified";
 
-                const styleMap = {
-                  entry: "bg-green-900/40 border-green-700 text-green-200",
-                  filled: "bg-blue-900/40 border-blue-700 text-blue-200",
-                  held: "bg-yellow-900/40 border-yellow-700 text-yellow-200",
-                  broke: "bg-red-900/40 border-red-700 text-red-200",
-                  unclassified:
-                    "bg-gray-900/40 border-gray-700 text-gray-300",
-                };
-
                 return (
                   <div
                     key={vc.id || i}
@@ -612,10 +654,12 @@ export default function AmdDetailPage() {
                       </span>
                       <span
                         className={`text-xs px-1.5 py-0.5 rounded-full border font-bold ${
-                          styleMap[reactionType]
+                          reactionStyleMap[reactionType] ||
+                          reactionStyleMap.unclassified
                         }`}
                       >
-                        {reactionType.toUpperCase()}
+                        {reactionLabelMap[reactionType] ||
+                          reactionLabelMap.unclassified}
                       </span>
                       {isFinal && (
                         <span className="text-xs text-green-300 font-bold">
