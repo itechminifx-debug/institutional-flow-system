@@ -17,6 +17,14 @@ const GROUPS = [
     ],
   },
   {
+    title: "Layers System",
+    links: [
+      { href: "/layers", label: "Layers Setup" },
+      { href: "/layers/journal", label: "Layers Journal" },
+      { href: "/layers/history", label: "Layers History" },
+    ],
+  },
+  {
     title: "AMD System",
     links: [
       { href: "/amd", label: "AMD Setup" },
@@ -132,20 +140,29 @@ export default function Sidebar() {
 
         <nav className="px-2 py-3 space-y-4">
           {GROUPS.map((group) => {
+            const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
+            const isSystemGroup = isLayersGroup || isAmdGroup;
+
             return (
               <div key={group.title}>
                 <p
                   className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
-                    isAmdGroup ? "text-blue-400" : "text-gray-500"
+                    isLayersGroup
+                      ? "text-purple-400"
+                      : isAmdGroup
+                      ? "text-blue-400"
+                      : "text-gray-500"
                   }`}
                 >
                   {group.title}
                 </p>
                 <div
                   className={`space-y-0.5 ${
-                    isAmdGroup
-                      ? "pl-2 border-l-2 border-blue-800/60 ml-2"
+                    isSystemGroup
+                      ? isLayersGroup
+                        ? "pl-2 border-l-2 border-purple-800/60 ml-2"
+                        : "pl-2 border-l-2 border-blue-800/60 ml-2"
                       : ""
                   }`}
                 >
