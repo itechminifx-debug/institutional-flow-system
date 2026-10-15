@@ -10,7 +10,7 @@
 //   - Verdict closes list with zone classification
 //   - MSS sequence tracking (tip test / sweep / retest / contested)
 //   - RB reaction judgment (breakout / discount / premium / wrong side)
-//   - Entry gate: RB close is THE entry
+//   - Auto-resolve currentClose from latest verdict close
 //   - Wick retest bonus
 //   - Reward + mindset gates
 // ============================================================
@@ -402,12 +402,6 @@ export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
 // ============================================================
 // MSS SEQUENCE — classify a verdict close against the MSS
 // ============================================================
-// Classifications:
-//   tip_test  — wick touched MSS candle extreme
-//   sweep     — body closed past MSS reference (right direction)
-//   retest    — wick touched MSS reference from correct side + close stayed correct
-//   contested — body closed on the wrong side of MSS reference
-// ============================================================
 export function classifyMssStep({
   candle,
   mssReference,
@@ -421,14 +415,13 @@ export function classifyMssStep({
   const mssHigh = num(mssCandleHigh);
   const mssLow = num(mssCandleLow);
 
-  const open = num(candle.open);
   const close = num(candle.close);
   const wickLow = num(candle.low);
   const wickHigh = num(candle.high);
 
   const bullish = sequenceType === "bullish";
 
-  // ---- Contested / Sweep check (based on body close vs MSS reference) ----
+  // ---- Contested / Sweep (body close vs MSS reference) ----
   if (ref !== null) {
     if (bullish) {
       if (close < ref) {
@@ -496,13 +489,7 @@ export function classifyMssStep({
 }
 
 // ============================================================
-// RB REACTION — classify a verdict close against the RB
-// ============================================================
-// Returns one of:
-//   rb_breakout   — close past RB in the trade direction (strong)
-//   rb_discount   — close inside RB discount side (bullish entry zone)
-//   rb_premium    — close inside RB premium side (bearish entry zone)
-//   rb_wrong_side — close on the wrong side of the RB
+// RB REACTION
 // ============================================================
 export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
   if (!validCandle(candle)) return null;
@@ -515,7 +502,6 @@ export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
   const bullish = sequenceType === "bullish";
   const ce = computeCe(rHigh, rLow);
 
-  // Bullish AMD
   if (bullish) {
     if (close > rHigh) {
       return {
@@ -531,7 +517,6 @@ export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
         strength: "weak",
       };
     }
-    // inside RB
     if (close >= rLow && close <= rHigh) {
       if (close < ce) {
         return {
@@ -548,7 +533,6 @@ export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
     }
   }
 
-  // Bearish AMD
   if (!bullish) {
     if (close < rLow) {
       return {
@@ -584,7 +568,7 @@ export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
 }
 
 // ============================================================
-// VERDICT CLOSES — evaluate the full list
+// VERDICT CLOSES
 // ============================================================
 export function evaluateVerdictCloses({
   verdictCloses,
@@ -636,7 +620,6 @@ export function evaluateVerdictCloses({
   };
 
   const ranked = ordered.map((vc, i) => {
-    // ---- FVG interaction ----
     let fvgInteraction = null;
     for (const f of fvgs || []) {
       const fHigh = num(f.high);
@@ -663,7 +646,6 @@ export function evaluateVerdictCloses({
       }
     }
 
-    // ---- RB reaction ----
     const rbReaction = rb
       ? classifyRbReaction({
           candle: vc.candle,
@@ -673,7 +655,6 @@ export function evaluateVerdictCloses({
         })
       : null;
 
-    // ---- MSS step ----
     const mssStep = classifyMssStep({
       candle: vc.candle,
       mssReference,
@@ -682,7 +663,6 @@ export function evaluateVerdictCloses({
       sequenceType,
     });
 
-    // ---- Track MSS sequence completion ----
     if (mssStep) {
       if (mssStep.step === "tip_test") mssSequence.tipTest = true;
       if (mssStep.step === "sweep") mssSequence.sweep = true;
@@ -690,11 +670,9 @@ export function evaluateVerdictCloses({
       if (mssStep.step === "contested") mssSequence.contested = true;
     }
 
-    // ---- Pick a primary reaction type for the timeline ----
     let primaryType = "unclassified";
     let primaryDetail = null;
 
-    // Priority: RB > MSS > FVG
     if (rbReaction) {
       primaryType = rbReaction.reaction;
       primaryDetail = rbReaction.detail;
@@ -731,7 +709,6 @@ export function evaluateVerdictCloses({
     };
   });
 
-  // Zones visited map
   const zonesVisited = buildZoneMap();
   for (const r of ranked) {
     if (r.reactedZone === "fvg" && r.reactedZoneRef) {
@@ -744,7 +721,6 @@ export function evaluateVerdictCloses({
   const allFvgsVisited = fvgIds.every((id) => zonesVisited.fvgs[id]);
   const allZonesVisited = allFvgsVisited && zonesVisited.rb;
 
-  // Final close = latest close with a STRONG RB reaction
   let finalClose = null;
   for (let i = ranked.length - 1; i >= 0; i--) {
     const r = ranked[i];
@@ -787,7 +763,6 @@ export function evaluateVerdictCloses({
 // ENTRY GATE
 // ============================================================
 export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) {
-  // Path A: verdict closes with a strong RB reaction
   if (verdictClosesResult && verdictClosesResult.finalClose) {
     const candle = verdictClosesResult.finalClose.candle;
     const close = num(candle.close);
@@ -805,7 +780,6 @@ export function checkEntry({ closeCandle, rbHigh, rbLow, verdictClosesResult }) 
     }
   }
 
-  // Path B: single close candle (fallback)
   if (!validCandle(closeCandle)) {
     return { pass: false, detail: "Close candle not filled in.", data: null };
   }
@@ -966,15 +940,34 @@ export function evaluateAmd({
   riskPercent = 1,
   ema50Price,
 }) {
+  // ----------------------------------------------------------
+  // AUTO-RESOLVE currentClose from the latest verdict close
+  // ----------------------------------------------------------
+  let resolvedClose = currentClose;
+  if (Array.isArray(verdictCloses) && verdictCloses.length > 0) {
+    const ordered = [...verdictCloses].sort(
+      (a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0)
+    );
+    const latest = ordered[ordered.length - 1];
+    const latestClose = parseFloat(latest?.candle?.close);
+    if (!isNaN(latestClose)) {
+      resolvedClose = latestClose;
+    }
+  }
+
   const range = checkRange({ rangeHigh, rangeLow });
   const atr = checkAtrFalling({ atrCurrent, atrPrior });
   const sweep = checkSweep({ sweepCandle, rangeHigh, rangeLow, sequenceType });
   const reclaim = checkReclaim({ sweepCandle, rangeHigh, rangeLow, sequenceType });
-  const mss = checkMSS({ currentClose, mssReference, sequenceType });
+  const mss = checkMSS({
+    currentClose: resolvedClose,
+    mssReference,
+    sequenceType,
+  });
 
   const rankedFvgs = rankFvgs({
     fvgs,
-    closePrice: currentClose,
+    closePrice: resolvedClose,
     activeRb: rbHigh && rbLow ? { high: rbHigh, low: rbLow } : null,
   });
   const fvg = checkFvgList({ rankedFvgs });
@@ -1003,7 +996,7 @@ export function evaluateAmd({
   if (rb.pass && entry.pass) {
     baseNegotiation = judgeZoneNegotiation({
       activeRb: { high: rbHigh, low: rbLow },
-      closePrice: currentClose,
+      closePrice: resolvedClose,
     });
 
     if (
@@ -1147,5 +1140,6 @@ export function evaluateAmd({
     activeFvg,
     verdictCloses: verdictClosesResult,
     reasons,
+    resolvedClose,
   };
 }
