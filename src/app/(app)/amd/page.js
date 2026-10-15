@@ -262,6 +262,22 @@ export default function AmdPage() {
   }, [editId]);
 
   // ----------------------------------------------------------
+  // AUTO-SYNC closePrice from latest verdict close
+  // ----------------------------------------------------------
+  useEffect(() => {
+    if (verdictCloses.length === 0) return;
+    const ordered = [...verdictCloses].sort(
+      (a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0)
+    );
+    const latest = ordered[ordered.length - 1];
+    const latestClose = latest?.candle?.close;
+    if (latestClose && latestClose !== form.closePrice) {
+      setForm((f) => ({ ...f, closePrice: latestClose }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verdictCloses]);
+
+  // ----------------------------------------------------------
   // UPDATERS
   // ----------------------------------------------------------
   function update(field, value) {
@@ -629,7 +645,6 @@ export default function AmdPage() {
       setExistingSetupId(data.id);
     }
 
-    // Save RBs
     if (rankedRbs.length > 0) {
       const rbRows = rankedRbs.map((rb) => ({
         user_id: user.id,
@@ -648,7 +663,6 @@ export default function AmdPage() {
       }
     }
 
-    // Save FVGs
     const cleanFvgs = fvgs
       .map((f) => ({
         id: f.id,
@@ -682,7 +696,6 @@ export default function AmdPage() {
       }
     }
 
-    // Save verdict closes
     const cleanVerdictCloses = verdictCloses
       .map((vc, idx) => ({
         sequence_number: idx + 1,
@@ -730,9 +743,6 @@ export default function AmdPage() {
     return setupRow;
   }
 
-  // ----------------------------------------------------------
-  // SAVE DRAFT
-  // ----------------------------------------------------------
   async function handleSaveDraft() {
     if (!hasAnyInput) {
       setError("Fill something in first before saving a draft.");
@@ -751,9 +761,6 @@ export default function AmdPage() {
     setSaved(false);
   }
 
-  // ----------------------------------------------------------
-  // SAVE FINAL
-  // ----------------------------------------------------------
   async function handleSaveFinal(force = false) {
     if (!evaluation.checklistVerdict.passed) {
       setError(
@@ -791,9 +798,6 @@ export default function AmdPage() {
     setTimeout(() => router.push(`/amd/${row.id}`), 800);
   }
 
-  // ----------------------------------------------------------
-  // LOADING
-  // ----------------------------------------------------------
   if (loadingEdit && isEdit) {
     return (
       <main className="min-h-screen p-6 bg-black text-white">
@@ -807,9 +811,6 @@ export default function AmdPage() {
   const typeInfo = AMD_TYPES.find((t) => t.key === form.sequenceType);
   const canSaveFinal = evaluation.checklistVerdict.passed && evaluation.trade;
 
-  // ----------------------------------------------------------
-  // RENDER
-  // ----------------------------------------------------------
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -988,7 +989,6 @@ export default function AmdPage() {
             The move. MSS → FVGs → RB → verdict closes → entry.
           </p>
 
-          {/* MSS Reference */}
           <div>
             <label className="block text-xs mb-1 text-gray-400">
               MSS Reference (the broken level)
@@ -1002,7 +1002,6 @@ export default function AmdPage() {
             />
           </div>
 
-          {/* MSS Candle High/Low */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
@@ -1351,7 +1350,6 @@ export default function AmdPage() {
             })}
           </div>
 
-          {/* Single close candle (fallback) */}
           <div className="pt-2">
             <p className="text-xs font-semibold text-gray-300 mb-2">
               Close Candle (single — fallback if no verdict closes)
@@ -1401,7 +1399,7 @@ export default function AmdPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">
-                Close Price (verdict)
+                Close Price (verdict) — auto-syncs from latest close
               </label>
               <input
                 type="number"
@@ -1540,7 +1538,6 @@ export default function AmdPage() {
           </button>
         </div>
 
-        {/* HTF Conflict / Sweep Override banners */}
         {enrichedVerdict?.hasHtfConflict && (
           <div className="p-4 rounded-lg border-2 border-red-700 bg-red-950/40 space-y-2">
             <p className="text-sm font-bold text-red-200">
@@ -1571,7 +1568,6 @@ export default function AmdPage() {
           </div>
         )}
 
-        {/* CARD */}
         {hasAnyInput && (
           <AmdCard
             data={evaluation}
@@ -1581,7 +1577,6 @@ export default function AmdPage() {
           />
         )}
 
-        {/* SCREENSHOTS */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-blue-400">
@@ -1608,7 +1603,6 @@ export default function AmdPage() {
           />
         </div>
 
-        {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           <label className="block text-xs mb-1 text-gray-400">Notes</label>
           <textarea
