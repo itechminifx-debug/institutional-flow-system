@@ -182,8 +182,8 @@ export default function SldPage() {
         quarterlyAligned: setupData.quarterly_aligned || false,
         rangeHigh: setupData.range_high?.toString?.() || "",
         rangeLow: setupData.range_low?.toString?.() || "",
-        // FIX: use current_price (matches DB column) instead of current_close
-        currentPrice: setupData.current_price?.toString?.() || "",
+        // FIXED: read from current_close (matches DB column)
+        currentPrice: setupData.current_close?.toString?.() || "",
         sweepHappened: setupData.sweep_happened || false,
         sweepLevel: setupData.sweep_level?.toString?.() || "",
         bosConfirmed: setupData.bos_confirmed || false,
@@ -458,10 +458,10 @@ export default function SldPage() {
       reentry_possible: form.reentryPossible,
       reentry_note: form.reentryNote || null,
 
-      // FIX: use current_price instead of current_close
       range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
       range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
-      current_price: form.currentPrice ? parseFloat(form.currentPrice) : null,
+      // FIXED: write to current_close (matches DB column)
+      current_close: form.currentPrice ? parseFloat(form.currentPrice) : null,
 
       notes: form.notes,
     };
@@ -588,7 +588,7 @@ export default function SldPage() {
     setTimeout(() => router.push(`/sld/${row.id}`), 800);
   }
 
-  // FIX: auto-save a draft before uploading screenshots so the FK target exists
+  // Auto-save a draft before uploading screenshots so the FK target exists
   async function ensureSetupSaved() {
     if (existingSetupId) return existingSetupId;
     if (!hasAnyInput) {
@@ -789,7 +789,7 @@ export default function SldPage() {
             </div>
           </button>
 
-          {/* FIX: CHoCH note input (was missing) */}
+          {/* CHoCH note input */}
           {form.chochDetected && (
             <div>
               <label className="block text-xs mb-1 text-gray-400">CHoCH Note</label>
