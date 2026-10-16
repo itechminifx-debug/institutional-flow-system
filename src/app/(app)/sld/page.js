@@ -980,7 +980,13 @@ export default function SldPage() {
             <h2 className="text-sm font-semibold text-blue-400">📸 Chart Screenshots</h2>
             <p className="text-xs text-gray-500 mt-0.5">Attach chart images.</p>
           </div>
-          <ScreenshotUploader setupId={existingSetupId} userId={userId} screenshots={screenshots} onChange={setScreenshots} />
+         <ScreenshotUploader
+  setupId={existingSetupId}
+  userId={userId}
+  screenshots={screenshots}
+  onChange={setScreenshots}
+  table="sld_screenshots"
+/>
           <ScreenshotGallery screenshots={screenshots} onDelete={(id) => setScreenshots((prev) => prev.filter((s) => s.id !== id))} />
         </div>
 

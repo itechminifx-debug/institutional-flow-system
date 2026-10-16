@@ -14,6 +14,7 @@ export default function ScreenshotUploader({
   screenshots,
   onChange,
   disabled = false,
+  table = "amd_screenshots",
 }) {
   const supabase = createClient();
   const inputRef = useRef(null);
@@ -26,9 +27,7 @@ export default function ScreenshotUploader({
     if (!files || files.length === 0) return;
 
     if (!setupId) {
-      setError(
-        "Save the setup as draft first, then you can attach screenshots."
-      );
+      setError("Save the setup as draft first, then you can attach screenshots.");
       return;
     }
     if (!userId) {
@@ -58,10 +57,7 @@ export default function ScreenshotUploader({
         continue;
       }
 
-      // Sanitize filename
-      const safeName = file.name
-        .replace(/[^a-zA-Z0-9._-]/g, "_")
-        .slice(-60);
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60);
       const path = `${userId}/${setupId}/${Date.now()}-${i}-${safeName}`;
 
       setProgress(Math.round(((i + 0.5) / fileList.length) * 100));
@@ -80,7 +76,7 @@ export default function ScreenshotUploader({
       }
 
       const { data: metaRow, error: metaErr } = await supabase
-        .from("amd_screenshots")
+        .from(table)
         .insert({
           user_id: userId,
           setup_id: setupId,
@@ -118,7 +114,6 @@ export default function ScreenshotUploader({
 
   return (
     <div className="space-y-3">
-      {/* Hidden input */}
       <input
         ref={inputRef}
         type="file"
@@ -128,7 +123,6 @@ export default function ScreenshotUploader({
         className="hidden"
       />
 
-      {/* Drop zone / button */}
       <button
         type="button"
         onClick={triggerFilePicker}
@@ -150,14 +144,12 @@ export default function ScreenshotUploader({
           : "📸 Click to add chart screenshots"}
       </button>
 
-      {/* Small hint */}
       {!uploading && setupId && !atLimit && (
         <p className="text-xs text-gray-500 text-center">
           PNG · JPG · WEBP · up to 10 MB each · max {MAX_PER_SETUP} per setup
         </p>
       )}
 
-      {/* Progress bar */}
       {uploading && (
         <div className="w-full h-1.5 bg-gray-800 rounded overflow-hidden">
           <div
@@ -167,7 +159,6 @@ export default function ScreenshotUploader({
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="p-2 rounded bg-red-950/40 border border-red-800 text-red-200 text-xs">
           {error}

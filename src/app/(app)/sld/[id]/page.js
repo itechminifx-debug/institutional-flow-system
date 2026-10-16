@@ -219,7 +219,13 @@ export default function SldDetailPage() {
             onDelete={(deletedId) => setScreenshots((prev) => prev.filter((s) => s.id !== deletedId))} />
           <div className="pt-3 border-t border-gray-800">
             <p className="text-xs font-semibold text-gray-400 mb-2">Add more</p>
-            <ScreenshotUploader setupId={row.id} userId={userId} screenshots={screenshots} onChange={setScreenshots} />
+            <ScreenshotUploader
+  setupId={row.id}
+  userId={userId}
+  screenshots={screenshots}
+  onChange={setScreenshots}
+  table="sld_screenshots"
+/>
           </div>
         </div>
 
