@@ -22,6 +22,7 @@ const GROUPS = [
       { href: "/sld", label: "SLD Setup" },
       { href: "/sld/journal", label: "SLD Journal" },
       { href: "/sld/history", label: "SLD History" },
+      { href: "/sld/manual", label: "SLD Manual" },
     ],
   },
   {
@@ -142,7 +143,6 @@ export default function Sidebar() {
           md:translate-x-0
           pt-3`}
       >
-        {/* Logo (desktop) */}
         <div className="hidden md:block px-4 pb-3 border-b border-gray-800">
           <Link href="/dashboard" className="font-bold text-sm">
             IFS
