@@ -17,6 +17,14 @@ const GROUPS = [
     ],
   },
   {
+    title: "SLD System",
+    links: [
+      { href: "/sld", label: "SLD Setup" },
+      { href: "/sld/journal", label: "SLD Journal" },
+      { href: "/sld/history", label: "SLD History" },
+    ],
+  },
+  {
     title: "Layers System",
     links: [
       { href: "/layers", label: "Layers Setup" },
@@ -118,6 +126,7 @@ export default function Sidebar() {
         <div className="w-6" />
       </div>
 
+      {/* Mobile overlay */}
       {open && (
         <div
           className="md:hidden fixed inset-0 z-30 bg-black/60"
@@ -125,6 +134,7 @@ export default function Sidebar() {
         />
       )}
 
+      {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 z-40 h-screen w-[220px] bg-black border-r border-gray-800 overflow-y-auto
           transform transition-transform duration-200
@@ -132,6 +142,7 @@ export default function Sidebar() {
           md:translate-x-0
           pt-3`}
       >
+        {/* Logo (desktop) */}
         <div className="hidden md:block px-4 pb-3 border-b border-gray-800">
           <Link href="/dashboard" className="font-bold text-sm">
             IFS
@@ -140,15 +151,18 @@ export default function Sidebar() {
 
         <nav className="px-2 py-3 space-y-4">
           {GROUPS.map((group) => {
+            const isSldGroup = group.title === "SLD System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
-            const isSystemGroup = isLayersGroup || isAmdGroup;
+            const isSystemGroup = isSldGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
                 <p
                   className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
-                    isLayersGroup
+                    isSldGroup
+                      ? "text-emerald-400"
+                      : isLayersGroup
                       ? "text-purple-400"
                       : isAmdGroup
                       ? "text-blue-400"
@@ -160,7 +174,9 @@ export default function Sidebar() {
                 <div
                   className={`space-y-0.5 ${
                     isSystemGroup
-                      ? isLayersGroup
+                      ? isSldGroup
+                        ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
+                        : isLayersGroup
                         ? "pl-2 border-l-2 border-purple-800/60 ml-2"
                         : "pl-2 border-l-2 border-blue-800/60 ml-2"
                       : ""
