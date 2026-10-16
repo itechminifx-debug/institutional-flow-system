@@ -3,14 +3,18 @@
 // ============================================================
 // Accumulation → Manipulation → Distribution
 //
-// Full engine with:
+// Full engine — all upgrades included:
 //   - Range / ATR / Sweep / Reclaim / MSS gates
-//   - FVG list (multiple) with auto-active pick
-//   - RB inside active FVG
-//   - Verdict closes list with zone classification
-//   - MSS sequence tracking (tip test / sweep / retest / contested)
-//   - RB reaction judgment (breakout / discount / premium / wrong side)
-//   - Auto-resolve currentClose from latest verdict close
+//   - MSS requires sweep + close (textbook MSS)
+//   - Inducement bonus detection
+//   - Buy-Side / Sell-Side Liquidity classification
+//   - Multi-timeframe tags (D1 / H4 / LTF)
+//   - D1 Bias alignment check
+//   - Displacement quality check (Pass 8)
+//   - Draw on Liquidity as TP (Pass 5)
+//   - FVG list + Order Blocks with auto-active
+//   - RB inside active FVG or OB
+//   - Verdict closes with MSS sequence tracking
 //   - Wick retest bonus
 //   - Reward + mindset gates
 // ============================================================
@@ -30,19 +34,34 @@ export const AMD_TYPES = [
     key: "bullish",
     label: "Bullish AMD",
     emoji: "🟢",
-    hint: "Range → sweep below → MSS up → FVG → RB → BUY",
+    hint: "Range → sweep below → MSS up → FVG/OB → RB → BUY",
   },
   {
     key: "bearish",
     label: "Bearish AMD",
     emoji: "🔴",
-    hint: "Range → sweep above → MSS down → FVG → RB → SELL",
+    hint: "Range → sweep above → MSS down → FVG/OB → RB → SELL",
   },
 ];
 
 export function amdTypeInfo(key) {
   return AMD_TYPES.find((t) => t.key === key) || AMD_TYPES[0];
 }
+
+export const DRAW_ON_LIQUIDITY_OPTIONS = [
+  { key: "auto", label: "Auto (derive from sweep)", emoji: "🤖" },
+  { key: "bsl", label: "Buy-Side (BSL — above)", emoji: "🔵" },
+  { key: "ssl", label: "Sell-Side (SSL — below)", emoji: "🟠" },
+];
+
+export const TIMEFRAME_OPTIONS = [
+  { key: "D1", label: "D1" },
+  { key: "H4", label: "H4" },
+  { key: "H1", label: "H1" },
+  { key: "M30", label: "M30" },
+  { key: "M15", label: "M15" },
+  { key: "M5", label: "M5" },
+];
 
 // ============================================================
 // HELPERS
@@ -62,6 +81,72 @@ function validCandle(c) {
   );
 }
 
+function rankZones({ zones, closePrice, activeRb }) {
+  if (!Array.isArray(zones) || zones.length === 0) return [];
+
+  const cleaned = zones
+    .map((z) => ({
+      id: z.id,
+      high: num(z.high),
+      low: num(z.low),
+      addedAt: z.addedAt || new Date().toISOString(),
+    }))
+    .filter((z) => z.high !== null && z.low !== null && z.high > z.low);
+
+  if (cleaned.length === 0) return [];
+
+  const close = num(closePrice);
+  const rHigh = activeRb ? num(activeRb.high) : null;
+  const rLow = activeRb ? num(activeRb.low) : null;
+
+  const sorted = [...cleaned].sort(
+    (a, b) => new Date(b.addedAt) - new Date(a.addedAt)
+  );
+
+  let activeId = null;
+
+  if (close !== null) {
+    for (const z of sorted) {
+      if (close >= z.low && close <= z.high) {
+        activeId = z.id;
+        break;
+      }
+    }
+  }
+
+  if (!activeId && rHigh !== null && rLow !== null) {
+    for (const z of sorted) {
+      const overlapLow = Math.max(rLow, z.low);
+      const overlapHigh = Math.min(rHigh, z.high);
+      if (overlapHigh > overlapLow) {
+        activeId = z.id;
+        break;
+      }
+    }
+  }
+
+  if (!activeId && close !== null) {
+    let closest = null;
+    let minDist = Infinity;
+    for (const z of sorted) {
+      const ce = (z.high + z.low) / 2;
+      const dist = Math.abs(close - ce);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = z.id;
+      }
+    }
+    activeId = closest;
+  }
+
+  return sorted.map((z, i) => ({
+    ...z,
+    zoneCe: computeCe(z.high, z.low),
+    isActive: z.id === activeId,
+    rank: i === 0 ? "newest" : i === sorted.length - 1 ? "oldest" : "middle",
+  }));
+}
+
 // ============================================================
 // CHECKLIST
 // ============================================================
@@ -70,9 +155,9 @@ export const AMD_CHECKLIST = [
   { key: "atr_falling", number: 2,  phase: "A", label: "Is ATR falling?",               hint: "Compression — volatility contracting" },
   { key: "sweep",       number: 3,  phase: "M", label: "Did price sweep the range?",    hint: "False break against the true direction" },
   { key: "reclaim",     number: 4,  phase: "M", label: "Did price close back inside?",  hint: "The trap is set — the sweep was false" },
-  { key: "mss",         number: 5,  phase: "D", label: "Did an MSS occur?",             hint: "Market Structure Shift — confirmed by close" },
-  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark all FVGs — active one is picked automatically" },
-  { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the FVG?",  hint: "RB must overlap the active FVG" },
+  { key: "mss",         number: 5,  phase: "D", label: "Did an MSS occur?",             hint: "Sweep + close beyond structure" },
+  { key: "fvg",         number: 6,  phase: "D", label: "Did displacement create an FVG?", hint: "Mark all FVGs + OBs — active one is picked automatically" },
+  { key: "rb",          number: 7,  phase: "D", label: "Is there an RB inside the zone?",  hint: "RB must overlap the active FVG or OB" },
   { key: "entry",       number: 8,  phase: "D", label: "Is there a clear entry?",       hint: "RB close on the correct side — or MSS sequence complete" },
   { key: "reward",      number: 9,  phase: "D", label: "Is the reward 1:2+?",           hint: "TP vs Entry vs SL ≥ 2:1" },
   { key: "mindset",     number: 10, phase: "X", label: "Am I calm and disciplined?",    hint: "Manual check — mindset gate" },
@@ -233,103 +318,148 @@ export function checkReclaim({ sweepCandle, rangeHigh, rangeLow, sequenceType })
 }
 
 // ============================================================
-// PHASE D
+// PHASE D — MSS
 // ============================================================
-export function checkMSS({ currentClose, mssReference, sequenceType }) {
+export function checkMSS({
+  currentClose,
+  mssReference,
+  sweepCandle,
+  sequenceType,
+}) {
   const close = num(currentClose);
   const ref = num(mssReference);
+
   if (close === null || ref === null) {
-    return { pass: false, detail: "Close or MSS reference missing.", data: null };
+    return {
+      pass: false,
+      detail: "Close or MSS reference missing.",
+      data: null,
+    };
   }
 
-  if (sequenceType === "bullish") {
-    const broke = close > ref;
-    return {
-      pass: broke,
-      detail: broke
-        ? `Bullish MSS — close ${close} above ${ref}.`
-        : `No bullish MSS — close ${close}, needs above ${ref}.`,
-      data: broke ? { direction: "bullish", level: ref } : null,
-    };
+  const bullish = sequenceType === "bullish";
+
+  const sweepLow = sweepCandle ? num(sweepCandle.low) : null;
+  const sweepHigh = sweepCandle ? num(sweepCandle.high) : null;
+
+  let sweepHappened = false;
+  let sweepDetail = "";
+
+  if (bullish) {
+    if (sweepLow !== null) {
+      sweepHappened = sweepLow < ref;
+      sweepDetail = sweepHappened
+        ? `Sweep below ${ref} (wick low ${sweepLow}).`
+        : `No sweep below — wick low ${sweepLow} did not breach ${ref}.`;
+    } else {
+      sweepDetail = "Sweep candle not set — cannot verify the sweep.";
+    }
   } else {
-    const broke = close < ref;
+    if (sweepHigh !== null) {
+      sweepHappened = sweepHigh > ref;
+      sweepDetail = sweepHappened
+        ? `Sweep above ${ref} (wick high ${sweepHigh}).`
+        : `No sweep above — wick high ${sweepHigh} did not breach ${ref}.`;
+    } else {
+      sweepDetail = "Sweep candle not set — cannot verify the sweep.";
+    }
+  }
+
+  const closeBroke = bullish ? close > ref : close < ref;
+
+  const closeDetail = closeBroke
+    ? `Close ${close} ${bullish ? "above" : "below"} ${ref}.`
+    : `Close ${close} did not break ${ref}.`;
+
+  if (sweepHappened && closeBroke) {
     return {
-      pass: broke,
-      detail: broke
-        ? `Bearish MSS — close ${close} below ${ref}.`
-        : `No bearish MSS — close ${close}, needs below ${ref}.`,
-      data: broke ? { direction: "bearish", level: ref } : null,
+      pass: true,
+      detail: `${
+        bullish ? "Bullish" : "Bearish"
+      } MSS confirmed — ${sweepDetail} ${closeDetail}`,
+      data: {
+        direction: bullish ? "bullish" : "bearish",
+        level: ref,
+        sweepHappened: true,
+        closeBroke: true,
+      },
     };
   }
+
+  if (!sweepHappened && closeBroke) {
+    return {
+      pass: false,
+      detail: `${closeDetail} But NO sweep — not a textbook MSS.`,
+      data: null,
+    };
+  }
+
+  if (sweepHappened && !closeBroke) {
+    return {
+      pass: false,
+      detail: `${sweepDetail} But close did not confirm.`,
+      data: null,
+    };
+  }
+
+  return {
+    pass: false,
+    detail: `No sweep and no close break — MSS not confirmed.`,
+    data: null,
+  };
 }
 
 // ============================================================
-// FVG LIST
+// DISPLACEMENT QUALITY (Pass 8)
+// ============================================================
+export function checkDisplacementQuality({ displacementCandle, sequenceType }) {
+  if (!validCandle(displacementCandle)) {
+    return {
+      quality: "unknown",
+      ratio: 0,
+      detail: "Displacement candle not filled in.",
+    };
+  }
+
+  const o = num(displacementCandle.open);
+  const c = num(displacementCandle.close);
+  const h = num(displacementCandle.high);
+  const l = num(displacementCandle.low);
+
+  const bodySize = Math.abs(c - o);
+  const range = h - l;
+  const ratio = range > 0 ? bodySize / range : 0;
+
+  const directionCorrect =
+    sequenceType === "bullish" ? c > o : c < o;
+
+  let quality;
+  if (!directionCorrect) quality = "wrong-direction";
+  else if (ratio >= 0.75) quality = "strong";
+  else if (ratio >= 0.5) quality = "normal";
+  else quality = "weak";
+
+  const pct = Math.round(ratio * 100);
+
+  const labelMap = {
+    strong: "🔥 Strong displacement",
+    normal: "✅ Normal displacement",
+    weak: "⚠️ Weak displacement",
+    "wrong-direction": "❌ Wrong direction",
+  };
+
+  return {
+    quality,
+    ratio,
+    detail: `${labelMap[quality]} — body is ${pct}% of the candle range.`,
+  };
+}
+
+// ============================================================
+// FVG / OB / RB
 // ============================================================
 export function rankFvgs({ fvgs, closePrice, activeRb }) {
-  if (!Array.isArray(fvgs) || fvgs.length === 0) return [];
-
-  const cleaned = fvgs
-    .map((f) => ({
-      id: f.id,
-      high: num(f.high),
-      low: num(f.low),
-      addedAt: f.addedAt || new Date().toISOString(),
-    }))
-    .filter((f) => f.high !== null && f.low !== null && f.high > f.low);
-
-  if (cleaned.length === 0) return [];
-
-  const close = num(closePrice);
-  const rHigh = activeRb ? num(activeRb.high) : null;
-  const rLow = activeRb ? num(activeRb.low) : null;
-
-  const sorted = [...cleaned].sort(
-    (a, b) => new Date(b.addedAt) - new Date(a.addedAt)
-  );
-
-  let activeId = null;
-
-  if (close !== null) {
-    for (const f of sorted) {
-      if (close >= f.low && close <= f.high) {
-        activeId = f.id;
-        break;
-      }
-    }
-  }
-
-  if (!activeId && rHigh !== null && rLow !== null) {
-    for (const f of sorted) {
-      const overlapLow = Math.max(rLow, f.low);
-      const overlapHigh = Math.min(rHigh, f.high);
-      if (overlapHigh > overlapLow) {
-        activeId = f.id;
-        break;
-      }
-    }
-  }
-
-  if (!activeId && close !== null) {
-    let closest = null;
-    let minDist = Infinity;
-    for (const f of sorted) {
-      const ce = (f.high + f.low) / 2;
-      const dist = Math.abs(close - ce);
-      if (dist < minDist) {
-        minDist = dist;
-        closest = f.id;
-      }
-    }
-    activeId = closest;
-  }
-
-  return sorted.map((f, i) => ({
-    ...f,
-    fvgCe: computeCe(f.high, f.low),
-    isActive: f.id === activeId,
-    rank: i === 0 ? "newest" : i === sorted.length - 1 ? "oldest" : "middle",
-  }));
+  return rankZones({ zones: fvgs, closePrice, activeRb });
 }
 
 export function checkFvgList({ rankedFvgs }) {
@@ -345,11 +475,49 @@ export function checkFvgList({ rankedFvgs }) {
     detail: `${rankedFvgs.length} FVG${
       rankedFvgs.length === 1 ? "" : "s"
     } marked. Active: ${active.low} – ${active.high} (${size} wide).`,
-    data: { activeFvg: active, allFvgs: rankedFvgs, count: rankedFvgs.length },
+    data: {
+      activeFvg: active,
+      allFvgs: rankedFvgs,
+      count: rankedFvgs.length,
+    },
   };
 }
 
-export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
+export function rankOrderBlocks({ orderBlocks, closePrice, activeRb }) {
+  return rankZones({ zones: orderBlocks, closePrice, activeRb });
+}
+
+export function checkOrderBlockList({ rankedObs }) {
+  if (!rankedObs || rankedObs.length === 0) {
+    return {
+      pass: false,
+      detail: "No Order Blocks marked.",
+      data: null,
+    };
+  }
+
+  const active = rankedObs.find((o) => o.isActive) || rankedObs[0];
+  const size = Math.round((active.high - active.low) * 100) / 100;
+
+  return {
+    pass: true,
+    detail: `${rankedObs.length} Order Block${
+      rankedObs.length === 1 ? "" : "s"
+    } marked. Active: ${active.low} – ${active.high} (${size} wide).`,
+    data: {
+      activeOb: active,
+      allObs: rankedObs,
+      count: rankedObs.length,
+    },
+  };
+}
+
+export function checkRbInActiveZone({
+  rbHigh,
+  rbLow,
+  activeFvg,
+  activeOb,
+}) {
   const rHigh = num(rbHigh);
   const rLow = num(rbLow);
 
@@ -359,48 +527,84 @@ export function checkRbInActiveFvg({ rbHigh, rbLow, activeFvg }) {
   if (rHigh <= rLow) {
     return { pass: false, detail: "RB high must be above RB low.", data: null };
   }
-  if (!activeFvg) {
-    return { pass: false, detail: "No active FVG.", data: null };
+
+  if (activeFvg) {
+    const fHigh = num(activeFvg.high);
+    const fLow = num(activeFvg.low);
+    if (fHigh !== null && fLow !== null) {
+      const overlapLow = Math.max(rLow, fLow);
+      const overlapHigh = Math.min(rHigh, fHigh);
+      const overlap = overlapHigh - overlapLow;
+
+      if (overlap > 0) {
+        let position = "overlapping";
+        if (rHigh <= fHigh && rLow >= fLow) position = "inside";
+        else if (rLow >= fHigh - 0.0001) position = "above";
+        else if (rHigh <= fLow + 0.0001) position = "below";
+
+        return {
+          pass: true,
+          detail: `RB ${rLow} – ${rHigh} ${position} the active FVG.`,
+          data: {
+            rbHigh: rHigh,
+            rbLow: rLow,
+            rbCe: computeCe(rHigh, rLow),
+            position,
+            overlap: Math.round(overlap * 100) / 100,
+            zoneType: "fvg",
+          },
+        };
+      }
+    }
   }
 
-  const fHigh = num(activeFvg.high);
-  const fLow = num(activeFvg.low);
-  if (fHigh === null || fLow === null) {
-    return { pass: false, detail: "Active FVG invalid.", data: null };
+  if (activeOb) {
+    const oHigh = num(activeOb.high);
+    const oLow = num(activeOb.low);
+    if (oHigh !== null && oLow !== null) {
+      const overlapLow = Math.max(rLow, oLow);
+      const overlapHigh = Math.min(rHigh, oHigh);
+      const overlap = overlapHigh - overlapLow;
+
+      if (overlap > 0) {
+        let position = "overlapping";
+        if (rHigh <= oHigh && rLow >= oLow) position = "inside";
+        else if (rLow >= oHigh - 0.0001) position = "above";
+        else if (rHigh <= oLow + 0.0001) position = "below";
+
+        return {
+          pass: true,
+          detail: `RB ${rLow} – ${rHigh} ${position} the active Order Block.`,
+          data: {
+            rbHigh: rHigh,
+            rbLow: rLow,
+            rbCe: computeCe(rHigh, rLow),
+            position,
+            overlap: Math.round(overlap * 100) / 100,
+            zoneType: "ob",
+          },
+        };
+      }
+    }
   }
 
-  const overlapLow = Math.max(rLow, fLow);
-  const overlapHigh = Math.min(rHigh, fHigh);
-  const overlap = overlapHigh - overlapLow;
-
-  if (overlap > 0) {
-    let position = "overlapping";
-    if (rHigh <= fHigh && rLow >= fLow) position = "inside";
-    else if (rLow >= fHigh - 0.0001) position = "above";
-    else if (rHigh <= fLow + 0.0001) position = "below";
-
+  if (activeFvg || activeOb) {
     return {
-      pass: true,
-      detail: `RB ${rLow} – ${rHigh} ${position} the active FVG.`,
-      data: {
-        rbHigh: rHigh,
-        rbLow: rLow,
-        rbCe: computeCe(rHigh, rLow),
-        position,
-        overlap: Math.round(overlap * 100) / 100,
-      },
+      pass: false,
+      detail: `RB ${rLow} – ${rHigh} does not overlap the active zone.`,
+      data: null,
     };
   }
 
   return {
     pass: false,
-    detail: `RB ${rLow} – ${rHigh} does not overlap active FVG ${fLow} – ${fHigh}.`,
+    detail: "No active FVG or Order Block.",
     data: null,
   };
 }
 
 // ============================================================
-// MSS SEQUENCE — classify a verdict close against the MSS
+// MSS SEQUENCE
 // ============================================================
 export function classifyMssStep({
   candle,
@@ -421,7 +625,6 @@ export function classifyMssStep({
 
   const bullish = sequenceType === "bullish";
 
-  // ---- Contested / Sweep (body close vs MSS reference) ----
   if (ref !== null) {
     if (bullish) {
       if (close < ref) {
@@ -452,7 +655,6 @@ export function classifyMssStep({
     }
   }
 
-  // ---- Tip test (wick touched MSS candle extreme) ----
   if (bullish && mssHigh !== null) {
     if (wickHigh >= mssHigh) {
       return {
@@ -469,7 +671,6 @@ export function classifyMssStep({
     }
   }
 
-  // ---- Retest (wick touched MSS reference from correct side, close stayed) ----
   if (ref !== null) {
     if (bullish && wickLow <= ref && close > ref) {
       return {
@@ -573,6 +774,7 @@ export function classifyRbReaction({ candle, rbHigh, rbLow, sequenceType }) {
 export function evaluateVerdictCloses({
   verdictCloses,
   fvgs,
+  orderBlocks,
   rb,
   mssReference,
   mssCandleHigh,
@@ -580,10 +782,15 @@ export function evaluateVerdictCloses({
   sequenceType,
 }) {
   const buildZoneMap = () => {
-    const map = { fvgs: {}, rb: false };
+    const map = { fvgs: {}, obs: {}, rb: false };
     if (Array.isArray(fvgs)) {
       fvgs.forEach((f) => {
         if (f && f.id) map.fvgs[f.id] = false;
+      });
+    }
+    if (Array.isArray(orderBlocks)) {
+      orderBlocks.forEach((o) => {
+        if (o && o.id) map.obs[o.id] = false;
       });
     }
     return map;
@@ -600,6 +807,7 @@ export function evaluateVerdictCloses({
         contested: false,
       },
       allFvgsVisited: false,
+      allObsVisited: false,
       allZonesVisited: false,
       finalClose: null,
       finalEntry: null,
@@ -646,6 +854,32 @@ export function evaluateVerdictCloses({
       }
     }
 
+    let obInteraction = null;
+    for (const o of orderBlocks || []) {
+      const oHigh = num(o.high);
+      const oLow = num(o.low);
+      if (oHigh === null || oLow === null) continue;
+
+      const close = num(vc.candle.close);
+      const wickLow = num(vc.candle.low);
+      const wickHigh = num(vc.candle.high);
+
+      const insideClose = close >= oLow && close <= oHigh;
+      const wickTested = wickLow <= oHigh && wickHigh >= oLow;
+
+      if (insideClose || wickTested) {
+        obInteraction = {
+          zone: "ob",
+          zoneRef: o,
+          insideClose,
+          detail: insideClose
+            ? `Closed inside OB ${oLow} – ${oHigh}.`
+            : `Wick tested OB ${oLow} – ${oHigh}.`,
+        };
+        break;
+      }
+    }
+
     const rbReaction = rb
       ? classifyRbReaction({
           candle: vc.candle,
@@ -672,13 +906,16 @@ export function evaluateVerdictCloses({
 
     let primaryType = "unclassified";
     let primaryDetail = null;
+    let reactedZone = null;
 
     if (rbReaction) {
       primaryType = rbReaction.reaction;
       primaryDetail = rbReaction.detail;
+      reactedZone = "rb";
     } else if (mssStep) {
       primaryType = mssStep.step;
       primaryDetail = mssStep.detail;
+      reactedZone = "mss";
     } else if (fvgInteraction) {
       const close = num(vc.candle.close);
       const bullish = sequenceType === "bullish";
@@ -692,14 +929,30 @@ export function evaluateVerdictCloses({
         primaryType = rejected ? "held" : "broke";
         primaryDetail = fvgInteraction.detail;
       }
+      reactedZone = "fvg";
+    } else if (obInteraction) {
+      const close = num(vc.candle.close);
+      const bullish = sequenceType === "bullish";
+      if (obInteraction.insideClose) {
+        primaryType = "filled";
+        primaryDetail = obInteraction.detail;
+      } else {
+        const rejected =
+          (bullish && close > obInteraction.zoneRef.high) ||
+          (!bullish && close < obInteraction.zoneRef.low);
+        primaryType = rejected ? "held" : "broke";
+        primaryDetail = obInteraction.detail;
+      }
+      reactedZone = "ob";
     }
 
     return {
       id: vc.id,
       sequenceNumber: vc.sequenceNumber ?? i + 1,
       candle: vc.candle,
-      reactedZone: rbReaction ? "rb" : mssStep ? "mss" : fvgInteraction ? "fvg" : null,
-      reactedZoneRef: fvgInteraction?.zoneRef || null,
+      reactedZone,
+      reactedZoneRef:
+        fvgInteraction?.zoneRef || obInteraction?.zoneRef || null,
       mssStep: mssStep?.step || null,
       rbReaction: rbReaction?.reaction || null,
       rbStrength: rbReaction?.strength || null,
@@ -714,12 +967,18 @@ export function evaluateVerdictCloses({
     if (r.reactedZone === "fvg" && r.reactedZoneRef) {
       zonesVisited.fvgs[r.reactedZoneRef.id] = true;
     }
+    if (r.reactedZone === "ob" && r.reactedZoneRef) {
+      zonesVisited.obs[r.reactedZoneRef.id] = true;
+    }
     if (r.reactedZone === "rb") zonesVisited.rb = true;
   }
 
   const fvgIds = Object.keys(zonesVisited.fvgs || {});
+  const obIds = Object.keys(zonesVisited.obs || {});
   const allFvgsVisited = fvgIds.every((id) => zonesVisited.fvgs[id]);
-  const allZonesVisited = allFvgsVisited && zonesVisited.rb;
+  const allObsVisited = obIds.every((id) => zonesVisited.obs[id]);
+  const allZonesVisited =
+    allFvgsVisited && allObsVisited && zonesVisited.rb;
 
   let finalClose = null;
   for (let i = ranked.length - 1; i >= 0; i--) {
@@ -732,10 +991,13 @@ export function evaluateVerdictCloses({
     }
   }
 
-  const totalChecks = fvgIds.length + 1;
+  const totalChecks = fvgIds.length + obIds.length + 1;
   let checksPassed = 0;
   fvgIds.forEach((id) => {
     if (zonesVisited.fvgs[id]) checksPassed++;
+  });
+  obIds.forEach((id) => {
+    if (zonesVisited.obs[id]) checksPassed++;
   });
   if (zonesVisited.rb) checksPassed++;
   const readiness = totalChecks > 0 ? checksPassed / totalChecks : 0;
@@ -745,6 +1007,7 @@ export function evaluateVerdictCloses({
     zonesVisited,
     mssSequence,
     allFvgsVisited,
+    allObsVisited,
     allZonesVisited,
     finalClose,
     finalEntry: finalClose
@@ -756,6 +1019,126 @@ export function evaluateVerdictCloses({
       : null,
     readiness,
     count: ranked.length,
+  };
+}
+
+// ============================================================
+// LIQUIDITY SIDES
+// ============================================================
+export function checkLiquiditySides({
+  bslLevel,
+  sslLevel,
+  sweepCandle,
+  sequenceType,
+  drawOnLiquidity,
+}) {
+  const bsl = num(bslLevel);
+  const ssl = num(sslLevel);
+
+  if (!validCandle(sweepCandle)) {
+    return {
+      bsl: bsl !== null ? { level: bsl, swept: false } : null,
+      ssl: ssl !== null ? { level: ssl, swept: false } : null,
+      draw: null,
+      drawMatches: null,
+      detail: "Sweep candle not set — cannot verify liquidity sides.",
+    };
+  }
+
+  const wickLow = num(sweepCandle.low);
+  const wickHigh = num(sweepCandle.high);
+
+  const bslSwept =
+    bsl !== null && wickHigh !== null && wickHigh >= bsl;
+  const sslSwept =
+    ssl !== null && wickLow !== null && wickLow <= ssl;
+
+  let resolvedDraw = null;
+  if (drawOnLiquidity === "bsl" || drawOnLiquidity === "ssl") {
+    resolvedDraw = drawOnLiquidity;
+  } else {
+    resolvedDraw = sequenceType === "bullish" ? "bsl" : "ssl";
+  }
+
+  let drawMatches = null;
+  if (resolvedDraw !== null && sequenceType) {
+    drawMatches =
+      (sequenceType === "bullish" && resolvedDraw === "bsl") ||
+      (sequenceType === "bearish" && resolvedDraw === "ssl");
+  }
+
+  const parts = [];
+  if (bsl !== null) {
+    parts.push(
+      `BSL ${bsl} — ${bslSwept ? "✅ swept" : "still resting (target)"}`
+    );
+  }
+  if (ssl !== null) {
+    parts.push(
+      `SSL ${ssl} — ${sslSwept ? "✅ swept" : "still resting (target)"}`
+    );
+  }
+
+  return {
+    bsl: bsl !== null ? { level: bsl, swept: bslSwept } : null,
+    ssl: ssl !== null ? { level: ssl, swept: sslSwept } : null,
+    draw: resolvedDraw,
+    drawMatches,
+    detail: parts.length > 0 ? parts.join(" · ") : "No BSL or SSL levels set.",
+  };
+}
+
+// ============================================================
+// MULTI-TIMEFRAME ALIGNMENT (Pass 6 + 7)
+// ============================================================
+export function checkMultiTimeframe({
+  d1Bias,
+  sequenceType,
+  d1Timeframe,
+  h4Timeframe,
+  ltfTimeframe,
+}) {
+  const gates = [];
+
+  // D1 bias alignment
+  const biasMatches =
+    d1Bias === sequenceType ||
+    (d1Bias === "bullish" && sequenceType === "bullish") ||
+    (d1Bias === "bearish" && sequenceType === "bearish");
+
+  gates.push({
+    key: "d1_bias",
+    label: "D1 bias matches setup direction",
+    pass: biasMatches,
+    detail: biasMatches
+      ? `D1 bias = ${d1Bias} — aligned with ${sequenceType}.`
+      : d1Bias
+      ? `D1 bias = ${d1Bias}, setup = ${sequenceType} — conflict.`
+      : "D1 bias not set.",
+  });
+
+  // Timeframe hierarchy check
+  const tfs = [d1Timeframe, h4Timeframe, ltfTimeframe].filter(Boolean);
+  const hierarchyValid = tfs.length === 3;
+
+  gates.push({
+    key: "tf_hierarchy",
+    label: "Timeframe hierarchy (D1 → H4 → LTF)",
+    pass: hierarchyValid,
+    detail: hierarchyValid
+      ? `${d1Timeframe} → ${h4Timeframe} → ${ltfTimeframe}`
+      : "All three timeframes must be set.",
+  });
+
+  const passed = gates.filter((g) => g.pass).length;
+  const ready = passed === gates.length;
+
+  return {
+    ready,
+    gates,
+    passed,
+    total: gates.length,
+    score: Math.round((passed / gates.length) * 100),
   };
 }
 
@@ -886,6 +1269,53 @@ export function checkWickRetest({
 }
 
 // ============================================================
+// INDUCEMENT
+// ============================================================
+export function checkInducement({
+  inducementLevel,
+  sweepCandle,
+  sequenceType,
+  pipSize,
+}) {
+  const level = num(inducementLevel);
+  if (level === null) {
+    return { pass: false, detail: null, swept: false };
+  }
+
+  if (!validCandle(sweepCandle)) {
+    return { pass: false, detail: null, swept: false };
+  }
+
+  const ps = num(pipSize) || 1;
+  const wickLow = num(sweepCandle.low);
+  const wickHigh = num(sweepCandle.high);
+
+  let swept = false;
+  let detail = null;
+
+  if (sequenceType === "bullish") {
+    if (wickLow !== null && wickLow < level) {
+      swept = true;
+      const depth = Math.round((level - wickLow) * 100) / 100;
+      detail = `Inducement swept — wick low ${wickLow} went ${depth} below ${level}.`;
+    }
+  } else {
+    if (wickHigh !== null && wickHigh > level) {
+      swept = true;
+      const depth = Math.round((wickHigh - level) * 100) / 100;
+      detail = `Inducement swept — wick high ${wickHigh} went ${depth} above ${level}.`;
+    }
+  }
+
+  return {
+    pass: swept,
+    detail,
+    swept,
+    level,
+  };
+}
+
+// ============================================================
 // REWARD + MINDSET
 // ============================================================
 export function checkReward({ trade }) {
@@ -928,7 +1358,18 @@ export function evaluateAmd({
   mssReference,
   mssCandleHigh,
   mssCandleLow,
+  inducementLevel,
+  bslLevel,
+  sslLevel,
+  drawOnLiquidity,
+  displacementCandle,
+  // Multi-TF
+  d1Bias,
+  d1Timeframe,
+  h4Timeframe,
+  ltfTimeframe,
   fvgs,
+  orderBlocks,
   rbHigh,
   rbLow,
   closeCandle,
@@ -940,9 +1381,6 @@ export function evaluateAmd({
   riskPercent = 1,
   ema50Price,
 }) {
-  // ----------------------------------------------------------
-  // AUTO-RESOLVE currentClose from the latest verdict close
-  // ----------------------------------------------------------
   let resolvedClose = currentClose;
   if (Array.isArray(verdictCloses) && verdictCloses.length > 0) {
     const ordered = [...verdictCloses].sort(
@@ -962,6 +1400,12 @@ export function evaluateAmd({
   const mss = checkMSS({
     currentClose: resolvedClose,
     mssReference,
+    sweepCandle,
+    sequenceType,
+  });
+
+  const displacement = checkDisplacementQuality({
+    displacementCandle,
     sequenceType,
   });
 
@@ -973,11 +1417,20 @@ export function evaluateAmd({
   const fvg = checkFvgList({ rankedFvgs });
   const activeFvg = fvg.data?.activeFvg || null;
 
-  const rb = checkRbInActiveFvg({ rbHigh, rbLow, activeFvg });
+  const rankedObs = rankOrderBlocks({
+    orderBlocks,
+    closePrice: resolvedClose,
+    activeRb: rbHigh && rbLow ? { high: rbHigh, low: rbLow } : null,
+  });
+  const ob = checkOrderBlockList({ rankedObs });
+  const activeOb = ob.data?.activeOb || null;
+
+  const rb = checkRbInActiveZone({ rbHigh, rbLow, activeFvg, activeOb });
 
   const verdictClosesResult = evaluateVerdictCloses({
     verdictCloses,
     fvgs: rankedFvgs,
+    orderBlocks: rankedObs,
     rb: rbHigh && rbLow ? { id: "active_rb", high: rbHigh, low: rbLow } : null,
     mssReference,
     mssCandleHigh,
@@ -990,6 +1443,22 @@ export function evaluateAmd({
     rbHigh,
     rbLow,
     verdictClosesResult,
+  });
+
+  const liquiditySides = checkLiquiditySides({
+    bslLevel,
+    sslLevel,
+    sweepCandle,
+    sequenceType,
+    drawOnLiquidity,
+  });
+
+  const multiTf = checkMultiTimeframe({
+    d1Bias,
+    sequenceType,
+    d1Timeframe,
+    h4Timeframe,
+    ltfTimeframe,
   });
 
   let baseNegotiation = null;
@@ -1021,6 +1490,27 @@ export function evaluateAmd({
     }
   }
 
+  // Draw on Liquidity as TP (Pass 5)
+  // Priority: draw price (bsl/ssl) > nextLiquidityLevel
+  let resolvedTp = num(nextLiquidityLevel);
+  let tpSource = resolvedTp !== null ? "nextLiquidityLevel" : null;
+
+  if (baseNegotiation) {
+    if (
+      baseNegotiation.verdict === "BUY" &&
+      liquiditySides?.bsl?.level
+    ) {
+      resolvedTp = liquiditySides.bsl.level;
+      tpSource = "BSL (draw on liquidity)";
+    } else if (
+      baseNegotiation.verdict === "SELL" &&
+      liquiditySides?.ssl?.level
+    ) {
+      resolvedTp = liquiditySides.ssl.level;
+      tpSource = "SSL (draw on liquidity)";
+    }
+  }
+
   let trade = null;
   if (
     baseNegotiation &&
@@ -1031,7 +1521,7 @@ export function evaluateAmd({
     if (rHigh !== null && rLow !== null) {
       const ce = computeCe(rHigh, rLow);
       const slRef = baseNegotiation.verdict === "BUY" ? rLow : rHigh;
-      const tp = num(nextLiquidityLevel);
+      const tp = resolvedTp;
       const ps = num(pipSize) || 1;
 
       if (tp !== null) {
@@ -1044,6 +1534,7 @@ export function evaluateAmd({
           entry: ce,
           sl: slRef,
           tp,
+          tpSource,
           rr,
           pipSize: ps,
           slPips: ps > 0 ? Math.round(risk / ps) : null,
@@ -1102,6 +1593,13 @@ export function evaluateAmd({
     pipSize,
   });
 
+  const inducement = checkInducement({
+    inducementLevel,
+    sweepCandle,
+    sequenceType,
+    pipSize,
+  });
+
   const reasons = [];
   if (!range.pass) reasons.push(`Range: ${range.detail}`);
   if (!atr.pass) reasons.push(`ATR: ${atr.detail}`);
@@ -1136,8 +1634,14 @@ export function evaluateAmd({
     verdictDisplay,
     trade,
     wickRetest,
+    inducement,
+    liquiditySides,
+    displacement,
+    multiTf,
     fvgs: rankedFvgs,
     activeFvg,
+    orderBlocks: rankedObs,
+    activeOb,
     verdictCloses: verdictClosesResult,
     reasons,
     resolvedClose,
