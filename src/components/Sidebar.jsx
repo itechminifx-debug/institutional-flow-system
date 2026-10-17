@@ -26,6 +26,15 @@ const GROUPS = [
     ],
   },
   {
+    title: "SMC System",
+    links: [
+      { href: "/smc", label: "SMC Setup" },
+      { href: "/smc/journal", label: "SMC Journal" },
+      { href: "/smc/history", label: "SMC History" },
+      { href: "/smc/manual", label: "SMC Manual" },
+    ],
+  },
+  {
     title: "Layers System",
     links: [
       { href: "/layers", label: "Layers Setup" },
@@ -152,9 +161,10 @@ export default function Sidebar() {
         <nav className="px-2 py-3 space-y-4">
           {GROUPS.map((group) => {
             const isSldGroup = group.title === "SLD System";
+            const isSmcGroup = group.title === "SMC System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
-            const isSystemGroup = isSldGroup || isLayersGroup || isAmdGroup;
+            const isSystemGroup = isSldGroup || isSmcGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
@@ -162,6 +172,8 @@ export default function Sidebar() {
                   className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
                     isSldGroup
                       ? "text-emerald-400"
+                      : isSmcGroup
+                      ? "text-orange-400"
                       : isLayersGroup
                       ? "text-purple-400"
                       : isAmdGroup
@@ -176,6 +188,8 @@ export default function Sidebar() {
                     isSystemGroup
                       ? isSldGroup
                         ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
+                        : isSmcGroup
+                        ? "pl-2 border-l-2 border-orange-800/60 ml-2"
                         : isLayersGroup
                         ? "pl-2 border-l-2 border-purple-800/60 ml-2"
                         : "pl-2 border-l-2 border-blue-800/60 ml-2"
