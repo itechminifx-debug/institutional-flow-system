@@ -17,6 +17,9 @@ function Section({ id, title, emoji, children, accent = "emerald" }) {
     yellow: "border-yellow-800 text-yellow-300",
     red: "border-red-800 text-red-300",
     gray: "border-gray-800 text-gray-300",
+    pink: "border-pink-800 text-pink-300",
+    fuchsia: "border-fuchsia-800 text-fuchsia-300",
+    amber: "border-amber-800 text-amber-300",
   };
   const cls = accentMap[accent] || accentMap.emerald;
 
@@ -103,6 +106,9 @@ function Rule({ children, tone = "gray" }) {
     red: "border-red-700 bg-red-950/20 text-red-200",
     yellow: "border-yellow-700 bg-yellow-950/20 text-yellow-200",
     blue: "border-blue-700 bg-blue-950/20 text-blue-200",
+    pink: "border-pink-700 bg-pink-950/20 text-pink-200",
+    fuchsia: "border-fuchsia-700 bg-fuchsia-950/20 text-fuchsia-200",
+    amber: "border-amber-700 bg-amber-950/20 text-amber-200",
   };
   return (
     <div className={`p-3 rounded-lg border ${toneMap[tone]}`}>
@@ -123,6 +129,67 @@ function Checklist({ title, items }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// ============================================================
+// NEW — Adaptive Rule card (big format for doctrine section)
+// ============================================================
+function AdaptiveRule({ n, title, emoji, problem, rule, why, tone = "blue" }) {
+  const toneMap = {
+    blue: "border-blue-700 bg-blue-950/20",
+    fuchsia: "border-fuchsia-700 bg-fuchsia-950/20",
+    pink: "border-pink-700 bg-pink-950/20",
+    amber: "border-amber-700 bg-amber-950/20",
+  };
+  const cls = toneMap[tone] || toneMap.blue;
+
+  const problemTone = {
+    blue: "text-blue-300",
+    fuchsia: "text-fuchsia-300",
+    pink: "text-pink-300",
+    amber: "text-amber-300",
+  }[tone];
+
+  const ruleTone = {
+    blue: "text-blue-200",
+    fuchsia: "text-fuchsia-200",
+    pink: "text-pink-200",
+    amber: "text-amber-200",
+  }[tone];
+
+  return (
+    <div className={`p-4 rounded-lg border-2 ${cls} space-y-3`}>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm font-bold text-white">
+          {emoji} Update {n} — {title}
+        </p>
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/40 border border-gray-700 text-gray-300 font-bold">
+          ADAPTIVE
+        </span>
+      </div>
+
+      <div>
+        <p className={`text-[10px] uppercase tracking-wider font-bold ${problemTone}`}>
+          The Problem
+        </p>
+        <p className="text-xs text-gray-300 mt-1">{problem}</p>
+      </div>
+
+      <div>
+        <p className={`text-[10px] uppercase tracking-wider font-bold ${problemTone}`}>
+          The Rule
+        </p>
+        <p className={`text-xs mt-1 ${ruleTone} font-semibold`}>{rule}</p>
+      </div>
+
+      <div>
+        <p className={`text-[10px] uppercase tracking-wider font-bold ${problemTone}`}>
+          Why it fits all conditions
+        </p>
+        <p className="text-xs text-gray-400 mt-1">{why}</p>
+      </div>
     </div>
   );
 }
@@ -151,7 +218,7 @@ export default function SldManualPage() {
           </p>
           <p className="text-gray-500 text-xs mt-2">
             The complete reference — philosophy, terms, identification rules,
-            workflow, checklists, and risk.
+            workflow, checklists, risk, and the adaptive system.
           </p>
         </div>
 
@@ -165,13 +232,14 @@ export default function SldManualPage() {
               { id: "philosophy", label: "1. The Core Philosophy" },
               { id: "structure-vs-liquidity", label: "2. Structure vs Liquidity" },
               { id: "the-5-layers", label: "3. The 5-Layer Model" },
-              { id: "glossary", label: "4. Terms Glossary" },
-              { id: "identify", label: "5. How to Identify Each Term" },
-              { id: "walkthrough", label: "6. Full Walkthrough" },
-              { id: "checklist", label: "7. The Checklist" },
-              { id: "risk", label: "8. Risk & Rules" },
-              { id: "golden", label: "9. Golden Rules" },
-              { id: "mistakes", label: "10. Common Mistakes" },
+              { id: "adaptive", label: "4. The Adaptive System ⭐" },
+              { id: "glossary", label: "5. Terms Glossary" },
+              { id: "identify", label: "6. How to Identify Each Term" },
+              { id: "walkthrough", label: "7. Full Walkthrough" },
+              { id: "checklist", label: "8. The Checklist" },
+              { id: "risk", label: "9. Risk & Rules" },
+              { id: "golden", label: "10. Golden Rules" },
+              { id: "mistakes", label: "11. Common Mistakes" },
             ].map((t) => (
               <a
                 key={t.id}
@@ -288,6 +356,7 @@ export default function SldManualPage() {
                   "Mark daily swing highs/lows (last 3–5 swings)",
                   "Determine structure: HH+HL = bullish, LH+LL = bearish",
                   "Check for CHoCH on the daily",
+                  "Confirm 4H bias agrees with Daily (HTF Veto — see §4)",
                   "Identify the nearest significant DOL in the bias direction",
                   "Confirm quarterly/higher-TF alignment (bonus, not required)",
                 ],
@@ -303,6 +372,8 @@ export default function SldManualPage() {
                   "Mark the PD Array (FVG, OB, or Breaker)",
                   "Check discount/premium — bullish entry must be in discount, bearish in premium",
                   "Verify path to DOL — no unmitigated opposing PD Array in the way",
+                  "If trend is aggressive and pullback is shallow, use the Shallow Pullback Exception (§4)",
+                  "If price has returned to the move origin, check the Origin Retest (§4)",
                 ],
               },
               {
@@ -364,7 +435,107 @@ export default function SldManualPage() {
           </div>
         </Section>
 
-        {/* 4. Glossary */}
+        {/* 4. NEW — The Adaptive System */}
+        <Section id="adaptive" title="The Adaptive System (Advanced Rules)" emoji="🧠" accent="pink">
+          <Rule tone="pink">
+            <strong>The SLD system is not static.</strong> Markets change
+            conditions — trend vs. range, aggressive vs. choppy, HTF alignment
+            vs. conflict. These 4 rules make the base system <em>adaptive</em> so
+            it doesn&apos;t break when the market shifts.
+          </Rule>
+
+          <p className="text-xs text-gray-400">
+            Each rule below has a corresponding toggle / field on the SLD form.
+            When triggered, the engine surfaces a banner on the setup card and
+            adjusts the trade math accordingly.
+          </p>
+
+          <div className="space-y-3 mt-2">
+            <AdaptiveRule
+              n={1}
+              title="The Trend Hierarchy (HTF Veto)"
+              emoji="🚫"
+              tone="blue"
+              problem="A 4H bullish BOS can print while the Daily is still bearish. The 4H move is a pullback — not a reversal. Without a rule, you take the 4H long and get trapped."
+              rule="The 4H sets the entry bias, but the Daily sets the ultimate limit. If they conflict, the 4H move is a premium/discount retracement. Only take trades in the Daily direction until Daily structure makes a real CHoCH. Counter-trend is scalp-only, exit at the nearest pool."
+              why="Stops you from taking fake reversals. If a 4H setup fights the Daily trend, you skip it — or you treat it as a counter-trend scalp with fast profit-taking."
+            />
+
+            <AdaptiveRule
+              n={2}
+              title="The Shallow Pullback Exception"
+              emoji="⚡"
+              tone="fuchsia"
+              problem="The strict rule says 'buy in discount, sell in premium.' But in a violent trend, price never reaches the correct zone. Waiting for premium means missing the entire move."
+              rule="If the HTF trend is aggressive and the pullback taps the 50 EMA or an FVG inside the 'wrong' zone, you may take the trade — but ONLY with a lower-TF CHoCH confirmation. Because the zone is wrong, the stop must be razor-thin, just past the pullback extreme."
+              why="Lets you catch aggressive trends without chasing the breakout. You enter where the market refuses to pull back further — with a tight stop that reflects the increased risk."
+            />
+
+            <AdaptiveRule
+              n={3}
+              title="The Origin Retest (Turtle Soup / Breaker)"
+              emoji="🔨"
+              tone="pink"
+              problem="Price retraces all the way to the exact level that started the move. It looks like a crash or a dead trend — but it can be the highest-probability setup in the entire system."
+              rule="When price returns to the origin of a major move (the sweep that started the BOS), it must decide. If it breaks → trend is dead, stand aside. If it wicks and reverses → it's a Breaker Block, the A+ entry of the system."
+              why="Stops you from getting chopped in the middle of a range. Forces you to wait for the absolute extreme of the current dealing range — the binary decision point."
+            />
+
+            <AdaptiveRule
+              n={4}
+              title="The EQH/EQL Magnet"
+              emoji="🧲"
+              tone="amber"
+              problem="Retail sees equal highs as strong resistance and tries to short. Institutions see equal highs as a pool of buy-side liquidity that needs to be swept."
+              rule="Equal highs above price are a magnet for bullish DOL. Equal lows below price are a magnet for bearish DOL. Do NOT fade them — target them as primary DOL. Only trade the reaction AFTER the sweep."
+              why="Aligns you with the institutional flow instead of against it. EQH/EQL are not resistance/support — they are destinations. This single reframe fixes most of the 'I shorted the high and got stopped out' losses."
+            />
+          </div>
+
+          <SubSection title="How these rules change how you fill out the form">
+            <ol className="list-decimal list-inside space-y-1 ml-2 text-xs">
+              <li>
+                <strong>Layer 1 (Bias):</strong> You now must verify the 4H
+                trend against the Daily. If Daily is bearish and 4H is
+                bullish, mark bias as Bearish (treating the 4H move as a
+                retracement) and check the "4H Bias" field so the HTF Veto
+                fires.
+              </li>
+              <li>
+                <strong>Layer 2 (POI):</strong> If the trend is aggressive and
+                the pullback never reaches premium/discount, enable the
+                "Shallow Pullback Exception" toggle and select the anchor (50
+                EMA / FVG / OB).
+              </li>
+              <li>
+                <strong>Layer 2 (Origin):</strong> If price has returned to
+                the level that started the move, mark the "Origin Retest"
+                toggle. If the origin held with a wick + reverse, also mark
+                "Wicked and reversed" — this promotes the setup to A+
+                Breaker.
+              </li>
+              <li>
+                <strong>Layer 2 (Magnet):</strong> If EQH/EQL sits between
+                price and the DOL, check the "EQH/EQL between" toggle so the
+                system warns you not to fade it.
+              </li>
+              <li>
+                <strong>Layer 3 (Trigger):</strong> Always wait for the
+                CHoCH — no matter which of the 4 adaptive rules is active.
+                The CHoCH is the one non-negotiable confirmation.
+              </li>
+            </ol>
+          </SubSection>
+
+          <Rule tone="pink">
+            <strong>Non-negotiable:</strong> The adaptive rules change{" "}
+            <em>where</em> you look and <em>how tight</em> your stop is. They
+            never override the CHoCH. If you don&apos;t have a lower-TF CHoCH,
+            there is no trade — regardless of how perfect the setup looks.
+          </Rule>
+        </Section>
+
+        {/* 5. Glossary */}
         <Section id="glossary" title="Terms Glossary" emoji="📚" accent="cyan">
           <p className="text-xs text-gray-400">
             Tap any term to expand its definition, how to identify it, and an example.
@@ -393,9 +564,9 @@ export default function SldManualPage() {
             />
             <TermCard
               term="EQH / EQL — Equal Highs / Equal Lows"
-              definition="Two or more highs (or lows) at approximately the same level. The strongest liquidity pool — the most obvious level, so the most stops."
+              definition="Two or more highs (or lows) at approximately the same level. The strongest liquidity pool — the most obvious level, so the most stops. See Adaptive Rule 4: they are a MAGNET, not resistance."
               identify="Scan for 2–3 candles that topped (or bottomed) at nearly the same price."
-              example="Three highs at 206,480, 206,500, 206,510 = EQH. A very clean pool."
+              example="Three highs at 206,480, 206,500, 206,510 = EQH. A very clean pool. Price is expected to sweep through them, not reverse."
               accent="emerald"
             />
             <TermCard
@@ -540,7 +711,7 @@ export default function SldManualPage() {
             />
             <TermCard
               term="Breaker Block"
-              definition="A failed Order Block that flips direction. A previous bullish OB that failed becomes a bearish zone on the retest (and vice versa)."
+              definition="A failed Order Block that flips direction. A previous bullish OB that failed becomes a bearish zone on the retest (and vice versa). See Adaptive Rule 3: Origin Retest."
               identify="Look for a prior OB that was broken through by displacement — the level now acts as the opposite side."
               accent="purple"
             />
@@ -567,35 +738,35 @@ export default function SldManualPage() {
             />
           </SubSection>
 
-          <SubSection title="Management Terms">
+          <SubSection title="Adaptive System Terms (NEW)">
             <TermCard
-              term="2R"
-              definition="Two times your initial risk. Entry 205,000, SL 204,500, risk = 500. 2R = entry + 1000 = 206,000 (for BUY)."
-              identify="Compute: entry ± (2 × |entry − sl|)."
-              accent="emerald"
+              term="HTF Veto"
+              definition="Rule that the Daily trend overrides any 4H move in the opposite direction. A 4H BOS against the Daily is a retracement, not a reversal."
+              identify="Compare the 4H bias to the Daily bias. If they conflict, the HTF Veto is active — treat counter-trend trades as scalps only."
+              accent="blue"
             />
             <TermCard
-              term="Break-even (BE)"
-              definition="Moving your stop to your entry price — the trade can no longer lose."
-              identify="Do this immediately after taking the 2R partial."
-              accent="emerald"
-            />
-            <TermCard
-              term="Trail"
-              definition="Moving your stop behind each new higher low (bullish) or lower high (bearish) as the trend develops."
-              identify="Activate after the next BOS in your direction."
-              accent="emerald"
-            />
-            <TermCard
-              term="Invalidation"
-              definition="When a trade's original thesis is broken. For SLD: price takes out the swept extreme on the opposite side."
-              identify="If bullish and price breaks the swept low → exit immediately. Do not wait for the SL."
+              term="Shallow Pullback"
+              definition="An aggressive trend where price never reaches the 'correct' discount/premium zone. Entry at 50 EMA / FVG confluence is allowed — with a razor-thin stop."
+              identify="Trend is strong, pullback is shallow, price taps the 50 EMA or an FVG without reaching premium/discount. Requires LTF CHoCH to confirm."
               accent="red"
+            />
+            <TermCard
+              term="Origin Retest"
+              definition="Price returns to the exact level where the current move started (the sweep that preceded the BOS). It's a binary decision point: break = trend dead, wick + reverse = A+ Breaker."
+              identify="Mark the sweep low/high that started the current leg. When price returns to it, watch the reaction: wick beyond + close back = held."
+              accent="purple"
+            />
+            <TermCard
+              term="EQH/EQL Magnet"
+              definition="Equal highs/lows are not resistance — they are liquidity magnets. Price is drawn to them. Do not fade them; target the sweep reaction instead."
+              identify="Look for equal highs above current price (bullish magnet) or equal lows below (bearish magnet). Target these as DOL, not as reversal zones."
+              accent="yellow"
             />
           </SubSection>
         </Section>
 
-        {/* 5. Identify */}
+        {/* 6. Identify */}
         <Section id="identify" title="How to Identify Each Term on a Chart" emoji="🔍" accent="orange">
           <p className="text-xs text-gray-400">
             The step-by-step detection rules, in the order you use them.
@@ -610,7 +781,15 @@ export default function SldManualPage() {
             </ol>
           </SubSection>
 
-          <SubSection title="2. Identify the DOL">
+          <SubSection title="2. Check the 4H bias (HTF Veto)">
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Same process as the Daily, but on the 4H.</li>
+              <li>If 4H bias ≠ Daily bias → HTF Veto is active.</li>
+              <li>The 4H move is a retracement. Only take trades in the Daily direction, or scalp the 4H move with fast exit.</li>
+            </ol>
+          </SubSection>
+
+          <SubSection title="3. Identify the DOL">
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>In the direction of the bias, scan for liquidity pools.</li>
               <li>Rank them by strength (EQH/EQL &gt; PDH/PDL &gt; Swing &gt; Trendline &gt; Round).</li>
@@ -620,7 +799,7 @@ export default function SldManualPage() {
             </ol>
           </SubSection>
 
-          <SubSection title="3. Identify the sweep">
+          <SubSection title="4. Identify the sweep">
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Wait for price to wick beyond a liquidity pool (opposite your bias).</li>
               <li>Check the close: did it come back inside the range?</li>
@@ -629,7 +808,7 @@ export default function SldManualPage() {
             </ol>
           </SubSection>
 
-          <SubSection title="4. Identify the BOS">
+          <SubSection title="5. Identify the BOS">
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Identify the most recent swing high (bullish) or swing low (bearish).</li>
               <li>Wait for a CLOSE beyond that level — not just a wick.</li>
@@ -638,7 +817,7 @@ export default function SldManualPage() {
             </ol>
           </SubSection>
 
-          <SubSection title="5. Identify the PD Array (FVG or OB)">
+          <SubSection title="6. Identify the PD Array (FVG or OB)">
             <p className="font-semibold text-white mt-2">For an FVG:</p>
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Look at three consecutive candles during displacement.</li>
@@ -657,17 +836,36 @@ export default function SldManualPage() {
             </ol>
           </SubSection>
 
-          <SubSection title="6. Check discount/premium">
+          <SubSection title="7. Check discount/premium">
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Mark the current dealing range (recent swing high + low).</li>
               <li>Compute the CE — (high + low) / 2.</li>
               <li>For a bullish setup: your POI must sit BELOW the CE.</li>
               <li>For a bearish setup: your POI must sit ABOVE the CE.</li>
-              <li>If the POI is on the wrong side → skip or wait for a better entry.</li>
+              <li>If the POI is on the wrong side → skip, or use the Shallow Pullback Exception (with LTF CHoCH and thin SL).</li>
             </ol>
           </SubSection>
 
-          <SubSection title="7. Identify the trigger">
+          <SubSection title="8. Check origin retest (Adaptive Rule 3)">
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Identify the sweep that started the current leg.</li>
+              <li>Mark that exact price as the origin.</li>
+              <li>If price returns to the origin: watch the reaction.</li>
+              <li>Wick beyond + close back inside → A+ Breaker. Enter.</li>
+              <li>Close beyond → trend is dead. Stand aside.</li>
+            </ol>
+          </SubSection>
+
+          <SubSection title="9. Check EQH/EQL (Adaptive Rule 4)">
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Scan for 2+ highs at nearly the same price (EQH) or lows (EQL).</li>
+              <li>If EQH sits between current price and the DOL, it is a magnet — not resistance.</li>
+              <li>Do NOT fade it. Target the sweep as your DOL.</li>
+              <li>Enter on the reaction AFTER the sweep, not before.</li>
+            </ol>
+          </SubSection>
+
+          <SubSection title="10. Identify the trigger">
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Wait for price to enter the POI.</li>
               <li>Switch to the 5M or 1M chart.</li>
@@ -677,7 +875,7 @@ export default function SldManualPage() {
             </ol>
           </SubSection>
 
-          <SubSection title="8. Manage the trade">
+          <SubSection title="11. Manage the trade">
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Set SL beyond the swept extreme.</li>
               <li>Set TP at the DOL.</li>
@@ -689,20 +887,21 @@ export default function SldManualPage() {
           </SubSection>
         </Section>
 
-        {/* 6. Walkthrough */}
+        {/* 7. Walkthrough */}
         <Section id="walkthrough" title="Full Walkthrough (Example)" emoji="🎯" accent="emerald">
           <p className="text-xs text-gray-400">
-            A real-world bullish setup, step by step.
+            A real-world bullish setup, step by step — with the adaptive rules applied.
           </p>
 
           <div className="space-y-3">
             <div className="p-3 rounded-lg border border-blue-800 bg-blue-950/20">
               <p className="text-xs font-bold text-blue-200 uppercase tracking-wider">
-                Step 1 — Bias
+                Step 1 — Bias + HTF Veto
               </p>
               <p className="text-xs text-gray-300 mt-1">
                 Daily structure is HH + HL. EMA 50 is below price. Bias ={" "}
                 <strong className="text-emerald-300">BULLISH</strong>.
+                4H is also bullish → HTF Veto agrees. Proceed.
               </p>
             </div>
 
@@ -714,6 +913,17 @@ export default function SldManualPage() {
                 Above current price: prior swing high at 206,500 (nearest). EQH
                 at 207,200. Buy-Side Liquidity sits at 206,500. DOL ={" "}
                 <strong className="text-emerald-300">206,500 (BSL)</strong>.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-lg border border-amber-800 bg-amber-950/20">
+              <p className="text-xs font-bold text-amber-200 uppercase tracking-wider">
+                Step 2b — EQH/EQL Magnet (Rule 4)
+              </p>
+              <p className="text-xs text-gray-300 mt-1">
+                EQH sits at 207,200 between current price and the DOL. This is a
+                magnet — not resistance. Do NOT short it. Target the sweep as
+                the eventual higher DOL.
               </p>
             </div>
 
@@ -737,14 +947,15 @@ export default function SldManualPage() {
               </p>
             </div>
 
-            <div className="p-3 rounded-lg border border-purple-800 bg-purple-950/20">
-              <p className="text-xs font-bold text-purple-200 uppercase tracking-wider">
-                Step 5 — POI
+            <div className="p-3 rounded-lg border border-fuchsia-800 bg-fuchsia-950/20">
+              <p className="text-xs font-bold text-fuchsia-200 uppercase tracking-wider">
+                Step 5 — POI + Shallow Pullback (Rule 2)
               </p>
               <p className="text-xs text-gray-300 mt-1">
                 The displacement left a bullish FVG at 205,180 – 205,300.
                 Dealing range: 205,020 (low) to 205,500 (high). CE = 205,260.
-                FVG sits BELOW the CE → discount ✓. POI marked.
+                FVG sits BELOW the CE → discount ✓. Trend is aggressive — if
+                price refuses to pull deeper, we may use a shallow FVG anchor.
               </p>
             </div>
 
@@ -782,6 +993,18 @@ export default function SldManualPage() {
               </div>
             </div>
 
+            <div className="p-3 rounded-lg border border-pink-800 bg-pink-950/20">
+              <p className="text-xs font-bold text-pink-200 uppercase tracking-wider">
+                Step 7b — Origin Retest (Rule 3, alt scenario)
+              </p>
+              <p className="text-xs text-gray-300 mt-1">
+                If instead price had retraced to the origin at 205,020 and
+                wicked + reversed, that would have been the A+ Breaker setup —
+                highest probability in the system. Stop just beyond the wick,
+                target the same DOL.
+              </p>
+            </div>
+
             <div className="p-3 rounded-lg border border-cyan-800 bg-cyan-950/20">
               <p className="text-xs font-bold text-cyan-200 uppercase tracking-wider">
                 Step 8 — Management
@@ -795,18 +1018,22 @@ export default function SldManualPage() {
           </div>
         </Section>
 
-        {/* 7. Checklist */}
+        {/* 8. Checklist */}
         <Section id="checklist" title="The Checklist" emoji="✅" accent="yellow">
           <Checklist
             title="Pre-Trade"
             items={[
               "Daily bias confirmed (bullish or bearish)",
+              "4H bias checked against Daily (HTF Veto)",
               "DOL identified — specific price level",
               "Opposing liquidity swept",
               "BOS confirmed in bias direction (close, not wick)",
               "PD Array marked (FVG / OB / Breaker)",
               "PD Array in correct zone (discount for bullish, premium for bearish)",
-              "Path to DOL clear — no opposing PD Array",
+              "If shallow pullback: anchor identified (50 EMA / FVG / OB)",
+              "If origin retest: wick + reverse confirmed on LTF",
+              "If EQH/EQL between price and DOL: marked as magnet, not resistance",
+              "Path to DOL clear — no opposing PD Array (other than magnets)",
               "RR ≥ 1:3",
             ]}
           />
@@ -814,9 +1041,9 @@ export default function SldManualPage() {
             title="Entry"
             items={[
               "Price tapped the POI",
-              "Lower-TF CHoCH confirmed",
+              "Lower-TF CHoCH confirmed (non-negotiable)",
               "Entry on 5M FVG/OB",
-              "Stop beyond the swept extreme",
+              "Stop beyond the swept extreme (or pullback extreme for shallow, or origin level for Breaker)",
               "Target = DOL",
             ]}
           />
@@ -831,11 +1058,13 @@ export default function SldManualPage() {
           />
         </Section>
 
-        {/* 8. Risk */}
+        {/* 9. Risk */}
         <Section id="risk" title="Risk & Rules" emoji="🛡️" accent="red">
           <div className="grid grid-cols-2 gap-2">
             {[
               { label: "Risk per trade", value: "0.5–1% of account" },
+              { label: "Counter-trend risk (HTF Veto)", value: "0.25–0.5% max" },
+              { label: "Shallow pullback risk", value: "0.5% max (razor-thin SL)" },
               { label: "Max trades per day", value: "2–3" },
               { label: "Max daily loss", value: "2%" },
               { label: "No-trade rule (bias)", value: "If bias unclear → NO TRADE" },
@@ -850,7 +1079,7 @@ export default function SldManualPage() {
           </div>
         </Section>
 
-        {/* 9. Golden Rules */}
+        {/* 10. Golden Rules */}
         <Section id="golden" title="Golden Rules" emoji="🏆" accent="emerald">
           <div className="space-y-2">
             {[
@@ -859,10 +1088,13 @@ export default function SldManualPage() {
               "The DOL is always the NEAREST significant pool — not the biggest, not the furthest.",
               "A wick through a level is a sweep. A close through a level is a BOS.",
               "A CHoCH is only confirmed when the structural HL (or LH) breaks — not when price simply reverses.",
-              "Buy in discount. Sell in premium. No exceptions.",
+              "Buy in discount. Sell in premium. If price never reaches the correct zone, use the Shallow Pullback Exception — with LTF CHoCH and a thin stop.",
               "Entry is on the retest of the POI — not on the breakout.",
               "Partial at 2R. Move to BE. Trail after the next BOS.",
               "If bias is unclear → NO TRADE.",
+              "Daily over 4H. Always. The HTF Veto is not optional.",
+              "EQH/EQL are magnets, not resistance. Target the sweep, don't fade it.",
+              "The CHoCH is the one non-negotiable confirmation — adaptive rules never override it.",
               "Update the DOL after every cleared pool.",
             ].map((r, i) => (
               <Rule key={i} tone="green">
@@ -872,13 +1104,25 @@ export default function SldManualPage() {
           </div>
         </Section>
 
-        {/* 10. Mistakes */}
+        {/* 11. Mistakes */}
         <Section id="mistakes" title="Common Mistakes" emoji="⚠️" accent="orange">
           <div className="space-y-2">
             {[
               {
                 m: "Trading the wick instead of the close",
                 fix: "Always wait for the candle to close. A wick is a trap.",
+              },
+              {
+                m: "Taking a 4H reversal against the Daily",
+                fix: "HTF Veto — the 4H move is a retracement. Trade with the Daily, or scalp only.",
+              },
+              {
+                m: "Waiting for premium forever in an aggressive trend",
+                fix: "Use the Shallow Pullback Exception — but only with LTF CHoCH and a thin SL.",
+              },
+              {
+                m: "Shorting EQH / buying EQL as if they were resistance/support",
+                fix: "They are magnets. Target the sweep as DOL — enter on the reaction, not before.",
               },
               {
                 m: "Entering on the breakout, not the retest",
@@ -889,8 +1133,8 @@ export default function SldManualPage() {
                 fix: "The DOL is the NEXT significant pool. Not the ultimate one.",
               },
               {
-                m: "Buying in premium / selling in discount",
-                fix: "Check the dealing range CE before entering. Trade the correct zone.",
+                m: "Buying in premium / selling in discount without the shallow exception",
+                fix: "Check the dealing range CE before entering. Trade the correct zone — or explicitly use the shallow exception with a thin stop.",
               },
               {
                 m: "Ignoring the sweep",
@@ -933,7 +1177,8 @@ export default function SldManualPage() {
           <p className="text-xs text-gray-300">
             Use this manual as your reference. Open it whenever you need to
             check a term, verify a rule, or reset your mental model. The
-            system only works if you follow the doctrine.
+            system only works if you follow the doctrine — and the adaptive
+            rules only work if the CHoCH confirms them.
           </p>
           <button
             type="button"

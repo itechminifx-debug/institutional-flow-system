@@ -1,11 +1,13 @@
 // ============================================================
-// SLD ENGINE
+// SLD ENGINE — ADAPTIVE EDITION
 // ============================================================
 // Structure → Liquidity → Delivery
 //
 // 5 Layers:
-//   1. Bias & DOL (Daily/4H)
-//   2. POI / Entry Zone (1H/15M)
+//   1. Bias & DOL (Daily/4H)         + HTF Veto (Update 1)
+//   2. POI / Entry Zone (1H/15M)     + Shallow Pullback (Update 2)
+//                                    + Origin Retest (Update 3)
+//                                    + EQH/EQL Gravity (Update 4)
 //   3. Entry Trigger (5M/1M)
 //   4. Trade Management
 //   5. DOL Updates (re-entry)
@@ -26,25 +28,33 @@ export function sldTypeInfo(key) {
 }
 
 export const DOL_RANK_OPTIONS = [
-  { key: "eqh_eql", label: "Equal Highs / Equal Lows (EQH/EQL)", emoji: "🏆", strength: "strong" },
-  { key: "pdh_pdl", label: "Prior Day High / Low (PDH/PDL)", emoji: "🎯", strength: "strong" },
-  { key: "swing", label: "Prior Swing High / Low", emoji: "🔷", strength: "normal" },
-  { key: "trendline", label: "Trendline liquidity", emoji: "📈", strength: "normal" },
-  { key: "round", label: "Round number / ATH", emoji: "⭕", strength: "weak" },
+  { key: "eqh_eql",  label: "Equal Highs / Equal Lows (EQH/EQL)", emoji: "🏆", strength: "strong" },
+  { key: "pdh_pdl",  label: "Prior Day High / Low (PDH/PDL)",    emoji: "🎯", strength: "strong" },
+  { key: "swing",    label: "Prior Swing High / Low",            emoji: "🔷", strength: "normal" },
+  { key: "trendline",label: "Trendline liquidity",               emoji: "📈", strength: "normal" },
+  { key: "round",    label: "Round number / ATH",                emoji: "⭕", strength: "weak" },
 ];
 
 export const POI_ZONE_TYPES = [
-  { key: "fvg", label: "Fair Value Gap (FVG)", emoji: "📊" },
-  { key: "ob", label: "Order Block (OB)", emoji: "🧱" },
-  { key: "breaker", label: "Breaker Block", emoji: "🔨" },
+  { key: "fvg",     label: "Fair Value Gap (FVG)", emoji: "📊" },
+  { key: "ob",      label: "Order Block (OB)",     emoji: "🧱" },
+  { key: "breaker", label: "Breaker Block",        emoji: "🔨" },
 ];
 
 export const SLD_SESSIONS = [
-  { key: "asian", label: "Asian" },
+  { key: "asian",  label: "Asian" },
   { key: "london", label: "London" },
-  { key: "ny_am", label: "NY AM" },
-  { key: "ny_pm", label: "NY PM" },
-  { key: "other", label: "Other / Off-session" },
+  { key: "ny_am",  label: "NY AM" },
+  { key: "ny_pm",  label: "NY PM" },
+  { key: "other",  label: "Other / Off-session" },
+];
+
+// New for Update 2 — anchors for shallow pullback
+export const SHALLOW_PULLBACK_ANCHORS = [
+  { key: "ema50", label: "50 EMA confluence" },
+  { key: "fvg",   label: "FVG inside wrong zone" },
+  { key: "ob",    label: "Order Block inside wrong zone" },
+  { key: "other", label: "Other (note it)" },
 ];
 
 // ============================================================
@@ -64,9 +74,48 @@ function validCandle(c) {
 }
 
 // ============================================================
-// LAYER 1 — BIAS & DOL
+// UPDATE 1 — HTF VETO (Daily vs 4H conflict)
 // ============================================================
-export function evaluateBias({ d1Bias, structureVerdict, chochDetected, quarterlyAligned }) {
+// Rule: The 4H sets the Entry Bias, but the Daily sets the Ultimate Limit.
+// If they disagree, the 4H move is a retracement — not a reversal.
+export function evaluateHtfVeto({ d1Bias, h4Bias }) {
+  // If no 4H bias provided → no conflict check possible. Treated as neutral.
+  if (!h4Bias) {
+    return {
+      checked: false,
+      conflict: false,
+      counterTrend: false,
+      detail: "4H bias not set — HTF Veto not evaluated.",
+    };
+  }
+
+  const conflict = d1Bias && h4Bias !== d1Bias && h4Bias !== "mixed";
+
+  if (!conflict) {
+    return {
+      checked: true,
+      conflict: false,
+      counterTrend: false,
+      detail: `Daily (${d1Bias}) and 4H (${h4Bias}) agree.`,
+    };
+  }
+
+  // Conflict — 4H fights Daily
+  return {
+    checked: true,
+    conflict: true,
+    counterTrend: true,
+    detail:
+      `Daily is ${d1Bias} but 4H is ${h4Bias}. ` +
+      `The 4H move is a ${d1Bias === "bearish" ? "premium retracement (trap for buyers)" : "discount retracement (trap for sellers)"}. ` +
+      `Only take trades in the Daily direction until Daily CHoCH. If you trade counter-trend, treat it as a scalp — exit at the nearest liquidity pool.`,
+  };
+}
+
+// ============================================================
+// LAYER 1 — BIAS & DOL (with HTF Veto integrated)
+// ============================================================
+export function evaluateBias({ d1Bias, h4Bias, structureVerdict, chochDetected, quarterlyAligned }) {
   const gates = [];
 
   const biasClear = d1Bias === "bullish" || d1Bias === "bearish";
@@ -95,12 +144,33 @@ export function evaluateBias({ d1Bias, structureVerdict, chochDetected, quarterl
       : "Structure not identified.",
   });
 
+  // ---- Update 1: HTF Veto gate ----
+  const htf = evaluateHtfVeto({ d1Bias, h4Bias });
+  if (htf.checked) {
+    gates.push({
+      key: "htf_veto",
+      label: "4H agrees with Daily (HTF Veto)",
+      pass: !htf.conflict,
+      bonus: false,
+      warning: htf.conflict,
+      detail: htf.detail,
+    });
+  } else {
+    gates.push({
+      key: "htf_veto",
+      label: "4H bias checked (HTF Veto)",
+      pass: true,
+      bonus: true,
+      detail: htf.detail,
+    });
+  }
+
   // CHoCH is not a gate — it's a warning
   if (chochDetected) {
     gates.push({
       key: "choch_warning",
       label: "CHoCH detected — bias may flip",
-      pass: true, // still passes, but warns
+      pass: true,
       detail: "A CHoCH was detected. Confirm the bias before entering.",
       warning: true,
     });
@@ -127,6 +197,7 @@ export function evaluateBias({ d1Bias, structureVerdict, chochDetected, quarterl
     passed: gates.filter((g) => g.pass).length,
     total: gates.length,
     score: Math.round((blockingPassed / blocking.length) * 100),
+    htfVeto: htf,
   };
 }
 
@@ -142,16 +213,13 @@ export function evaluateDOL({ bias, dolType, dolPrice, dolRank, currentPrice }) 
     };
   }
 
-  // DOL direction check
   const correctDirection =
     (bias === "bullish" && dolType === "bsl") ||
     (bias === "bearish" && dolType === "ssl");
 
-  // Strength from rank
   const rankInfo = DOL_RANK_OPTIONS.find((r) => r.key === dolRank);
   const strength = rankInfo?.strength || "normal";
 
-  // Distance classification (near vs far)
   let distanceClass = "near";
   if (current !== null && current > 0) {
     const pct = Math.abs(price - current) / current;
@@ -170,7 +238,7 @@ export function evaluateDOL({ bias, dolType, dolPrice, dolRank, currentPrice }) 
 }
 
 // ============================================================
-// LAYER 2 — POI / ENTRY ZONE
+// LAYER 2 — POI / ENTRY ZONE (with Updates 2, 3, 4)
 // ============================================================
 export function evaluatePOI({
   bias,
@@ -181,10 +249,19 @@ export function evaluatePOI({
   poiZone,
   dealingRange,
   pathClear,
+  // Update 2
+  shallowPullback = false,
+  shallowPullbackAnchor = null,
+  // Update 3
+  originRetest = false,
+  originWickReverse = false,
+  originLevel = null,
+  // Update 4
+  eqhEqlBetween = false,
 }) {
   const gates = [];
 
-  // Sweep of opposing liquidity
+  // --- Sweep ---
   gates.push({
     key: "sweep",
     label: "Opposing liquidity swept",
@@ -194,7 +271,7 @@ export function evaluatePOI({
       : "Opposing liquidity not yet swept. Wait.",
   });
 
-  // BOS confirmed in bias direction
+  // --- BOS ---
   gates.push({
     key: "bos",
     label: "BOS confirmed in bias direction",
@@ -204,7 +281,7 @@ export function evaluatePOI({
       : "No BOS yet. Structure hasn't confirmed.",
   });
 
-  // POI zone marked
+  // --- POI zone ---
   const hasZone = poiZone && num(poiZone.high) !== null && num(poiZone.low) !== null;
   gates.push({
     key: "poi",
@@ -215,7 +292,7 @@ export function evaluatePOI({
       : "No POI zone marked.",
   });
 
-  // Discount/premium check
+  // --- Discount/Premium zone ---
   let inCorrectZone = null;
   if (hasZone && dealingRange) {
     const rHigh = num(dealingRange.high);
@@ -230,19 +307,28 @@ export function evaluatePOI({
     }
   }
 
+  // ---- Update 2: Shallow Pullback Exception ----
+  // If zone is wrong BUT shallowPullback is on, treat as a soft pass with warning.
+  const shallowException = inCorrectZone === false && shallowPullback === true;
+
   gates.push({
     key: "zone",
     label: "POI in correct zone (discount/premium)",
-    pass: inCorrectZone === true,
+    pass: inCorrectZone === true || shallowException,
+    warning: shallowException,
+    bonus: false,
     detail:
       inCorrectZone === null
         ? "Cannot check — need dealing range + zone."
         : inCorrectZone
         ? `POI is in the correct ${bias === "bullish" ? "discount" : "premium"} zone.`
+        : shallowException
+        ? `⚡ Shallow Pullback Exception active (${shallowPullbackAnchor || "anchor not specified"}). ` +
+          `Entering in the wrong zone — SL must be razor-thin beyond the pullback extreme.`
         : `⚠️ POI is in the wrong zone. ${bias === "bullish" ? "Should be in discount." : "Should be in premium."}`,
   });
 
-  // Path to DOL clear
+  // --- Path clear ---
   gates.push({
     key: "path",
     label: "Path to DOL is clear (no opposing PD arrays)",
@@ -252,15 +338,52 @@ export function evaluatePOI({
       : "Path is clear.",
   });
 
-  const passed = gates.filter((g) => g.pass).length;
-  const ready = passed === gates.length;
+  // ---- Update 4: EQH/EQL Gravity warning ----
+  // Non-blocking unless eqh/eql sits directly between price and DOL AND isn't a target.
+  if (eqhEqlBetween) {
+    gates.push({
+      key: "eqh_eql_between",
+      label: "EQH/EQL between price and DOL (magnet)",
+      pass: true,
+      warning: true,
+      bonus: true,
+      detail:
+        "An equal-highs / equal-lows pool sits between price and the DOL. " +
+        "Do NOT fade it — it is a magnet. Expect a sweep before continuation.",
+    });
+  }
+
+  // ---- Update 3: Origin Retest promotion ----
+  // If origin retest holds (wick + reverse), this is an A+ Breaker setup.
+  // It does not bypass other gates — it upgrades probability.
+  if (originRetest) {
+    const originHeld = originWickReverse === true;
+    gates.push({
+      key: "origin_retest",
+      label: originHeld
+        ? "Origin retest held — A+ Breaker"
+        : "Origin retest in progress",
+      pass: true,
+      bonus: true,
+      warning: !originHeld,
+      detail: originHeld
+        ? `Price wicked ${originLevel ?? "origin"} and reversed — highest-probability entry in the system.`
+        : `Price is at origin (${originLevel ?? "—"}). Wait for wick + reverse to confirm the Breaker; if it breaks, the trend is dead.`,
+    });
+  }
+
+  const blocking = gates.filter((g) => !g.bonus);
+  const blockingPassed = blocking.filter((g) => g.pass).length;
+  const ready = blockingPassed === blocking.length;
 
   return {
     ready,
     gates,
-    passed,
+    passed: gates.filter((g) => g.pass).length,
     total: gates.length,
-    score: Math.round((passed / gates.length) * 100),
+    score: Math.round((blockingPassed / blocking.length) * 100),
+    shallowException,
+    originHeld: originRetest && originWickReverse,
   };
 }
 
@@ -306,6 +429,8 @@ export function evaluateTrigger({ priceTapped, ltfChoch, ltfFvgEntry }) {
 // ============================================================
 // TRADE COMPUTATION
 // ============================================================
+// Note: shallowPullback uses the pullback extreme as SL (razor-thin),
+// and origin-retest trades use the origin level as SL.
 export function computeSldTrade({
   bias,
   poiZone,
@@ -314,24 +439,55 @@ export function computeSldTrade({
   pipSize,
   accountSize,
   riskPercent,
+  shallowException = false,
+  originHeld = false,
+  originLevel = null,
 }) {
   if (!poiZone) return null;
   const zHigh = num(poiZone.high);
   const zLow = num(poiZone.low);
   const dol = num(dolPrice);
   const sweep = num(sweepLevel);
+  const origin = num(originLevel);
 
   if (zHigh === null || zLow === null || dol === null) return null;
 
   const entry = computeCe(zHigh, zLow);
   if (entry === null) return null;
 
-  // SL beyond the sweep level
+  // SL selection priority:
+  // 1. Origin retest held → origin level (Breaker)
+  // 2. Sweep level provided → sweep
+  // 3. Shallow exception → pullback extreme (zone edge, thin)
+  // 4. Fallback → zone edge
   let sl;
-  if (bias === "bullish") {
-    sl = sweep !== null ? sweep : zLow;
+  if (originHeld && origin !== null) {
+    sl = origin;
+  } else if (sweep !== null) {
+    sl = sweep;
+  } else if (shallowException) {
+    sl = bias === "bullish" ? zLow : zHigh;
   } else {
-    sl = sweep !== null ? sweep : zHigh;
+    sl = bias === "bullish" ? zLow : zHigh;
+  }
+
+  // SL side sanity check — stop must be on the correct side of entry
+  const slValid =
+    (bias === "bullish" && sl < entry) ||
+    (bias === "bearish" && sl > entry);
+
+  if (!slValid) {
+    return {
+      direction: bias === "bullish" ? "BUY" : "SELL",
+      entry,
+      sl,
+      tp: dol,
+      rr: 0,
+      invalid: true,
+      invalidReason:
+        `Stop is on the wrong side of entry (${bias === "bullish" ? "SL must be below entry" : "SL must be above entry"}). ` +
+        `Check the sweep / origin level.`,
+    };
   }
 
   const risk = Math.abs(entry - sl);
@@ -349,6 +505,9 @@ export function computeSldTrade({
     pipSize: ps,
     slPips: ps > 0 ? Math.round(risk / ps) : null,
     tpPips: ps > 0 ? Math.round(reward / ps) : null,
+    invalid: false,
+    usedShallowException: shallowException,
+    usedOriginRetest: originHeld,
   };
 
   if (accountSize > 0 && risk > 0) {
@@ -364,7 +523,7 @@ export function computeSldTrade({
 }
 
 // ============================================================
-// LAYER 4 — TRADE MANAGEMENT
+// LAYER 4 — TRADE MANAGEMENT (unchanged)
 // ============================================================
 export function evaluateManagement({
   trade,
@@ -375,11 +534,11 @@ export function evaluateManagement({
   trailLevel,
   tradeStatus,
 }) {
-  if (!trade) {
+  if (!trade || trade.invalid) {
     return {
       ready: false,
       rules: [],
-      summary: "No trade to manage.",
+      summary: trade?.invalid ? "Trade invalid — fix SL." : "No trade to manage.",
     };
   }
 
@@ -391,21 +550,18 @@ export function evaluateManagement({
   const risk = entry !== null && sl !== null ? Math.abs(entry - sl) : 0;
   const direction = trade.direction;
 
-  // Current R
   let currentR = 0;
   if (current !== null && risk > 0) {
     const move = direction === "BUY" ? current - entry : entry - current;
     currentR = move / risk;
   }
 
-  // 2R price
   const twoRPrice = entry !== null
     ? direction === "BUY"
       ? entry + 2 * risk
       : entry - 2 * risk
     : null;
 
-  // Reached 2R?
   const reached2R = currentR >= 2;
 
   const rules = [
@@ -468,7 +624,7 @@ export function evaluateManagement({
 }
 
 // ============================================================
-// LAYER 5 — DOL UPDATES (Re-entry)
+// LAYER 5 — DOL UPDATES (unchanged)
 // ============================================================
 export function evaluateDolUpdate({
   tradeStatus,
@@ -505,6 +661,7 @@ export function evaluateSld({
   timeframe,
   // Layer 1
   d1Bias,
+  h4Bias = null,
   structureVerdict,
   chochDetected,
   quarterlyAligned,
@@ -520,6 +677,15 @@ export function evaluateSld({
   poiZone,
   dealingRange,
   pathClear,
+  // Update 2
+  shallowPullback = false,
+  shallowPullbackAnchor = null,
+  // Update 3
+  originRetest = false,
+  originWickReverse = false,
+  originLevel = null,
+  // Update 4
+  eqhEqlBetween = false,
   // Layer 3
   priceTapped,
   ltfChoch,
@@ -541,6 +707,7 @@ export function evaluateSld({
 }) {
   const layer1 = evaluateBias({
     d1Bias,
+    h4Bias,
     structureVerdict,
     chochDetected,
     quarterlyAligned,
@@ -563,6 +730,12 @@ export function evaluateSld({
     poiZone,
     dealingRange,
     pathClear,
+    shallowPullback,
+    shallowPullbackAnchor,
+    originRetest,
+    originWickReverse,
+    originLevel,
+    eqhEqlBetween,
   });
 
   const layer3 = evaluateTrigger({
@@ -571,7 +744,6 @@ export function evaluateSld({
     ltfFvgEntry,
   });
 
-  // Trade fires only when layers 1–3 all pass
   const preEntryReady =
     layer1.ready && dol.ready && layer2.ready && layer3.ready;
 
@@ -585,6 +757,9 @@ export function evaluateSld({
       pipSize,
       accountSize,
       riskPercent,
+      shallowException: layer2.shallowException,
+      originHeld: layer2.originHeld,
+      originLevel,
     });
   }
 
@@ -615,7 +790,7 @@ export function evaluateSld({
     reasons.push(`DOL — ${dol.detail}`);
   }
   if (!layer2.ready) {
-    layer2.gates.filter((g) => !g.pass).forEach((g) =>
+    layer2.gates.filter((g) => !g.pass && !g.bonus).forEach((g) =>
       reasons.push(`Layer 2 — ${g.label}: ${g.detail}`)
     );
   }
@@ -638,5 +813,8 @@ export function evaluateSld({
     trade,
     preEntryReady,
     reasons,
+    htfVeto: layer1.htfVeto,
+    shallowException: layer2.shallowException,
+    originHeld: layer2.originHeld,
   };
 }

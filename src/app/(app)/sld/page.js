@@ -8,6 +8,7 @@ import {
   DOL_RANK_OPTIONS,
   POI_ZONE_TYPES,
   SLD_SESSIONS,
+  SHALLOW_PULLBACK_ANCHORS,
   evaluateSld,
 } from "@/lib/sldEngine";
 import { computeCe } from "@/lib/liquidityZoneEngine";
@@ -51,10 +52,12 @@ export default function SldPage() {
     session: "london",
     // Layer 1
     d1Bias: "bullish",
+    h4Bias: "",                     // Update 1
     structureVerdict: "HH_HL",
     chochDetected: false,
     chochNote: "",
     quarterlyAligned: false,
+    counterTrendNote: "",           // Update 1
     // Dealing range
     rangeHigh: "",
     rangeLow: "",
@@ -65,6 +68,18 @@ export default function SldPage() {
     bosConfirmed: false,
     bosLevel: "",
     pathClear: true,
+    // Update 2 — Shallow Pullback
+    shallowPullback: false,
+    shallowPullbackAnchor: "",
+    shallowPullbackNote: "",
+    // Update 3 — Origin Retest
+    originLevel: "",
+    originRetest: false,
+    originWickReverse: false,
+    originNote: "",
+    // Update 4 — EQH/EQL Gravity
+    eqhEqlBetween: false,
+    eqhEqlNote: "",
     // Layer 3
     priceTapped: false,
     ltfChoch: false,
@@ -176,19 +191,29 @@ export default function SldPage() {
         sequenceType: setupData.sequence_type || f.sequenceType,
         session: setupData.session || f.session,
         d1Bias: setupData.d1_bias || f.d1Bias,
+        h4Bias: setupData.h4_bias || "",
         structureVerdict: setupData.structure_verdict || f.structureVerdict,
         chochDetected: setupData.choch_detected || false,
         chochNote: setupData.choch_note || "",
         quarterlyAligned: setupData.quarterly_aligned || false,
+        counterTrendNote: setupData.counter_trend_note || "",
         rangeHigh: setupData.range_high?.toString?.() || "",
         rangeLow: setupData.range_low?.toString?.() || "",
-        // FIXED: read from current_close (matches DB column)
         currentPrice: setupData.current_close?.toString?.() || "",
         sweepHappened: setupData.sweep_happened || false,
         sweepLevel: setupData.sweep_level?.toString?.() || "",
         bosConfirmed: setupData.bos_confirmed || false,
         bosLevel: setupData.bos_level?.toString?.() || "",
         pathClear: setupData.path_clear ?? true,
+        shallowPullback: setupData.shallow_pullback || false,
+        shallowPullbackAnchor: setupData.shallow_pullback_anchor || "",
+        shallowPullbackNote: setupData.shallow_pullback_note || "",
+        originLevel: setupData.origin_level?.toString?.() || "",
+        originRetest: setupData.origin_retest || false,
+        originWickReverse: setupData.origin_wick_reverse || false,
+        originNote: setupData.origin_note || "",
+        eqhEqlBetween: setupData.eqh_eql_between || false,
+        eqhEqlNote: setupData.eqh_eql_note || "",
         priceTapped: setupData.price_tapped_poi || false,
         ltfChoch: setupData.ltf_choch_confirmed || false,
         ltfFvgEntry: setupData.ltf_fvg_entry || false,
@@ -304,6 +329,7 @@ export default function SldPage() {
       pair: form.pair,
       timeframe: form.timeframe,
       d1Bias: form.d1Bias,
+      h4Bias: form.h4Bias || null,
       structureVerdict: form.structureVerdict,
       chochDetected: form.chochDetected,
       quarterlyAligned: form.quarterlyAligned,
@@ -320,6 +346,12 @@ export default function SldPage() {
         : null,
       dealingRange: { high: form.rangeHigh, low: form.rangeLow },
       pathClear: form.pathClear,
+      shallowPullback: form.shallowPullback,
+      shallowPullbackAnchor: form.shallowPullbackAnchor || null,
+      originRetest: form.originRetest,
+      originWickReverse: form.originWickReverse,
+      originLevel: form.originLevel,
+      eqhEqlBetween: form.eqhEqlBetween,
       priceTapped: form.priceTapped,
       ltfChoch: form.ltfChoch,
       ltfFvgEntry: form.ltfFvgEntry,
@@ -346,11 +378,25 @@ export default function SldPage() {
         detail: "Structure may be flipping. Confirm bias before entering.",
       });
     }
-    if (evaluation.trade && evaluation.trade.rr < 3) {
+    if (evaluation.htfVeto?.conflict) {
+      list.push({
+        key: "htf_veto",
+        label: "HTF Veto — 4H vs Daily conflict",
+        detail: evaluation.htfVeto.detail,
+      });
+    }
+    if (evaluation.trade && !evaluation.trade.invalid && evaluation.trade.rr < 3) {
       list.push({
         key: "weak_rr",
         label: "RR below 3:1",
         detail: `SLD requires RR ≥ 3:1. Current RR: 1:${evaluation.trade.rr.toFixed(2)}.`,
+      });
+    }
+    if (evaluation.trade?.invalid) {
+      list.push({
+        key: "invalid_sl",
+        label: "Invalid stop side",
+        detail: evaluation.trade.invalidReason,
       });
     }
     if (!form.pathClear) {
@@ -358,6 +404,20 @@ export default function SldPage() {
         key: "path_blocked",
         label: "Path to DOL blocked",
         detail: "An opposing PD array sits before the DOL. Price may stall there.",
+      });
+    }
+    if (form.eqhEqlBetween) {
+      list.push({
+        key: "eqh_magnet",
+        label: "EQH/EQL magnet between price and DOL",
+        detail: "Do not fade the equal highs/lows — they are a magnet. Expect a sweep before continuation.",
+      });
+    }
+    if (evaluation.shallowException) {
+      list.push({
+        key: "shallow_pullback",
+        label: "Shallow Pullback Exception active",
+        detail: "Entering in the wrong zone — SL must be razor-thin beyond the pullback extreme.",
       });
     }
     return list;
@@ -389,10 +449,13 @@ export default function SldPage() {
       session: form.session || null,
 
       d1_bias: form.d1Bias || null,
+      h4_bias: form.h4Bias || null,
       structure_verdict: form.structureVerdict || null,
       choch_detected: form.chochDetected,
       choch_note: form.chochNote || null,
       quarterly_aligned: form.quarterlyAligned,
+      counter_trend: !!evaluation.htfVeto?.conflict,
+      counter_trend_note: form.counterTrendNote || null,
       dol_type: activeDol?.type || null,
       dol_price: activeDol?.price ? parseFloat(activeDol.price) : null,
       dol_rank: activeDol?.rank || null,
@@ -414,6 +477,20 @@ export default function SldPage() {
         low: parseFloat(bosCandle.low) || null,
         close: parseFloat(bosCandle.close) || null,
       },
+
+      // Update 2
+      shallow_pullback: form.shallowPullback,
+      shallow_pullback_anchor: form.shallowPullbackAnchor || null,
+      shallow_pullback_note: form.shallowPullbackNote || null,
+      // Update 3
+      origin_level: form.originLevel ? parseFloat(form.originLevel) : null,
+      origin_retest: form.originRetest,
+      origin_wick_reverse: form.originWickReverse,
+      origin_note: form.originNote || null,
+      // Update 4
+      eqh_eql_between: form.eqhEqlBetween,
+      eqh_eql_note: form.eqhEqlNote || null,
+
       poi_zone_type: activePoi?.type || null,
       poi_zone_high: activePoi?.high ? parseFloat(activePoi.high) : null,
       poi_zone_low: activePoi?.low ? parseFloat(activePoi.low) : null,
@@ -435,10 +512,10 @@ export default function SldPage() {
         close: parseFloat(triggerCandle.close) || null,
       },
 
-      entry: trade?.entry ?? null,
-      sl: trade?.sl ?? null,
-      tp: trade?.tp ?? null,
-      rr: trade?.rr ?? null,
+      entry: trade && !trade.invalid ? trade.entry : null,
+      sl: trade && !trade.invalid ? trade.sl : null,
+      tp: trade && !trade.invalid ? trade.tp : null,
+      rr: trade && !trade.invalid ? trade.rr : null,
       lot_size: trade?.lotSize ?? null,
       risk_amount: trade?.riskAmount ?? null,
       pip_size: trade?.pipSize ?? (parseFloat(form.pipSize) || 1),
@@ -460,7 +537,6 @@ export default function SldPage() {
 
       range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
       range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
-      // FIXED: write to current_close (matches DB column)
       current_close: form.currentPrice ? parseFloat(form.currentPrice) : null,
 
       notes: form.notes,
@@ -574,8 +650,8 @@ export default function SldPage() {
       setError("Layers 1–3 must all pass before saving as final.");
       return;
     }
-    if (!evaluation.trade) {
-      setError("Trade could not be computed.");
+    if (!evaluation.trade || evaluation.trade.invalid) {
+      setError(evaluation.trade?.invalidReason || "Trade could not be computed.");
       return;
     }
     setSaving(true);
@@ -588,7 +664,6 @@ export default function SldPage() {
     setTimeout(() => router.push(`/sld/${row.id}`), 800);
   }
 
-  // Auto-save a draft before uploading screenshots so the FK target exists
   async function ensureSetupSaved() {
     if (existingSetupId) return existingSetupId;
     if (!hasAnyInput) {
@@ -609,7 +684,10 @@ export default function SldPage() {
   }
 
   const typeInfo = SLD_TYPES.find((t) => t.key === form.sequenceType);
-  const canSaveFinal = evaluation.preEntryReady && evaluation.trade;
+  const canSaveFinal =
+    evaluation.preEntryReady &&
+    evaluation.trade &&
+    !evaluation.trade.invalid;
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
@@ -708,6 +786,44 @@ export default function SldPage() {
               </select>
             </div>
             <div>
+              <label className="block text-xs mb-1 text-gray-400">
+                4H Bias <span className="text-blue-400">(HTF Veto)</span>
+              </label>
+              <select
+                value={form.h4Bias}
+                onChange={(e) => update("h4Bias", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              >
+                <option value="">— not set —</option>
+                <option value="bullish">🟢 Bullish</option>
+                <option value="bearish">🔴 Bearish</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </div>
+          </div>
+
+          {/* HTF Veto notice */}
+          {evaluation.htfVeto?.conflict && (
+            <div className="p-3 rounded-lg bg-red-950/40 border-2 border-red-700 space-y-2">
+              <p className="text-xs font-bold text-red-200">🚫 HTF Veto — 4H vs Daily conflict</p>
+              <p className="text-xs text-red-100">{evaluation.htfVeto.detail}</p>
+              <div>
+                <label className="block text-xs mb-1 text-red-300">
+                  Counter-trend note (exit plan)
+                </label>
+                <input
+                  type="text"
+                  value={form.counterTrendNote}
+                  onChange={(e) => update("counterTrendNote", e.target.value)}
+                  placeholder="Which liquidity pool will you exit at? Scaled risk?"
+                  className="w-full px-3 py-2 rounded-lg bg-black border border-red-800 text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block text-xs mb-1 text-gray-400">Structure</label>
               <select
                 value={form.structureVerdict}
@@ -775,11 +891,7 @@ export default function SldPage() {
                 {form.chochDetected && <span className="text-black text-xs font-bold">✓</span>}
               </div>
               <div className="flex-1">
-                <p
-                  className={`text-sm font-medium ${
-                    form.chochDetected ? "text-yellow-200" : "text-white"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${form.chochDetected ? "text-yellow-200" : "text-white"}`}>
                   CHoCH detected
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -789,7 +901,6 @@ export default function SldPage() {
             </div>
           </button>
 
-          {/* CHoCH note input */}
           {form.chochDetected && (
             <div>
               <label className="block text-xs mb-1 text-gray-400">CHoCH Note</label>
@@ -822,11 +933,7 @@ export default function SldPage() {
                 {form.quarterlyAligned && <span className="text-black text-xs font-bold">✓</span>}
               </div>
               <div className="flex-1">
-                <p
-                  className={`text-sm font-medium ${
-                    form.quarterlyAligned ? "text-green-200" : "text-white"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${form.quarterlyAligned ? "text-green-200" : "text-white"}`}>
                   Quarterly / HTF aligned (bonus)
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -939,11 +1046,7 @@ export default function SldPage() {
                 {form.sweepHappened && <span className="text-black text-xs font-bold">✓</span>}
               </div>
               <div className="flex-1">
-                <p
-                  className={`text-sm font-medium ${
-                    form.sweepHappened ? "text-purple-200" : "text-white"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${form.sweepHappened ? "text-purple-200" : "text-white"}`}>
                   Opposing liquidity swept
                 </p>
               </div>
@@ -983,11 +1086,7 @@ export default function SldPage() {
                 {form.bosConfirmed && <span className="text-black text-xs font-bold">✓</span>}
               </div>
               <div className="flex-1">
-                <p
-                  className={`text-sm font-medium ${
-                    form.bosConfirmed ? "text-purple-200" : "text-white"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${form.bosConfirmed ? "text-purple-200" : "text-white"}`}>
                   BOS confirmed in bias direction
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -1028,11 +1127,7 @@ export default function SldPage() {
                 {form.pathClear && <span className="text-black text-xs font-bold">✓</span>}
               </div>
               <div className="flex-1">
-                <p
-                  className={`text-sm font-medium ${
-                    form.pathClear ? "text-green-200" : "text-red-200"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${form.pathClear ? "text-green-200" : "text-red-200"}`}>
                   Path to DOL is clear
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -1041,6 +1136,186 @@ export default function SldPage() {
               </div>
             </div>
           </button>
+
+          {/* ---- Update 4: EQH/EQL magnet ---- */}
+          <button
+            type="button"
+            onClick={() => update("eqhEqlBetween", !form.eqhEqlBetween)}
+            className={`w-full text-left p-3 rounded-lg border transition ${
+              form.eqhEqlBetween
+                ? "bg-amber-900/40 border-amber-700"
+                : "bg-black border-gray-800"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center mt-0.5 ${
+                  form.eqhEqlBetween ? "bg-amber-500 border-amber-500" : "border-gray-600"
+                }`}
+              >
+                {form.eqhEqlBetween && <span className="text-black text-xs font-bold">✓</span>}
+              </div>
+              <div className="flex-1">
+                <p className={`text-sm font-medium ${form.eqhEqlBetween ? "text-amber-200" : "text-white"}`}>
+                  EQH / EQL between price and DOL (magnet)
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Do not fade it — target the sweep before continuation
+                </p>
+              </div>
+            </div>
+          </button>
+
+          {form.eqhEqlBetween && (
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">EQH/EQL Note</label>
+              <input
+                type="text"
+                value={form.eqhEqlNote}
+                onChange={(e) => update("eqhEqlNote", e.target.value)}
+                placeholder="Where is the magnet? (price level or description)"
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+          )}
+
+          {/* ---- Update 3: Origin Retest ---- */}
+          <div className="pt-2 border-t border-purple-800/40 space-y-2">
+            <p className="text-xs font-semibold text-gray-300">Origin Retest (Turtle Soup / Breaker)</p>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Origin Level (price that started the move)</label>
+              <input
+                type="number"
+                step="any"
+                value={form.originLevel}
+                onChange={(e) => update("originLevel", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => update("originRetest", !form.originRetest)}
+              className={`w-full text-left p-3 rounded-lg border transition ${
+                form.originRetest
+                  ? "bg-pink-900/40 border-pink-700"
+                  : "bg-black border-gray-800"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center mt-0.5 ${
+                    form.originRetest ? "bg-pink-500 border-pink-500" : "border-gray-600"
+                  }`}
+                >
+                  {form.originRetest && <span className="text-black text-xs font-bold">✓</span>}
+                </div>
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${form.originRetest ? "text-pink-200" : "text-white"}`}>
+                    Price has returned to the origin
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Break = trend dead · wick + reverse = A+ Breaker
+                  </p>
+                </div>
+              </div>
+            </button>
+            {form.originRetest && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => update("originWickReverse", !form.originWickReverse)}
+                  className={`w-full text-left p-3 rounded-lg border transition ${
+                    form.originWickReverse
+                      ? "bg-green-900/40 border-green-700"
+                      : "bg-black border-gray-800"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center mt-0.5 ${
+                        form.originWickReverse ? "bg-green-500 border-green-500" : "border-gray-600"
+                      }`}
+                    >
+                      {form.originWickReverse && <span className="text-black text-xs font-bold">✓</span>}
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-sm font-medium ${form.originWickReverse ? "text-green-200" : "text-white"}`}>
+                        Origin held — wicked and reversed (A+ Breaker)
+                      </p>
+                    </div>
+                  </div>
+                </button>
+                <div>
+                  <label className="block text-xs mb-1 text-gray-400">Origin Note</label>
+                  <input
+                    type="text"
+                    value={form.originNote}
+                    onChange={(e) => update("originNote", e.target.value)}
+                    placeholder="How clean was the wick? Confirmation on LTF?"
+                    className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ---- Update 2: Shallow Pullback ---- */}
+          <div className="pt-2 border-t border-purple-800/40 space-y-2">
+            <button
+              type="button"
+              onClick={() => update("shallowPullback", !form.shallowPullback)}
+              className={`w-full text-left p-3 rounded-lg border transition ${
+                form.shallowPullback
+                  ? "bg-fuchsia-900/40 border-fuchsia-700"
+                  : "bg-black border-gray-800"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center mt-0.5 ${
+                    form.shallowPullback ? "bg-fuchsia-500 border-fuchsia-500" : "border-gray-600"
+                  }`}
+                >
+                  {form.shallowPullback && <span className="text-black text-xs font-bold">✓</span>}
+                </div>
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${form.shallowPullback ? "text-fuchsia-200" : "text-white"}`}>
+                    Shallow Pullback Exception
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Aggressive trend — 50 EMA / FVG confluence in the wrong zone
+                  </p>
+                </div>
+              </div>
+            </button>
+            {form.shallowPullback && (
+              <>
+                <div>
+                  <label className="block text-xs mb-1 text-gray-400">Anchor</label>
+                  <select
+                    value={form.shallowPullbackAnchor}
+                    onChange={(e) => update("shallowPullbackAnchor", e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+                  >
+                    <option value="">— select anchor —</option>
+                    {SHALLOW_PULLBACK_ANCHORS.map((a) => (
+                      <option key={a.key} value={a.key}>{a.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs mb-1 text-gray-400">Shallow Pullback Note</label>
+                  <input
+                    type="text"
+                    value={form.shallowPullbackNote}
+                    onChange={(e) => update("shallowPullbackNote", e.target.value)}
+                    placeholder="Why is the trend aggressive enough to justify this?"
+                    className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </div>
 
           {/* POI ZONES */}
           <div className="space-y-2 pt-2 border-t border-purple-800/40">
@@ -1150,11 +1425,7 @@ export default function SldPage() {
                   {form[row.key] && <span className="text-black text-xs font-bold">✓</span>}
                 </div>
                 <div className="flex-1">
-                  <p
-                    className={`text-sm font-medium ${
-                      form[row.key] ? "text-emerald-200" : "text-white"
-                    }`}
-                  >
+                  <p className={`text-sm font-medium ${form[row.key] ? "text-emerald-200" : "text-white"}`}>
                     {row.label}
                   </p>
                 </div>
@@ -1207,11 +1478,7 @@ export default function SldPage() {
                   {form[row.key] && <span className="text-black text-xs font-bold">✓</span>}
                 </div>
                 <div className="flex-1">
-                  <p
-                    className={`text-sm font-medium ${
-                      form[row.key] ? "text-cyan-200" : "text-white"
-                    }`}
-                  >
+                  <p className={`text-sm font-medium ${form[row.key] ? "text-cyan-200" : "text-white"}`}>
                     {row.label}
                   </p>
                 </div>
@@ -1303,11 +1570,7 @@ export default function SldPage() {
                 {form.structureFlipped && <span className="text-black text-xs font-bold">✓</span>}
               </div>
               <div className="flex-1">
-                <p
-                  className={`text-sm font-medium ${
-                    form.structureFlipped ? "text-red-200" : "text-white"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${form.structureFlipped ? "text-red-200" : "text-white"}`}>
                   Structure flipped (no re-entry)
                 </p>
               </div>

@@ -35,20 +35,24 @@ function LayerPanel({ title, emoji, layer, accent = "blue", children }) {
             key={g.key || i}
             className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${
               g.pass
-                ? "bg-green-950/20 border border-green-800"
+                ? g.warning
+                  ? "bg-yellow-950/30 border border-yellow-800"
+                  : "bg-green-950/20 border border-green-800"
                 : g.bonus
                 ? "bg-gray-900/40 border border-gray-700"
                 : "bg-red-950/20 border border-red-800"
             }`}
           >
             <span className="text-sm leading-none mt-0.5">
-              {g.pass ? "✅" : g.bonus ? "⚪" : "❌"}
+              {g.pass ? (g.warning ? "⚠️" : "✅") : g.bonus ? "⚪" : "❌"}
             </span>
             <div className="flex-1 min-w-0">
               <p
                 className={`font-semibold ${
                   g.pass
-                    ? "text-green-200"
+                    ? g.warning
+                      ? "text-yellow-200"
+                      : "text-green-200"
                     : g.bonus
                     ? "text-gray-300"
                     : "text-red-200"
@@ -59,7 +63,9 @@ function LayerPanel({ title, emoji, layer, accent = "blue", children }) {
               <p
                 className={`mt-0.5 ${
                   g.pass
-                    ? "text-green-300/90"
+                    ? g.warning
+                      ? "text-yellow-300/90"
+                      : "text-green-300/90"
                     : g.bonus
                     ? "text-gray-400"
                     : "text-red-300/90"
@@ -112,6 +118,117 @@ function DolPanel({ dol, sequenceType }) {
           <span className="text-red-300">· ✗ direction mismatch</span>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// NEW — Update 1: HTF Veto banner
+// ============================================================
+function HtfVetoBanner({ htfVeto }) {
+  if (!htfVeto?.conflict) return null;
+
+  return (
+    <div className="p-3 rounded-lg bg-red-950/40 border-2 border-red-700 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🚫</span>
+        <p className="text-xs font-bold text-red-200 uppercase tracking-wider">
+          HTF Veto — 4H vs Daily conflict
+        </p>
+      </div>
+      <p className="text-xs text-red-100 leading-relaxed">{htfVeto.detail}</p>
+      <div className="pt-2 border-t border-red-800/60">
+        <p className="text-[10px] text-red-300 font-semibold uppercase tracking-wider">
+          If you take this trade
+        </p>
+        <p className="text-xs text-red-200 mt-0.5">
+          Treat it as a <strong>counter-trend scalp</strong>. Half-size or less.
+          Exit at the nearest liquidity pool. Do not hold for the full DOL.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// NEW — Update 2: Shallow Pullback banner
+// ============================================================
+function ShallowPullbackBanner({ shallowException, gates }) {
+  if (!shallowException) return null;
+  const zoneGate = gates?.find((g) => g.key === "zone");
+  const anchor = zoneGate?.detail?.match(/\(([^)]+)\)/)?.[1];
+
+  return (
+    <div className="p-3 rounded-lg bg-fuchsia-950/40 border-2 border-fuchsia-700 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">⚡</span>
+        <p className="text-xs font-bold text-fuchsia-200 uppercase tracking-wider">
+          Shallow Pullback Exception active
+        </p>
+      </div>
+      <p className="text-xs text-fuchsia-100 leading-relaxed">
+        POI is in the wrong zone (you are entering against the discount/premium
+        rule because the trend is aggressive). Anchor:{" "}
+        <strong>{anchor || "not specified"}</strong>.
+      </p>
+      <div className="pt-2 border-t border-fuchsia-800/60">
+        <p className="text-[10px] text-fuchsia-300 font-semibold uppercase tracking-wider">
+          Non-negotiable
+        </p>
+        <p className="text-xs text-fuchsia-200 mt-0.5">
+          Stop must be <strong>razor-thin</strong>, just beyond the pullback
+          extreme. If the pullback low/high breaks, the setup is dead. No
+          averaging down.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// NEW — Update 3: Origin Breaker banner
+// ============================================================
+function OriginBreakerBanner({ originHeld, gates }) {
+  if (!originHeld) return null;
+  const originGate = gates?.find((g) => g.key === "origin_retest");
+
+  return (
+    <div className="p-3 rounded-lg bg-pink-950/40 border-2 border-pink-600 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🔨</span>
+          <p className="text-xs font-bold text-pink-200 uppercase tracking-wider">
+            A+ Breaker — Origin held
+          </p>
+        </div>
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-800/60 text-pink-100 font-bold">
+          HIGHEST PROBABILITY
+        </span>
+      </div>
+      <p className="text-xs text-pink-100 leading-relaxed">
+        {originGate?.detail ||
+          "Price returned to the origin of the move and wicked + reversed. This is the highest-probability entry in the system."}
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// NEW — Update 4: EQH/EQL magnet banner
+// ============================================================
+function EqhEqlBanner({ gates }) {
+  const gate = gates?.find((g) => g.key === "eqh_eql_between");
+  if (!gate) return null;
+
+  return (
+    <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-700 space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-base">🧲</span>
+        <p className="text-xs font-bold text-amber-200 uppercase tracking-wider">
+          EQH/EQL magnet between price and DOL
+        </p>
+      </div>
+      <p className="text-xs text-amber-100 leading-relaxed">{gate.detail}</p>
     </div>
   );
 }
@@ -230,20 +347,69 @@ function WarningPanel({ warnings }) {
   );
 }
 
+// ============================================================
+// NEW — Invalid trade guard
+// ============================================================
+function InvalidTradePanel({ trade }) {
+  if (!trade?.invalid) return null;
+  return (
+    <div className="p-4 rounded-lg bg-red-950/50 border-2 border-red-600 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🚨</span>
+        <p className="text-xs font-bold text-red-200 uppercase tracking-wider">
+          Invalid trade — stop is on the wrong side
+        </p>
+      </div>
+      <p className="text-xs text-red-100 leading-relaxed">{trade.invalidReason}</p>
+      <p className="text-[10px] text-red-300/90 pt-2 border-t border-red-800/60">
+        Fix the sweep level, origin level, or POI zone before this trade can be saved.
+      </p>
+    </div>
+  );
+}
+
 export default function SldCard({ data, warnings, children }) {
   if (!data) return null;
 
-  const { sequenceType, layer1, dol, layer2, layer3, layer4, layer5, trade, preEntryReady, reasons } = data;
+  const {
+    sequenceType,
+    layer1,
+    dol,
+    layer2,
+    layer3,
+    layer4,
+    layer5,
+    trade,
+    preEntryReady,
+    reasons,
+    htfVeto,
+    shallowException,
+    originHeld,
+  } = data;
+
   const typeInfo = sldTypeInfo(sequenceType);
 
-  const verdict = preEntryReady && trade ? trade.direction : "WAIT";
+  // Verdict — WAIT if invalid trade
+  const verdict = trade?.invalid
+    ? "INVALID"
+    : preEntryReady && trade
+    ? trade.direction
+    : "WAIT";
+
   const verdictColor =
     verdict === "BUY"
       ? "bg-green-900/40 border-green-600 text-green-200"
       : verdict === "SELL"
       ? "bg-red-900/40 border-red-600 text-red-200"
+      : verdict === "INVALID"
+      ? "bg-red-950/60 border-red-500 text-red-100"
       : "bg-yellow-950/40 border-yellow-700 text-yellow-200";
-  const verdictEmoji = verdict === "BUY" ? "🟢" : verdict === "SELL" ? "🔴" : "⏳";
+
+  const verdictEmoji =
+    verdict === "BUY" ? "🟢" :
+    verdict === "SELL" ? "🔴" :
+    verdict === "INVALID" ? "🚨" :
+    "⏳";
 
   return (
     <div className="p-4 rounded-lg bg-gray-900 border-2 border-emerald-800 space-y-3">
@@ -253,13 +419,23 @@ export default function SldCard({ data, warnings, children }) {
             {typeInfo.emoji} SLD — {typeInfo.label}
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Structure → Liquidity → Delivery · 5-layer workflow
+            Structure → Liquidity → Delivery · Adaptive 5-layer workflow
           </p>
         </div>
         <span className={`text-xs px-3 py-1 rounded-full border-2 font-bold ${verdictColor}`}>
           {verdictEmoji} {verdict}
         </span>
       </div>
+
+      {/* Adaptive banners — top of card */}
+      <HtfVetoBanner htfVeto={htfVeto} />
+      <OriginBreakerBanner originHeld={originHeld} gates={layer2?.gates} />
+      <ShallowPullbackBanner
+        shallowException={shallowException}
+        gates={layer2?.gates}
+      />
+      <EqhEqlBanner gates={layer2?.gates} />
+      <InvalidTradePanel trade={trade} />
 
       <LayerPanel title="Layer 1 — Bias & DOL" emoji="🌍" layer={layer1} accent="blue">
         <DolPanel dol={dol} sequenceType={sequenceType} />
@@ -268,15 +444,28 @@ export default function SldCard({ data, warnings, children }) {
       <LayerPanel title="Layer 2 — POI (Entry Zone)" emoji="🎯" layer={layer2} accent="purple" />
       <LayerPanel title="Layer 3 — Entry Trigger" emoji="⚡" layer={layer3} accent="emerald" />
 
-      {trade && preEntryReady && (
+      {/* Entry Card — only when trade is valid */}
+      {trade && preEntryReady && !trade.invalid && (
         <div className="p-4 rounded-lg bg-emerald-950/30 border-2 border-emerald-700 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p className="text-xs font-bold text-emerald-200">💰 Entry Card</p>
-            <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-              trade.direction === "BUY" ? "bg-green-900/40 text-green-300" : "bg-red-900/40 text-red-300"
-            }`}>
-              {trade.direction}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {trade.usedShallowException && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-fuchsia-800/60 text-fuchsia-100 font-bold">
+                  ⚡ SHALLOW
+                </span>
+              )}
+              {trade.usedOriginRetest && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-800/60 text-pink-100 font-bold">
+                  🔨 BREAKER
+                </span>
+              )}
+              <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+                trade.direction === "BUY" ? "bg-green-900/40 text-green-300" : "bg-red-900/40 text-red-300"
+              }`}>
+                {trade.direction}
+              </span>
+            </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <div>
@@ -313,6 +502,12 @@ export default function SldCard({ data, warnings, children }) {
               <div>
                 <p className="text-xs text-gray-500">Lot size</p>
                 <p className="font-bold tabular-nums text-white">{trade.lotSize}</p>
+              </div>
+            )}
+            {trade.riskAmount !== undefined && (
+              <div>
+                <p className="text-xs text-gray-500">Risk</p>
+                <p className="font-bold tabular-nums text-white">${trade.riskAmount}</p>
               </div>
             )}
           </div>

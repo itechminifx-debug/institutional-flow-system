@@ -20,6 +20,8 @@ export default function SldDetailPage() {
   const [poiZones, setPoiZones] = useState([]);
   const [screenshots, setScreenshots] = useState([]);
   const [userId, setUserId] = useState(null);
+  const [accountSize, setAccountSize] = useState(0);
+  const [riskPercent, setRiskPercent] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -34,18 +36,45 @@ export default function SldDetailPage() {
     async function load() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setUserId(user.id);
+      if (user) {
+        setUserId(user.id);
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("account_size, risk_percent")
+          .eq("id", user.id)
+          .single();
+        if (prof) {
+          setAccountSize(prof.account_size || 0);
+          setRiskPercent(prof.risk_percent || 1);
+        }
+      }
 
-      const { data: setupData, error: setupErr } = await supabase.from("sld_setups").select("*").eq("id", id).maybeSingle();
+      const { data: setupData, error: setupErr } = await supabase
+        .from("sld_setups")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
       if (setupErr || !setupData) {
         setError(setupErr?.message || "SLD setup not found.");
         setLoading(false);
         return;
       }
 
-      const { data: dolData } = await supabase.from("sld_dol_levels").select("*").eq("setup_id", id).order("created_at");
-      const { data: poiData } = await supabase.from("sld_poi_zones").select("*").eq("setup_id", id).order("created_at");
-      const { data: shotsData } = await supabase.from("sld_screenshots").select("*").eq("setup_id", id).order("created_at");
+      const { data: dolData } = await supabase
+        .from("sld_dol_levels")
+        .select("*")
+        .eq("setup_id", id)
+        .order("created_at");
+      const { data: poiData } = await supabase
+        .from("sld_poi_zones")
+        .select("*")
+        .eq("setup_id", id)
+        .order("created_at");
+      const { data: shotsData } = await supabase
+        .from("sld_screenshots")
+        .select("*")
+        .eq("setup_id", id)
+        .order("created_at");
 
       setRow(setupData);
       setDolLevels((dolData || []).map((d) => ({
@@ -84,6 +113,7 @@ export default function SldDetailPage() {
       pair: row.pair,
       timeframe: row.timeframe,
       d1Bias: row.d1_bias,
+      h4Bias: row.h4_bias || null,
       structureVerdict: row.structure_verdict,
       chochDetected: row.choch_detected,
       quarterlyAligned: row.quarterly_aligned,
@@ -100,6 +130,12 @@ export default function SldDetailPage() {
         : null,
       dealingRange: { high: row.range_high, low: row.range_low },
       pathClear: row.path_clear,
+      shallowPullback: row.shallow_pullback || false,
+      shallowPullbackAnchor: row.shallow_pullback_anchor || null,
+      originRetest: row.origin_retest || false,
+      originWickReverse: row.origin_wick_reverse || false,
+      originLevel: row.origin_level,
+      eqhEqlBetween: row.eqh_eql_between || false,
       priceTapped: row.price_tapped_poi,
       ltfChoch: row.ltf_choch_confirmed,
       ltfFvgEntry: row.ltf_fvg_entry,
@@ -110,13 +146,13 @@ export default function SldDetailPage() {
       tradeStatus: row.trade_status,
       nextDol: row.next_dol,
       nextDolType: row.next_dol_type,
-      structureFlipped: false,
+      structureFlipped: row.structure_flipped || false,
       pipSize: row.pip_size || 1,
-      accountSize: 0,
-      riskPercent: 0,
+      accountSize,
+      riskPercent,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row, dolLevels, poiZones]);
+  }, [row, dolLevels, poiZones, accountSize, riskPercent]);
 
   const warnings = useMemo(() => {
     if (!row) return [];
@@ -124,11 +160,39 @@ export default function SldDetailPage() {
     if (row.choch_detected) {
       list.push({ key: "choch", label: "CHoCH detected", detail: "Structure may be flipping." });
     }
-    if (evaluation?.trade && evaluation.trade.rr < 3) {
+    if (evaluation?.htfVeto?.conflict) {
+      list.push({
+        key: "htf_veto",
+        label: "HTF Veto — 4H vs Daily conflict",
+        detail: evaluation.htfVeto.detail,
+      });
+    }
+    if (evaluation?.trade && !evaluation.trade.invalid && evaluation.trade.rr < 3) {
       list.push({
         key: "weak_rr",
         label: "RR below 3:1",
         detail: `Current RR: 1:${evaluation.trade.rr.toFixed(2)}.`,
+      });
+    }
+    if (evaluation?.trade?.invalid) {
+      list.push({
+        key: "invalid_sl",
+        label: "Invalid stop side",
+        detail: evaluation.trade.invalidReason,
+      });
+    }
+    if (row.eqh_eql_between) {
+      list.push({
+        key: "eqh_magnet",
+        label: "EQH/EQL magnet between price and DOL",
+        detail: "Do not fade equal highs/lows — expect a sweep before continuation.",
+      });
+    }
+    if (evaluation?.shallowException) {
+      list.push({
+        key: "shallow_pullback",
+        label: "Shallow Pullback Exception active",
+        detail: "Entering in the wrong zone — SL must be razor-thin.",
       });
     }
     return list;
@@ -172,6 +236,22 @@ export default function SldDetailPage() {
 
   const typeInfo = sldTypeInfo(row.sequence_type);
 
+  const adaptiveBadges = [];
+  if (row.counter_trend || evaluation?.htfVeto?.conflict) {
+    adaptiveBadges.push({ key: "htf", label: "🚫 HTF Veto", cls: "bg-red-900/40 border-red-700 text-red-200" });
+  }
+  if (row.shallow_pullback) {
+    adaptiveBadges.push({ key: "shallow", label: "⚡ Shallow", cls: "bg-fuchsia-900/40 border-fuchsia-700 text-fuchsia-200" });
+  }
+  if (row.origin_retest && row.origin_wick_reverse) {
+    adaptiveBadges.push({ key: "breaker", label: "🔨 A+ Breaker", cls: "bg-pink-900/40 border-pink-600 text-pink-200" });
+  } else if (row.origin_retest) {
+    adaptiveBadges.push({ key: "origin", label: "🔍 Origin Test", cls: "bg-pink-900/20 border-pink-800 text-pink-300" });
+  }
+  if (row.eqh_eql_between) {
+    adaptiveBadges.push({ key: "eqh", label: "🧲 EQH/EQL", cls: "bg-amber-900/40 border-amber-700 text-amber-200" });
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -197,6 +277,15 @@ export default function SldDetailPage() {
               {row.pair} · {row.timeframe} · {row.session || "—"}
             </p>
             <p className="text-xs text-gray-500 mt-1">Saved {new Date(row.created_at).toLocaleString()}</p>
+            {adaptiveBadges.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                {adaptiveBadges.map((b) => (
+                  <span key={b.key} className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${b.cls}`}>
+                    {b.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={() => router.push(`/sld?edit=${row.id}`)}
@@ -220,12 +309,12 @@ export default function SldDetailPage() {
           <div className="pt-3 border-t border-gray-800">
             <p className="text-xs font-semibold text-gray-400 mb-2">Add more</p>
             <ScreenshotUploader
-  setupId={row.id}
-  userId={userId}
-  screenshots={screenshots}
-  onChange={setScreenshots}
-  table="sld_screenshots"
-/>
+              setupId={row.id}
+              userId={userId}
+              screenshots={screenshots}
+              onChange={setScreenshots}
+              table="sld_screenshots"
+            />
           </div>
         </div>
 
@@ -242,6 +331,67 @@ export default function SldDetailPage() {
             {savingNotes ? "Saving..." : "💾 Save Notes"}
           </button>
         </div>
+
+        {(row.h4_bias || row.counter_trend_note || row.shallow_pullback_note || row.origin_note || row.eqh_eql_note) && (
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-300">🧠 Adaptive Rules</h2>
+
+            {row.h4_bias && (
+              <div className="p-2 rounded bg-black border border-gray-800 text-xs space-y-1">
+                <p className="font-bold text-blue-300">HTF Veto</p>
+                <p className="text-gray-400">
+                  Daily: <span className="text-white font-semibold">{row.d1_bias || "—"}</span>
+                  {" · "}
+                  4H: <span className="text-white font-semibold">{row.h4_bias}</span>
+                  {row.counter_trend && <span className="text-red-300 font-semibold"> · CONFLICT</span>}
+                </p>
+                {row.counter_trend_note && (
+                  <p className="text-gray-500 italic">&quot;{row.counter_trend_note}&quot;</p>
+                )}
+              </div>
+            )}
+
+            {row.shallow_pullback && (
+              <div className="p-2 rounded bg-black border border-gray-800 text-xs space-y-1">
+                <p className="font-bold text-fuchsia-300">Shallow Pullback Exception</p>
+                <p className="text-gray-400">
+                  Anchor: <span className="text-white font-semibold">{row.shallow_pullback_anchor || "—"}</span>
+                </p>
+                {row.shallow_pullback_note && (
+                  <p className="text-gray-500 italic">&quot;{row.shallow_pullback_note}&quot;</p>
+                )}
+              </div>
+            )}
+
+            {row.origin_retest && (
+              <div className="p-2 rounded bg-black border border-gray-800 text-xs space-y-1">
+                <p className="font-bold text-pink-300">Origin Retest</p>
+                <p className="text-gray-400">
+                  Origin: <span className="text-white font-semibold tabular-nums">{row.origin_level !== null ? formatPrice(row.origin_level) : "—"}</span>
+                  {" · "}
+                  {row.origin_wick_reverse ? (
+                    <span className="text-pink-300 font-semibold">HELD (A+ Breaker)</span>
+                  ) : (
+                    <span className="text-gray-500">Awaiting confirmation</span>
+                  )}
+                </p>
+                {row.origin_note && (
+                  <p className="text-gray-500 italic">&quot;{row.origin_note}&quot;</p>
+                )}
+              </div>
+            )}
+
+            {row.eqh_eql_between && (
+              <div className="p-2 rounded bg-black border border-gray-800 text-xs space-y-1">
+                <p className="font-bold text-amber-300">EQH/EQL Magnet</p>
+                <p className="text-gray-400">Equal highs/lows sit between price and DOL. Do not fade.</p>
+                {row.eqh_eql_note && (
+                  <p className="text-gray-500 italic">&quot;{row.eqh_eql_note}&quot;</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {dolLevels.length > 0 && (
           <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
