@@ -35,6 +35,14 @@ const GROUPS = [
     ],
   },
   {
+    title: "LQE System",
+    links: [
+      { href: "/lqe", label: "LQE Setup" },
+      { href: "/lqe/journal", label: "LQE Journal" },
+      { href: "/lqe/history", label: "LQE History" },
+    ],
+  },
+  {
     title: "Layers System",
     links: [
       { href: "/layers", label: "Layers Setup" },
@@ -162,9 +170,10 @@ export default function Sidebar() {
           {GROUPS.map((group) => {
             const isSldGroup = group.title === "SLD System";
             const isSmcGroup = group.title === "SMC System";
+            const isLqeGroup = group.title === "LQE System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
-            const isSystemGroup = isSldGroup || isSmcGroup || isLayersGroup || isAmdGroup;
+            const isSystemGroup = isSldGroup || isSmcGroup || isLqeGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
@@ -173,6 +182,8 @@ export default function Sidebar() {
                     isSldGroup
                       ? "text-emerald-400"
                       : isSmcGroup
+                      ? "text-orange-400"
+                      : isLqeGroup
                       ? "text-orange-400"
                       : isLayersGroup
                       ? "text-purple-400"
@@ -189,6 +200,8 @@ export default function Sidebar() {
                       ? isSldGroup
                         ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
                         : isSmcGroup
+                        ? "pl-2 border-l-2 border-orange-800/60 ml-2"
+                        : isLqeGroup
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"
                         : isLayersGroup
                         ? "pl-2 border-l-2 border-purple-800/60 ml-2"
