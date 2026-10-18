@@ -98,6 +98,14 @@ export default function LqeHistoryPage() {
                         <span className="text-sm font-bold">{r.pair}</span>
                         <span className="text-xs text-gray-500">· {r.timeframe}</span>
                         {r.daily_bias && <span className="text-xs text-gray-400">· {r.daily_bias === "bullish" ? "🟢" : "🔴"}</span>}
+                        
+                        {/* PATCH: Badges */}
+                        {!isDraft && r.mitigation_status === "mitigated_rejected" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-orange-900/40 border-orange-700 text-orange-200 font-bold">🔗 MIT</span>
+                        )}
+                        {!isDraft && r.target_class === "external" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-green-900/30 border-green-800 text-green-300 font-bold">ERL</span>
+                        )}
                       </div>
                       {!isDraft && (
                         <div className="grid grid-cols-3 gap-3 mt-2 text-xs">

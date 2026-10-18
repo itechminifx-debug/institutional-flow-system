@@ -40,6 +40,7 @@ const GROUPS = [
       { href: "/lqe", label: "LQE Setup" },
       { href: "/lqe/journal", label: "LQE Journal" },
       { href: "/lqe/history", label: "LQE History" },
+      { href: "/lqe/manual", label: "LQE Manual" },
     ],
   },
   {

@@ -1,6 +1,6 @@
 // ============================================================
-// LQE — LIQUIDITY ENGINE
-// Tracks the full ICT sequence: Context -> Sweep -> Structure -> Array -> Delivery.
+// LQE — LIQUIDITY ENGINE (FULL CONSOLIDATED)
+// Tracks: Context -> Sweep -> Structure -> Mitigation -> Array -> Delivery.
 // ============================================================
 
 import { computeCe } from "@/lib/liquidityZoneEngine";
@@ -154,7 +154,82 @@ export function evaluateStructure({ mssConfirmed, chochConfirmed, displacementPr
 }
 
 // ============================================================
-// STEP 4 & 5: PD ARRAY & ENTRY MATH
+// STEP 4: STACKED MITIGATION & ERL TARGET
+// ============================================================
+export function evaluateMitigation({
+  mitigationStatus,
+  parentArrayHigh,
+  parentArrayLow,
+  ltfChochConfirmed,
+  targetClass,
+}) {
+  const gates = [];
+
+  // Gate 1: HTF FVG must be identified if mitigation_status != 'unmitigated'
+  const hasParentArray =
+    mitigationStatus === "unmitigated" ||
+    (num(parentArrayHigh) !== null && num(parentArrayLow) !== null);
+
+  gates.push({
+    key: "parent_array",
+    label: "HTF mitigation zone identified",
+    pass: hasParentArray,
+    detail: hasParentArray
+      ? mitigationStatus === "unmitigated"
+        ? "No HTF FVG in play — standard setup."
+        : `Parent array ${parentArrayLow} – ${parentArrayHigh}`
+      : "Mitigation status set but no HTF FVG bounds provided.",
+  });
+
+  // Gate 2: If mitigated+rejected, LTF CHoCH is mandatory
+  const rejectionNeedsChoch =
+    mitigationStatus !== "mitigated_rejected" || !!ltfChochConfirmed;
+
+  gates.push({
+    key: "rejection_choch",
+    label: "Rejection confirmed by LTF CHoCH",
+    pass: rejectionNeedsChoch,
+    detail:
+      mitigationStatus === "mitigated_rejected" && !ltfChochConfirmed
+        ? "⚠️ Mitigated + rejected requires a confirmed 5M/1M CHoCH before entry."
+        : mitigationStatus === "mitigated_rejected"
+        ? "CHoCH confirmed. Entry valid."
+        : "Not in rejected state — N/A.",
+  });
+
+  // Gate 3: Target must be external (ERL)
+  gates.push({
+    key: "target_class",
+    label: "Target is External Range Liquidity (ERL)",
+    pass: targetClass !== "internal",
+    detail:
+      targetClass === "internal"
+        ? "⚠️ Targeting internal liquidity after a CHoCH is a trap. The engine targets ERL."
+        : "Target is external liquidity. Valid.",
+  });
+
+  // Gate 4: If mitigation FAILED, setup is dead
+  const notFailed = mitigationStatus !== "mitigated_failed";
+
+  gates.push({
+    key: "not_failed",
+    label: "Mitigation did not fail (no close through)",
+    pass: notFailed,
+    detail: notFailed
+      ? "Mitigation intact."
+      : "❌ HTF FVG was closed through — mitigation failed. Setup is dead.",
+  });
+
+  const passed = gates.filter((g) => g.pass).length;
+  return {
+    ready: passed === gates.length,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+  };
+}
+
+// ============================================================
+// STEP 5 & 6: PD ARRAY & ENTRY MATH
 // ============================================================
 export function computeLqeTrade({ dailyBias, pdArrayHigh, pdArrayLow, sweepLevel, targetPrice, accountSize = 0, riskPercent = 1 }) {
   const zHigh = num(pdArrayHigh);
@@ -180,7 +255,6 @@ export function computeLqeTrade({ dailyBias, pdArrayHigh, pdArrayLow, sweepLevel
   const rr = risk > 0 ? reward / risk : 0;
 
   // OTE (Optimal Trade Entry) - 70.5% retracement of the displacement leg
-  // For a long: sl + ((entry - sl) * 0.705)
   const oteEntry = dailyBias === "bullish" ? sl + ((entry - sl) * 0.705) : sl - ((entry - sl) * 0.705);
 
   const trade = {
@@ -210,13 +284,23 @@ export function evaluateLqe({
   mssConfirmed, chochConfirmed, displacementPresent, displacementAtrMultiple,
   pdArrayType, pdArrayHigh, pdArrayLow, isRejectionBlock,
   targetPrice, targetLiquidityType,
+  mitigationStatus = "unmitigated",
+  parentArrayHigh, parentArrayLow, parentArrayTimeframe,
+  targetClass = "external",
   accountSize = 0, riskPercent = 1
 }) {
   const context = evaluateContext({ dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice });
   const sweep = evaluateSweep({ dailyBias, sweepType, sweepLevel, sweepConfirmed, smtDivergence });
   const structure = evaluateStructure({ mssConfirmed, chochConfirmed, displacementPresent, displacementAtrMultiple });
-  
-  const isReady = context.ready && sweep.ready && structure.ready;
+  const mitigation = evaluateMitigation({
+    mitigationStatus,
+    parentArrayHigh,
+    parentArrayLow,
+    ltfChochConfirmed: chochConfirmed,
+    targetClass,
+  });
+
+  const isReady = context.ready && sweep.ready && structure.ready && mitigation.ready;
   let trade = null;
 
   if (isReady) {
@@ -227,9 +311,10 @@ export function evaluateLqe({
   if (!context.ready) context.gates.filter(g => !g.pass).forEach(g => reasons.push(`Context: ${g.label}`));
   if (!sweep.ready) sweep.gates.filter(g => !g.pass && !g.bonus).forEach(g => reasons.push(`Sweep: ${g.label}`));
   if (!structure.ready) structure.gates.filter(g => !g.pass).forEach(g => reasons.push(`Structure: ${g.label}`));
+  if (!mitigation.ready) mitigation.gates.filter(g => !g.pass).forEach(g => reasons.push(`Mitigation: ${g.label}`));
 
   return {
-    context, sweep, structure, trade,
+    context, sweep, structure, mitigation, trade,
     preEntryReady: isReady && trade && !trade.invalid,
     reasons,
   };

@@ -72,6 +72,18 @@ export default function LqeJournalPage() {
             <span className="text-sm font-bold">{r.pair}</span>
             <span className="text-xs text-gray-500">· {r.timeframe}</span>
             <span className="text-xs text-gray-400">· {r.daily_bias === "bullish" ? "🟢 Bull" : "🔴 Bear"}</span>
+            
+            {/* PATCH: Mitigation Badges */}
+            {!isDraft && r.mitigation_status === "mitigated_rejected" && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-orange-900/40 border-orange-700 text-orange-200 font-bold">🔗 MIT</span>
+            )}
+            {!isDraft && r.target_class === "external" && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-green-900/30 border-green-800 text-green-300 font-bold">ERL</span>
+            )}
+            {!isDraft && r.target_class === "internal" && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-red-900/30 border-red-800 text-red-300 font-bold">IRL</span>
+            )}
+            
             {!isDraft && <span className={`text-xs px-2 py-0.5 rounded-full border font-bold ${r.session === "london" || r.session === "ny_am" ? "bg-orange-900/40 border-orange-700 text-orange-200" : "bg-gray-800 border-gray-700 text-gray-400"}`}>{r.session?.toUpperCase()}</span>}
           </div>
           <button type="button" onClick={(e) => handleDelete(r.id, e)} disabled={deletingId === r.id} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50">{deletingId === r.id ? "..." : "✕"}</button>

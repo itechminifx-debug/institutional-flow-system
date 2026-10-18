@@ -81,6 +81,11 @@ export default function LqeDetailPage() {
       isRejectionBlock: row.is_rejection_block,
       targetPrice: row.target_price,
       targetLiquidityType: row.target_liquidity_type,
+      mitigationStatus: row.mitigation_status || "unmitigated",
+      parentArrayHigh: row.parent_array_high,
+      parentArrayLow: row.parent_array_low,
+      parentArrayTimeframe: row.parent_array_timeframe,
+      targetClass: row.target_class || "external",
       accountSize,
       riskPercent,
     });
@@ -113,6 +118,22 @@ export default function LqeDetailPage() {
     </main>
   );
 
+  // PATCH: Adaptive Badges
+  const badges = [];
+  if (row.mitigation_status === "mitigated_rejected") {
+    badges.push({ key: "mitigated", label: "🔗 Mitigated + Rejected", cls: "bg-orange-900/40 border-orange-700 text-orange-200" });
+  } else if (row.mitigation_status === "mitigated_failed") {
+    badges.push({ key: "failed", label: "❌ Mitigation Failed", cls: "bg-red-900/40 border-red-700 text-red-200" });
+  } else if (row.mitigation_status === "mitigating") {
+    badges.push({ key: "mitigating", label: "⏳ Mitigating", cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200" });
+  }
+  
+  if (row.target_class === "external") {
+    badges.push({ key: "erl", label: "🎯 Targeting ERL", cls: "bg-green-900/40 border-green-700 text-green-200" });
+  } else {
+    badges.push({ key: "irl", label: "⚠️ Targeting IRL (Trap)", cls: "bg-red-900/40 border-red-700 text-red-200" });
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -133,6 +154,15 @@ export default function LqeDetailPage() {
             <h1 className="text-2xl font-bold">⚙️ LQE Setup</h1>
             <p className="text-gray-400 text-sm">{row.pair} · {row.timeframe} · {row.session || "—"}</p>
             <p className="text-xs text-gray-500 mt-1">Saved {new Date(row.created_at).toLocaleString()}</p>
+            {badges.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                {badges.map((b) => (
+                  <span key={b.key} className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${b.cls}`}>
+                    {b.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={() => router.push(`/lqe?edit=${row.id}`)} className="text-xs px-3 py-2 rounded-lg bg-blue-900/40 text-blue-300 font-semibold">✏️ Edit</button>

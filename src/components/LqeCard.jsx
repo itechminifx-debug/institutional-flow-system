@@ -8,6 +8,7 @@ function SequencePanel({ title, emoji, step, accent = "blue", children }) {
     purple: "border-purple-800/60 bg-purple-950/20",
     emerald: "border-emerald-800/60 bg-emerald-950/20",
     orange: "border-orange-800/60 bg-orange-950/20",
+    red: "border-red-800/60 bg-red-950/20",
   };
   const cls = accentMap[accent] || accentMap.blue;
 
@@ -53,7 +54,7 @@ function SequencePanel({ title, emoji, step, accent = "blue", children }) {
 export default function LqeCard({ data, warnings }) {
   if (!data) return null;
 
-  const { context, sweep, structure, trade, preEntryReady, reasons } = data;
+  const { context, sweep, structure, mitigation, trade, preEntryReady, reasons } = data;
   const verdict = preEntryReady && trade ? trade.direction : "WAIT";
   const verdictColor = verdict === "BUY" ? "bg-green-900/40 border-green-600 text-green-200" : verdict === "SELL" ? "bg-red-900/40 border-red-600 text-red-200" : "bg-yellow-950/40 border-yellow-700 text-yellow-200";
   const verdictEmoji = verdict === "BUY" ? "🟢" : verdict === "SELL" ? "🔴" : "⏳";
@@ -63,7 +64,7 @@ export default function LqeCard({ data, warnings }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-sm font-bold text-orange-300">⚙️ Liquidity Engine (LQE)</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Sequence: Context → Sweep → Structure → Array → Delivery</p>
+          <p className="text-xs text-gray-500 mt-0.5">Sequence: Context → Sweep → Structure → Mitigation → Array → Delivery</p>
         </div>
         <span className={`text-xs px-3 py-1 rounded-full border-2 font-bold ${verdictColor}`}>
           {verdictEmoji} {verdict}
@@ -73,6 +74,11 @@ export default function LqeCard({ data, warnings }) {
       <SequencePanel title="Context & Time" emoji="🌍" step={context} accent="blue" />
       <SequencePanel title="Liquidity Sweep" emoji="💧" step={sweep} accent="purple" />
       <SequencePanel title="Structure Shift" emoji="⚡" step={structure} accent="emerald" />
+      
+      {/* Stacked Mitigation Panel (Only shows if gates exist beyond the default 1) */}
+      {mitigation && mitigation.gates.length > 1 && (
+        <SequencePanel title="Stacked Mitigation (HTF → LTF → ERL)" emoji="🔗" step={mitigation} accent="orange" />
+      )}
 
       {trade && preEntryReady && !trade.invalid && (
         <div className="p-4 rounded-lg bg-orange-950/30 border-2 border-orange-700 space-y-3">
