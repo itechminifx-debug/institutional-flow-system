@@ -3,11 +3,22 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { LQE_SESSIONS, SWEEP_TYPES, PD_ARRAY_TYPES, evaluateLqe } from "@/lib/lqeEngine";
+import { LQE_SESSIONS, SWEEP_TYPES, evaluateLqe } from "@/lib/lqeEngine";
 import PairPicker from "@/components/PairPicker";
 import LqeCard from "@/components/LqeCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+
+function emptyArray() {
+  return {
+    id: Math.random().toString(36).slice(2),
+    direction: "bullish",
+    high: "",
+    low: "",
+    date_formed: "",
+    is_mitigated: false,
+  };
+}
 
 function LqePageContent() {
   const router = useRouter();
@@ -21,43 +32,21 @@ function LqePageContent() {
     pair: "Volatility 80",
     timeframe: "M15",
     session: "london",
-    
-    // Context
     dailyBias: "bullish",
     rangeHigh: "",
     rangeLow: "",
     currentPrice: "",
-    
-    // Sweep
     sweepType: "ssl",
     sweepLevel: "",
     sweepConfirmed: false,
     smtDivergence: false,
     correlatedPair: "",
-    
-    // Structure
     mssConfirmed: false,
     chochConfirmed: false,
     displacementPresent: false,
-    displacementAtr: "",
-    
-    // Stacked Mitigation
-    mitigationStatus: "unmitigated",
-    parentArrayHigh: "",
-    parentArrayLow: "",
-    parentArrayTimeframe: "H1",
-    targetClass: "external",
-    
-    // Array
-    pdArrayType: "fvg",
-    pdArrayHigh: "",
-    pdArrayLow: "",
-    isRejectionBlock: false,
-    
-    // Delivery
+    arrays: [emptyArray()],
     targetLiquidityType: "eqh_eql",
     targetPrice: "",
-    
     notes: "",
   });
 
@@ -90,14 +79,11 @@ function LqePageContent() {
 
       setLoadingEdit(true);
       const { data: setupData, error: setupErr } = await supabase.from("lqe_setups").select("*").eq("id", editId).maybeSingle();
-      
-      if (setupErr || !setupData) {
-        setError(setupErr?.message || "LQE setup not found.");
-        setLoadingEdit(false);
-        return;
-      }
+      if (setupErr || !setupData) { setError(setupErr?.message || "LQE setup not found."); setLoadingEdit(false); return; }
 
+      const { data: arrayData } = await supabase.from("lqe_arrays").select("*").eq("setup_id", setupData.id).order("created_at");
       const { data: shotsData } = await supabase.from("lqe_screenshots").select("*").eq("setup_id", setupData.id).order("created_at");
+      
       setScreenshots(shotsData || []);
 
       setForm({
@@ -116,16 +102,14 @@ function LqePageContent() {
         mssConfirmed: setupData.mss_confirmed || false,
         chochConfirmed: setupData.choch_confirmed || false,
         displacementPresent: setupData.displacement_present || false,
-        displacementAtr: setupData.displacement_atr_multiple?.toString() || "",
-        mitigationStatus: setupData.mitigation_status || "unmitigated",
-        parentArrayHigh: setupData.parent_array_high?.toString() || "",
-        parentArrayLow: setupData.parent_array_low?.toString() || "",
-        parentArrayTimeframe: setupData.parent_array_timeframe || "H1",
-        targetClass: setupData.target_class || "external",
-        pdArrayType: setupData.pd_array_type || "fvg",
-        pdArrayHigh: setupData.pd_array_high?.toString() || "",
-        pdArrayLow: setupData.pd_array_low?.toString() || "",
-        isRejectionBlock: setupData.is_rejection_block || false,
+        arrays: arrayData && arrayData.length > 0 ? arrayData.map(a => ({
+          id: a.id,
+          direction: a.direction || "bullish",
+          high: a.high?.toString() || "",
+          low: a.low?.toString() || "",
+          date_formed: a.date_formed || "",
+          is_mitigated: a.is_mitigated || false,
+        })) : [emptyArray()],
         targetLiquidityType: setupData.target_liquidity_type || "eqh_eql",
         targetPrice: setupData.target_price?.toString() || "",
         notes: setupData.notes || "",
@@ -139,6 +123,24 @@ function LqePageContent() {
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  function updateArray(id, field, value) {
+    setForm((f) => ({
+      ...f,
+      arrays: f.arrays.map((a) => (a.id === id ? { ...a, [field]: value } : a)),
+    }));
+  }
+
+  function addArray() {
+    setForm((f) => ({ ...f, arrays: [...f.arrays, emptyArray()] }));
+  }
+
+  function removeArray(id) {
+    setForm((f) => ({
+      ...f,
+      arrays: f.arrays.filter((a) => a.id !== id),
+    }));
   }
 
   const evaluation = useMemo(() => {
@@ -155,18 +157,9 @@ function LqePageContent() {
       mssConfirmed: form.mssConfirmed,
       chochConfirmed: form.chochConfirmed,
       displacementPresent: form.displacementPresent,
-      displacementAtrMultiple: form.displacementAtr,
-      pdArrayType: form.pdArrayType,
-      pdArrayHigh: form.pdArrayHigh,
-      pdArrayLow: form.pdArrayLow,
-      isRejectionBlock: form.isRejectionBlock,
+      arrays: form.arrays,
       targetPrice: form.targetPrice,
       targetLiquidityType: form.targetLiquidityType,
-      mitigationStatus: form.mitigationStatus,
-      parentArrayHigh: form.parentArrayHigh,
-      parentArrayLow: form.parentArrayLow,
-      parentArrayTimeframe: form.parentArrayTimeframe,
-      targetClass: form.targetClass,
       accountSize,
       riskPercent,
     });
@@ -177,6 +170,8 @@ function LqePageContent() {
     if (!user) { setError("Not authenticated."); return null; }
 
     const trade = evaluation.trade;
+    
+    // 1. Save the parent setup
     const payload = {
       user_id: user.id,
       pair: form.pair,
@@ -188,8 +183,6 @@ function LqePageContent() {
       dealing_range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
       dealing_range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
       current_price: form.currentPrice ? parseFloat(form.currentPrice) : null,
-      premium_discount: evaluation.context.gates.find(g => g.key === "zone")?.pass ? (form.dailyBias === "bullish" ? "discount" : "premium") : "equilibrium",
-      draw_on_liquidity: form.targetLiquidityType,
       sweep_type: form.sweepType,
       sweep_level: form.sweepLevel ? parseFloat(form.sweepLevel) : null,
       sweep_confirmed: form.sweepConfirmed,
@@ -198,17 +191,6 @@ function LqePageContent() {
       mss_confirmed: form.mssConfirmed,
       choch_confirmed: form.chochConfirmed,
       displacement_present: form.displacementPresent,
-      displacement_atr_multiple: form.displacementAtr ? parseFloat(form.displacementAtr) : null,
-      mitigation_status: form.mitigationStatus,
-      parent_array_high: form.parentArrayHigh ? parseFloat(form.parentArrayHigh) : null,
-      parent_array_low: form.parentArrayLow ? parseFloat(form.parentArrayLow) : null,
-      parent_array_timeframe: form.parentArrayTimeframe,
-      parent_array_type: "fvg", // Hardcoded for now, can expand later
-      target_class: form.targetClass,
-      pd_array_type: form.pdArrayType,
-      pd_array_high: form.pdArrayHigh ? parseFloat(form.pdArrayHigh) : null,
-      pd_array_low: form.pdArrayLow ? parseFloat(form.pdArrayLow) : null,
-      is_rejection_block: form.isRejectionBlock,
       entry_price: trade && !trade.invalid ? trade.entry : null,
       ote_entry_level: trade && !trade.invalid ? trade.oteEntry : null,
       stop_loss: trade && !trade.invalid ? trade.sl : null,
@@ -223,11 +205,39 @@ function LqePageContent() {
       const { data, error: updErr } = await supabase.from("lqe_setups").update(payload).eq("id", existingSetupId).select().single();
       if (updErr) { setError(updErr.message); return null; }
       setupRow = data;
+      // Clear old arrays
+      await supabase.from("lqe_arrays").delete().eq("setup_id", existingSetupId);
     } else {
       const { data, error: insErr } = await supabase.from("lqe_setups").insert(payload).select().single();
       if (insErr) { setError(insErr.message); return null; }
       setupRow = data;
       setExistingSetupId(data.id);
+    }
+
+    // 2. Save the arrays (Ladder)
+    const cleanArrays = form.arrays
+      .map(a => ({
+        direction: a.direction,
+        high: parseFloat(a.high),
+        low: parseFloat(a.low),
+        date_formed: a.date_formed || null,
+        is_mitigated: a.is_mitigated || false,
+      }))
+      .filter(a => !isNaN(a.high) && !isNaN(a.low) && a.high > a.low);
+
+    if (cleanArrays.length > 0) {
+      const arrayRows = cleanArrays.map(a => ({
+        user_id: user.id,
+        setup_id: setupRow.id,
+        array_type: "fvg",
+        direction: a.direction,
+        high: a.high,
+        low: a.low,
+        date_formed: a.date_formed,
+        is_mitigated: a.is_mitigated,
+      }));
+      const { error: arrErr } = await supabase.from("lqe_arrays").insert(arrayRows);
+      if (arrErr) { setError(arrErr.message); return null; }
     }
 
     return setupRow;
@@ -270,7 +280,7 @@ function LqePageContent() {
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
           <h1 className="text-2xl font-bold">{isEdit ? "Edit LQE Setup" : "Liquidity Engine (LQE)"}</h1>
-          <p className="text-gray-400 text-sm">Context → Sweep → Structure → Mitigation → Array → Delivery</p>
+          <p className="text-gray-400 text-sm">Context → Sweep → Structure → Ladder → Delivery</p>
         </div>
 
         {/* Context Box */}
@@ -301,31 +311,22 @@ function LqePageContent() {
               </select>
             </div>
             <div>
-              <label className="block text-xs mb-1 text-gray-400">Session / Kill Zone</label>
+              <label className="block text-xs mb-1 text-gray-400">Session</label>
               <select value={form.session} onChange={(e) => update("session", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
                 {LQE_SESSIONS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Range High</label>
-              <input type="number" step="any" value={form.rangeHigh} onChange={(e) => update("rangeHigh", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Range Low</label>
-              <input type="number" step="any" value={form.rangeLow} onChange={(e) => update("rangeLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Current Price</label>
-              <input type="number" step="any" value={form.currentPrice} onChange={(e) => update("currentPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
+            <div><label className="block text-xs mb-1 text-gray-400">Range High</label><input type="number" step="any" value={form.rangeHigh} onChange={(e) => update("rangeHigh", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
+            <div><label className="block text-xs mb-1 text-gray-400">Range Low</label><input type="number" step="any" value={form.rangeLow} onChange={(e) => update("rangeLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
+            <div><label className="block text-xs mb-1 text-gray-400">Current Price</label><input type="number" step="any" value={form.currentPrice} onChange={(e) => update("currentPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
           </div>
         </div>
 
         {/* STEP 2: Sweep */}
         <div className="p-4 rounded-lg bg-gray-900 border border-purple-800/60 space-y-3">
-          <h2 className="text-sm font-semibold text-purple-300">💧 Step 2 — Liquidity Sweep (AMD)</h2>
+          <h2 className="text-sm font-semibold text-purple-300">💧 Step 2 — Liquidity Sweep</h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">Sweep Type</label>
@@ -333,25 +334,18 @@ function LqePageContent() {
                 {SWEEP_TYPES.map((s) => <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Sweep Level</label>
-              <input type="number" step="any" value={form.sweepLevel} onChange={(e) => update("sweepLevel", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
+            <div><label className="block text-xs mb-1 text-gray-400">Sweep Level</label><input type="number" step="any" value={form.sweepLevel} onChange={(e) => update("sweepLevel", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => update("sweepConfirmed", !form.sweepConfirmed)} className={`text-left p-3 rounded-lg border transition ${form.sweepConfirmed ? "bg-purple-900/40 border-purple-700" : "bg-black border-gray-800"}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.sweepConfirmed ? "bg-purple-500 border-purple-500" : "border-gray-600"}`}>
-                  {form.sweepConfirmed && <span className="text-black text-xs font-bold">✓</span>}
-                </div>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.sweepConfirmed ? "bg-purple-500 border-purple-500" : "border-gray-600"}`}>{form.sweepConfirmed && <span className="text-black text-xs font-bold">✓</span>}</div>
                 <p className={`text-sm font-medium ${form.sweepConfirmed ? "text-purple-200" : "text-white"}`}>Sweep Confirmed</p>
               </div>
             </button>
             <button type="button" onClick={() => update("smtDivergence", !form.smtDivergence)} className={`text-left p-3 rounded-lg border transition ${form.smtDivergence ? "bg-purple-900/40 border-purple-700" : "bg-black border-gray-800"}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.smtDivergence ? "bg-purple-500 border-purple-500" : "border-gray-600"}`}>
-                  {form.smtDivergence && <span className="text-black text-xs font-bold">✓</span>}
-                </div>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.smtDivergence ? "bg-purple-500 border-purple-500" : "border-gray-600"}`}>{form.smtDivergence && <span className="text-black text-xs font-bold">✓</span>}</div>
                 <p className={`text-sm font-medium ${form.smtDivergence ? "text-purple-200" : "text-white"}`}>SMT Divergence</p>
               </div>
             </button>
@@ -364,106 +358,70 @@ function LqePageContent() {
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => update("mssConfirmed", !form.mssConfirmed)} className={`text-left p-3 rounded-lg border transition ${form.mssConfirmed ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.mssConfirmed ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>
-                  {form.mssConfirmed && <span className="text-black text-xs font-bold">✓</span>}
-                </div>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.mssConfirmed ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>{form.mssConfirmed && <span className="text-black text-xs font-bold">✓</span>}</div>
                 <p className={`text-sm font-medium ${form.mssConfirmed ? "text-emerald-200" : "text-white"}`}>MSS Confirmed</p>
               </div>
             </button>
             <button type="button" onClick={() => update("chochConfirmed", !form.chochConfirmed)} className={`text-left p-3 rounded-lg border transition ${form.chochConfirmed ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.chochConfirmed ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>
-                  {form.chochConfirmed && <span className="text-black text-xs font-bold">✓</span>}
-                </div>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.chochConfirmed ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>{form.chochConfirmed && <span className="text-black text-xs font-bold">✓</span>}</div>
                 <p className={`text-sm font-medium ${form.chochConfirmed ? "text-emerald-200" : "text-white"}`}>LTF CHoCH Confirmed</p>
               </div>
             </button>
           </div>
           <button type="button" onClick={() => update("displacementPresent", !form.displacementPresent)} className={`w-full text-left p-3 rounded-lg border transition ${form.displacementPresent ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"}`}>
             <div className="flex items-center gap-3">
-              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.displacementPresent ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>
-                {form.displacementPresent && <span className="text-black text-xs font-bold">✓</span>}
-              </div>
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.displacementPresent ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>{form.displacementPresent && <span className="text-black text-xs font-bold">✓</span>}</div>
               <p className={`text-sm font-medium ${form.displacementPresent ? "text-emerald-200" : "text-white"}`}>Displacement Present</p>
             </div>
           </button>
         </div>
 
-        {/* PATCH: Stacked Mitigation */}
-        <div className="p-4 rounded-lg bg-gray-900 border border-orange-800/60 space-y-3">
-          <h2 className="text-sm font-semibold text-orange-300">
-            🔗 Stacked Mitigation <span className="text-xs text-gray-500">(HTF FVG → LTF CHoCH → ERL)</span>
-          </h2>
-          <div>
-            <label className="block text-xs mb-1 text-gray-400">HTF Mitigation Status</label>
-            <select value={form.mitigationStatus} onChange={(e) => update("mitigationStatus", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
-              <option value="unmitigated">Unmitigated — No HTF FVG in play</option>
-              <option value="mitigating">Mitigating — Price is inside HTF FVG</option>
-              <option value="mitigated_rejected">Mitigated + Rejected — Awaiting LTF CHoCH</option>
-              <option value="mitigated_failed">Mitigated + Failed — Closed through (dead)</option>
-            </select>
-          </div>
-          {form.mitigationStatus !== "unmitigated" && (
-            <div className="grid grid-cols-3 gap-3 pt-2 border-t border-orange-800/40">
-              <div>
-                <label className="block text-xs mb-1 text-gray-400">Parent FVG Low</label>
-                <input type="number" step="any" value={form.parentArrayLow} onChange={(e) => update("parentArrayLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs mb-1 text-gray-400">Parent FVG High</label>
-                <input type="number" step="any" value={form.parentArrayHigh} onChange={(e) => update("parentArrayHigh", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs mb-1 text-gray-400">Parent TF</label>
-                <select value={form.parentArrayTimeframe} onChange={(e) => update("parentArrayTimeframe", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
-                  <option value="H4">H4</option>
-                  <option value="H1">H1</option>
-                  <option value="M15">M15</option>
-                </select>
-              </div>
-            </div>
-          )}
-          <div className="pt-2 border-t border-orange-800/40">
-            <label className="block text-xs mb-1 text-gray-400">Target Class</label>
-            <select value={form.targetClass} onChange={(e) => update("targetClass", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
-              <option value="external">External (ERL) — Valid target</option>
-              <option value="internal">Internal (IRL) — Trap warning</option>
-            </select>
-            {form.targetClass === "internal" && (
-              <p className="text-xs text-red-300 mt-2">⚠️ Targeting internal liquidity after a CHoCH traps you in the middle of the range. Target ERL instead.</p>
-            )}
-          </div>
-        </div>
-
-        {/* STEP 4 & 5: Array & Entry */}
+        {/* PATCH: PD Array Matrix (Ladder) */}
         <div className="p-4 rounded-lg bg-gray-900 border border-yellow-800/60 space-y-3">
-          <h2 className="text-sm font-semibold text-yellow-300">🧱 Step 4 & 5 — PD Array & Entry</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Array Type</label>
-              <select value={form.pdArrayType} onChange={(e) => update("pdArrayType", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
-                {PD_ARRAY_TYPES.map((p) => <option key={p.key} value={p.key}>{p.emoji} {p.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Array Low</label>
-              <input type="number" step="any" value={form.pdArrayLow} onChange={(e) => update("pdArrayLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Array High</label>
-              <input type="number" step="any" value={form.pdArrayHigh} onChange={(e) => update("pdArrayHigh", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="text-sm font-semibold text-yellow-300">🪜 Step 4 — PD Array Matrix (Ladder)</h2>
+            <button type="button" onClick={addArray} className="text-xs px-2 py-1 rounded bg-yellow-900/40 text-yellow-300 hover:bg-yellow-800/40">+ Add FVG</button>
           </div>
+          
+          {form.arrays.map((a, i) => (
+            <div key={a.id} className="p-3 rounded-lg border border-gray-800 bg-black space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-gray-400">FVG #{i + 1}</p>
+                {form.arrays.length > 1 && (
+                  <button type="button" onClick={() => removeArray(a.id)} className="text-red-400 text-xs">✕ Remove</button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-[10px] mb-0.5 text-gray-500">Direction</label>
+                  <select value={a.direction} onChange={(e) => updateArray(a.id, "direction", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs">
+                    <option value="bullish">🟢 Bullish</option>
+                    <option value="bearish">🔴 Bearish</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] mb-0.5 text-gray-500">Low</label>
+                  <input type="number" step="any" value={a.low} onChange={(e) => updateArray(a.id, "low", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[10px] mb-0.5 text-gray-500">High</label>
+                  <input type="number" step="any" value={a.high} onChange={(e) => updateArray(a.id, "high", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[10px] mb-0.5 text-gray-500">Date Formed</label>
+                  <input type="date" value={a.date_formed} onChange={(e) => updateArray(a.id, "date_formed", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs text-white" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* STEP 6: Delivery */}
+        {/* STEP 5 & 6: Delivery */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-700/60 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-300">🎯 Step 6 — Delivery (Target)</h2>
+          <h2 className="text-sm font-semibold text-gray-300">🎯 Step 5 & 6 — Delivery (Target)</h2>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Target DOL Price</label>
-              <input type="number" step="any" value={form.targetPrice} onChange={(e) => update("targetPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
+            <div><label className="block text-xs mb-1 text-gray-400">Target DOL Price</label><input type="number" step="any" value={form.targetPrice} onChange={(e) => update("targetPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
             <div>
               <label className="block text-xs mb-1 text-gray-400">Target Type</label>
               <select value={form.targetLiquidityType} onChange={(e) => update("targetLiquidityType", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
