@@ -194,12 +194,22 @@ function LqePageContent() {
 
     let setupRow;
     if (isEdit && existingSetupId) {
-      const { data, error: updErr } = await supabase.from("lqe_setups").update(payload).eq("id", existingSetupId).select().single();
+      // PATCH: explicitly bump updated_at on every save
+      const { data, error: updErr } = await supabase
+        .from("lqe_setups")
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq("id", existingSetupId)
+        .select()
+        .single();
       if (updErr) { setError(updErr.message); return null; }
       setupRow = data;
       await supabase.from("lqe_arrays").delete().eq("setup_id", existingSetupId);
     } else {
-      const { data, error: insErr } = await supabase.from("lqe_setups").insert(payload).select().single();
+      const { data, error: insErr } = await supabase
+        .from("lqe_setups")
+        .insert(payload)
+        .select()
+        .single();
       if (insErr) { setError(insErr.message); return null; }
       setupRow = data;
       setExistingSetupId(data.id);

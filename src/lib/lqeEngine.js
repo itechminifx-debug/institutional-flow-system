@@ -1,6 +1,5 @@
 // ============================================================
 // LQE — LIQUIDITY ENGINE (FULL + FLIP STATE)
-// Tracks: Context → Sweep → Structure → Ladder → Delivery.
 // ============================================================
 
 import { computeCe } from "@/lib/liquidityZoneEngine";

@@ -28,13 +28,12 @@ export default function LqeJournalPage() {
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState(null);
 
-  // PATCH: Reusable loader so we can force-refresh
   const loadRows = useCallback(async () => {
     setLoading(true);
     const { data, error: loadErr } = await supabase
       .from("lqe_setups")
       .select("*")
-      .order("updated_at", { ascending: false }); // sort by updated_at so latest edits float up
+      .order("updated_at", { ascending: false });
     if (loadErr) {
       setError(loadErr.message);
       setLoading(false);
@@ -48,11 +47,8 @@ export default function LqeJournalPage() {
     loadRows();
   }, [loadRows]);
 
-  // PATCH: Refresh when page regains focus (user navigates back from edit)
   useEffect(() => {
-    const handleFocus = () => {
-      loadRows();
-    };
+    const handleFocus = () => { loadRows(); };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [loadRows]);

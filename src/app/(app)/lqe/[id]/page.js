@@ -16,7 +16,7 @@ export default function LqeDetailPage() {
   const id = params?.id;
 
   const [row, setRow] = useState(null);
-  const [arrays, setArrays] = useState([]); // PATCH: Store arrays
+  const [arrays, setArrays] = useState([]);
   const [screenshots, setScreenshots] = useState([]);
   const [userId, setUserId] = useState(null);
   const [accountSize, setAccountSize] = useState(0);
@@ -51,12 +51,11 @@ export default function LqeDetailPage() {
         return;
       }
 
-      // PATCH: Fetch the arrays (Ladder) from the DB
       const { data: arrayData } = await supabase.from("lqe_arrays").select("*").eq("setup_id", id).order("created_at");
       const { data: shotsData } = await supabase.from("lqe_screenshots").select("*").eq("setup_id", id).order("created_at");
 
       setRow(setupData);
-      setArrays(arrayData || []); // PATCH: Set arrays
+      setArrays(arrayData || []);
       setScreenshots(shotsData || []);
       setNotesDraft(setupData.notes || "");
       setLoading(false);
@@ -66,15 +65,19 @@ export default function LqeDetailPage() {
 
   const evaluation = useMemo(() => {
     if (!row) return null;
-    
-    // PATCH: Map DB arrays to engine format
+
     const mappedArrays = arrays.map(a => ({
       id: a.id,
+      array_type: a.array_type || "fvg",
       direction: a.direction || "bullish",
       high: a.high,
       low: a.low,
       date_formed: a.date_formed,
       is_mitigated: a.is_mitigated,
+      flip_state: a.flip_state || "intact",
+      flip_date: a.flip_date,
+      flip_price: a.flip_price,
+      note: a.note,
     }));
 
     return evaluateLqe({
@@ -90,7 +93,7 @@ export default function LqeDetailPage() {
       mssConfirmed: row.mss_confirmed,
       chochConfirmed: row.choch_confirmed,
       displacementPresent: row.displacement_present,
-      arrays: mappedArrays, // PATCH: Pass arrays to engine
+      arrays: mappedArrays,
       targetPrice: row.target_price,
       targetLiquidityType: row.target_liquidity_type,
       accountSize,
@@ -100,7 +103,7 @@ export default function LqeDetailPage() {
 
   async function handleSaveNotes() {
     setSavingNotes(true); setNotesSaved(false); setError("");
-    const { error: updErr } = await supabase.from("lqe_setups").update({ notes: notesDraft }).eq("id", id);
+    const { error: updErr } = await supabase.from("lqe_setups").update({ notes: notesDraft, updated_at: new Date().toISOString() }).eq("id", id);
     if (updErr) { setError(updErr.message); setSavingNotes(false); return; }
     setRow((prev) => (prev ? { ...prev, notes: notesDraft } : prev));
     setSavingNotes(false); setNotesSaved(true);
