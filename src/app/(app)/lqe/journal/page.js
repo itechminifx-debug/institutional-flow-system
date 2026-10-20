@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
@@ -28,16 +28,34 @@ export default function LqeJournalPage() {
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState(null);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const { data, error: loadErr } = await supabase.from("lqe_setups").select("*").order("created_at", { ascending: false });
-      if (loadErr) { setError(loadErr.message); setLoading(false); return; }
-      setRows(data || []);
+  // PATCH: Reusable loader so we can force-refresh
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    const { data, error: loadErr } = await supabase
+      .from("lqe_setups")
+      .select("*")
+      .order("updated_at", { ascending: false }); // sort by updated_at so latest edits float up
+    if (loadErr) {
+      setError(loadErr.message);
       setLoading(false);
+      return;
     }
-    load();
+    setRows(data || []);
+    setLoading(false);
   }, [supabase]);
+
+  useEffect(() => {
+    loadRows();
+  }, [loadRows]);
+
+  // PATCH: Refresh when page regains focus (user navigates back from edit)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadRows();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadRows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -50,8 +68,14 @@ export default function LqeJournalPage() {
     });
   }, [rows, search]);
 
-  const drafts = useMemo(() => filtered.filter((r) => r.status === "draft"), [filtered]);
-  const complete = useMemo(() => filtered.filter((r) => r.status !== "draft"), [filtered]);
+  const drafts = useMemo(
+    () => filtered.filter((r) => r.status === "draft").sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)),
+    [filtered]
+  );
+  const complete = useMemo(
+    () => filtered.filter((r) => r.status !== "draft").sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+    [filtered]
+  );
 
   async function handleDelete(id, e) {
     e.stopPropagation();
@@ -72,18 +96,6 @@ export default function LqeJournalPage() {
             <span className="text-sm font-bold">{r.pair}</span>
             <span className="text-xs text-gray-500">· {r.timeframe}</span>
             <span className="text-xs text-gray-400">· {r.daily_bias === "bullish" ? "🟢 Bull" : "🔴 Bear"}</span>
-            
-            {/* PATCH: Mitigation Badges */}
-            {!isDraft && r.mitigation_status === "mitigated_rejected" && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-orange-900/40 border-orange-700 text-orange-200 font-bold">🔗 MIT</span>
-            )}
-            {!isDraft && r.target_class === "external" && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-green-900/30 border-green-800 text-green-300 font-bold">ERL</span>
-            )}
-            {!isDraft && r.target_class === "internal" && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-red-900/30 border-red-800 text-red-300 font-bold">IRL</span>
-            )}
-            
             {!isDraft && <span className={`text-xs px-2 py-0.5 rounded-full border font-bold ${r.session === "london" || r.session === "ny_am" ? "bg-orange-900/40 border-orange-700 text-orange-200" : "bg-gray-800 border-gray-700 text-gray-400"}`}>{r.session?.toUpperCase()}</span>}
           </div>
           <button type="button" onClick={(e) => handleDelete(r.id, e)} disabled={deletingId === r.id} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50">{deletingId === r.id ? "..." : "✕"}</button>
@@ -109,9 +121,12 @@ export default function LqeJournalPage() {
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold">📓 LQE Journal</h1>
-            <p className="text-gray-400 text-sm">All Liquidity Engine setups — Sweep, Structure, Array, Delivery.</p>
+            <p className="text-gray-400 text-sm">All Liquidity Engine setups — Sweep, Structure, Ladder, Delivery.</p>
           </div>
-          <button type="button" onClick={() => router.push("/lqe")} className="text-xs px-3 py-2 rounded-lg bg-orange-900/40 text-orange-300 font-semibold">+ New LQE</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={loadRows} className="text-xs px-3 py-2 rounded-lg bg-gray-800 text-gray-300 font-semibold">🔄 Refresh</button>
+            <button type="button" onClick={() => router.push("/lqe")} className="text-xs px-3 py-2 rounded-lg bg-orange-900/40 text-orange-300 font-semibold">+ New LQE</button>
+          </div>
         </div>
 
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">

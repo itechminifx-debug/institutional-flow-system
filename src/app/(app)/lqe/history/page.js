@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { formatPrice } from "@/lib/formatNumbers";
@@ -41,16 +41,26 @@ export default function LqeHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const { data, error: loadErr } = await supabase.from("lqe_setups").select("*").order("created_at", { ascending: false });
-      if (loadErr) { setError(loadErr.message); setLoading(false); return; }
-      setRows(data || []);
-      setLoading(false);
-    }
-    load();
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    const { data, error: loadErr } = await supabase
+      .from("lqe_setups")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    if (loadErr) { setError(loadErr.message); setLoading(false); return; }
+    setRows(data || []);
+    setLoading(false);
   }, [supabase]);
+
+  useEffect(() => {
+    loadRows();
+  }, [loadRows]);
+
+  useEffect(() => {
+    const handleFocus = () => { loadRows(); };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadRows]);
 
   const groups = useMemo(() => groupRowsByDay(rows), [rows]);
 
@@ -63,8 +73,9 @@ export default function LqeHistoryPage() {
             <p className="text-gray-400 text-sm">Every LQE setup, grouped by day.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button type="button" onClick={() => router.push("/lqe/journal")} className="text-xs px-3 py-2 rounded-lg bg-purple-900/40 text-purple-300 font-semibold">📓 Open Journal</button>
-            <button type="button" onClick={() => router.push("/lqe")} className="text-xs px-3 py-2 rounded-lg bg-orange-900/40 text-orange-300 font-semibold">+ New LQE</button>
+            <button type="button" onClick={loadRows} className="text-xs px-3 py-2 rounded-lg bg-gray-800 text-gray-300 font-semibold">🔄 Refresh</button>
+            <button type="button" onClick={() => router.push("/lqe/journal")} className="text-xs px-3 py-2 rounded-lg bg-purple-900/40 text-purple-300 font-semibold">📓 Journal</button>
+            <button type="button" onClick={() => router.push("/lqe")} className="text-xs px-3 py-2 rounded-lg bg-orange-900/40 text-orange-300 font-semibold">+ New</button>
           </div>
         </div>
 
@@ -98,14 +109,6 @@ export default function LqeHistoryPage() {
                         <span className="text-sm font-bold">{r.pair}</span>
                         <span className="text-xs text-gray-500">· {r.timeframe}</span>
                         {r.daily_bias && <span className="text-xs text-gray-400">· {r.daily_bias === "bullish" ? "🟢" : "🔴"}</span>}
-                        
-                        {/* PATCH: Badges */}
-                        {!isDraft && r.mitigation_status === "mitigated_rejected" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-orange-900/40 border-orange-700 text-orange-200 font-bold">🔗 MIT</span>
-                        )}
-                        {!isDraft && r.target_class === "external" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-green-900/30 border-green-800 text-green-300 font-bold">ERL</span>
-                        )}
                       </div>
                       {!isDraft && (
                         <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
