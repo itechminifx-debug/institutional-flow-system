@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { LQE_SESSIONS, SWEEP_TYPES, evaluateLqe } from "@/lib/lqeEngine";
+import { LQE_SESSIONS, SWEEP_TYPES, PD_ARRAY_TYPES, evaluateLqe } from "@/lib/lqeEngine";
 import PairPicker from "@/components/PairPicker";
 import LqeCard from "@/components/LqeCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
@@ -12,11 +12,16 @@ import ScreenshotGallery from "@/components/ScreenshotGallery";
 function emptyArray() {
   return {
     id: Math.random().toString(36).slice(2),
+    array_type: "fvg",
     direction: "bullish",
     high: "",
     low: "",
     date_formed: "",
     is_mitigated: false,
+    flip_state: "intact",
+    flip_date: "",
+    flip_price: "",
+    note: "",
   };
 }
 
@@ -54,7 +59,6 @@ function LqePageContent() {
   const [riskPercent, setRiskPercent] = useState(1);
   const [userId, setUserId] = useState(null);
   const [screenshots, setScreenshots] = useState([]);
-  
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -83,7 +87,6 @@ function LqePageContent() {
 
       const { data: arrayData } = await supabase.from("lqe_arrays").select("*").eq("setup_id", setupData.id).order("created_at");
       const { data: shotsData } = await supabase.from("lqe_screenshots").select("*").eq("setup_id", setupData.id).order("created_at");
-      
       setScreenshots(shotsData || []);
 
       setForm({
@@ -104,11 +107,16 @@ function LqePageContent() {
         displacementPresent: setupData.displacement_present || false,
         arrays: arrayData && arrayData.length > 0 ? arrayData.map(a => ({
           id: a.id,
+          array_type: a.array_type || "fvg",
           direction: a.direction || "bullish",
           high: a.high?.toString() || "",
           low: a.low?.toString() || "",
           date_formed: a.date_formed || "",
           is_mitigated: a.is_mitigated || false,
+          flip_state: a.flip_state || "intact",
+          flip_date: a.flip_date || "",
+          flip_price: a.flip_price?.toString() || "",
+          note: a.note || "",
         })) : [emptyArray()],
         targetLiquidityType: setupData.target_liquidity_type || "eqh_eql",
         targetPrice: setupData.target_price?.toString() || "",
@@ -121,27 +129,12 @@ function LqePageContent() {
     load();
   }, [editId, isEdit, supabase]);
 
-  function update(field, value) {
-    setForm((f) => ({ ...f, [field]: value }));
-  }
-
+  function update(field, value) { setForm((f) => ({ ...f, [field]: value })); }
   function updateArray(id, field, value) {
-    setForm((f) => ({
-      ...f,
-      arrays: f.arrays.map((a) => (a.id === id ? { ...a, [field]: value } : a)),
-    }));
+    setForm((f) => ({ ...f, arrays: f.arrays.map((a) => (a.id === id ? { ...a, [field]: value } : a)) }));
   }
-
-  function addArray() {
-    setForm((f) => ({ ...f, arrays: [...f.arrays, emptyArray()] }));
-  }
-
-  function removeArray(id) {
-    setForm((f) => ({
-      ...f,
-      arrays: f.arrays.filter((a) => a.id !== id),
-    }));
-  }
+  function addArray() { setForm((f) => ({ ...f, arrays: [...f.arrays, emptyArray()] })); }
+  function removeArray(id) { setForm((f) => ({ ...f, arrays: f.arrays.filter((a) => a.id !== id) })); }
 
   const evaluation = useMemo(() => {
     return evaluateLqe({
@@ -170,8 +163,7 @@ function LqePageContent() {
     if (!user) { setError("Not authenticated."); return null; }
 
     const trade = evaluation.trade;
-    
-    // 1. Save the parent setup
+
     const payload = {
       user_id: user.id,
       pair: form.pair,
@@ -205,7 +197,6 @@ function LqePageContent() {
       const { data, error: updErr } = await supabase.from("lqe_setups").update(payload).eq("id", existingSetupId).select().single();
       if (updErr) { setError(updErr.message); return null; }
       setupRow = data;
-      // Clear old arrays
       await supabase.from("lqe_arrays").delete().eq("setup_id", existingSetupId);
     } else {
       const { data, error: insErr } = await supabase.from("lqe_setups").insert(payload).select().single();
@@ -214,14 +205,18 @@ function LqePageContent() {
       setExistingSetupId(data.id);
     }
 
-    // 2. Save the arrays (Ladder)
     const cleanArrays = form.arrays
       .map(a => ({
+        array_type: a.array_type || "fvg",
         direction: a.direction,
         high: parseFloat(a.high),
         low: parseFloat(a.low),
         date_formed: a.date_formed || null,
         is_mitigated: a.is_mitigated || false,
+        flip_state: a.flip_state || "intact",
+        flip_date: a.flip_date || null,
+        flip_price: a.flip_price ? parseFloat(a.flip_price) : null,
+        note: a.note || null,
       }))
       .filter(a => !isNaN(a.high) && !isNaN(a.low) && a.high > a.low);
 
@@ -229,12 +224,16 @@ function LqePageContent() {
       const arrayRows = cleanArrays.map(a => ({
         user_id: user.id,
         setup_id: setupRow.id,
-        array_type: "fvg",
+        array_type: a.array_type,
         direction: a.direction,
         high: a.high,
         low: a.low,
         date_formed: a.date_formed,
         is_mitigated: a.is_mitigated,
+        flip_state: a.flip_state,
+        flip_date: a.flip_date,
+        flip_price: a.flip_price,
+        note: a.note,
       }));
       const { error: arrErr } = await supabase.from("lqe_arrays").insert(arrayRows);
       if (arrErr) { setError(arrErr.message); return null; }
@@ -377,22 +376,31 @@ function LqePageContent() {
           </button>
         </div>
 
-        {/* PATCH: PD Array Matrix (Ladder) */}
+        {/* STEP 4: PD Array Matrix */}
         <div className="p-4 rounded-lg bg-gray-900 border border-yellow-800/60 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-sm font-semibold text-yellow-300">🪜 Step 4 — PD Array Matrix (Ladder)</h2>
-            <button type="button" onClick={addArray} className="text-xs px-2 py-1 rounded bg-yellow-900/40 text-yellow-300 hover:bg-yellow-800/40">+ Add FVG</button>
+            <button type="button" onClick={addArray} className="text-xs px-2 py-1 rounded bg-yellow-900/40 text-yellow-300 hover:bg-yellow-800/40">+ Add Array</button>
           </div>
-          
+
           {form.arrays.map((a, i) => (
             <div key={a.id} className="p-3 rounded-lg border border-gray-800 bg-black space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-gray-400">FVG #{i + 1}</p>
+                <p className="text-xs font-bold text-gray-400">Array #{i + 1}</p>
                 {form.arrays.length > 1 && (
                   <button type="button" onClick={() => removeArray(a.id)} className="text-red-400 text-xs">✕ Remove</button>
                 )}
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] mb-0.5 text-gray-500">PD Array Type</label>
+                  <select value={a.array_type} onChange={(e) => updateArray(a.id, "array_type", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs">
+                    {PD_ARRAY_TYPES.map(t => (
+                      <option key={t.key} value={t.key}>{t.emoji} {t.label}</option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-[10px] mb-0.5 text-gray-500">Direction</label>
                   <select value={a.direction} onChange={(e) => updateArray(a.id, "direction", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs">
@@ -400,6 +408,9 @@ function LqePageContent() {
                     <option value="bearish">🔴 Bearish</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-[10px] mb-0.5 text-gray-500">Low</label>
                   <input type="number" step="any" value={a.low} onChange={(e) => updateArray(a.id, "low", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
@@ -412,6 +423,35 @@ function LqePageContent() {
                   <label className="block text-[10px] mb-0.5 text-gray-500">Date Formed</label>
                   <input type="date" value={a.date_formed} onChange={(e) => updateArray(a.id, "date_formed", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs text-white" />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => updateArray(a.id, "is_mitigated", !a.is_mitigated)} className={`text-left px-2 py-1.5 rounded border text-xs transition ${a.is_mitigated ? "bg-orange-900/40 border-orange-700 text-orange-200" : "bg-black border-gray-800 text-gray-400"}`}>
+                  {a.is_mitigated ? "✅ Mitigated" : "⚪ Unmitigated"}
+                </button>
+                <input type="text" value={a.note} onChange={(e) => updateArray(a.id, "note", e.target.value)} placeholder="Note (optional)" className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
+              </div>
+
+              {/* Flip State */}
+              <div className="pt-2 border-t border-gray-800 space-y-2">
+                <button type="button" onClick={() => updateArray(a.id, "flip_state", a.flip_state === "flipped" ? "intact" : "flipped")} className={`w-full text-left px-2 py-1.5 rounded border text-xs transition ${a.flip_state === "flipped" ? "bg-purple-900/40 border-purple-700 text-purple-200" : "bg-black border-gray-800 text-gray-400"}`}>
+                  {a.flip_state === "flipped"
+                    ? `🔀 Flipped (now acts as ${a.direction === "bullish" ? "bearish" : "bullish"})`
+                    : "⚪ Intact (works in original direction)"}
+                </button>
+
+                {a.flip_state === "flipped" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] mb-0.5 text-gray-500">Flip Date</label>
+                      <input type="date" value={a.flip_date} onChange={(e) => updateArray(a.id, "flip_date", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] mb-0.5 text-gray-500">Flip Price (close)</label>
+                      <input type="number" step="any" value={a.flip_price} onChange={(e) => updateArray(a.id, "flip_price", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -436,7 +476,6 @@ function LqePageContent() {
 
         {evaluation && <LqeCard data={evaluation} />}
 
-        {/* Screenshots & Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <ScreenshotUploader setupId={existingSetupId} userId={userId} screenshots={screenshots} onChange={setScreenshots} table="lqe_screenshots" onEnsureSetup={ensureSetupSaved} />
           <ScreenshotGallery screenshots={screenshots} onDelete={(id) => setScreenshots((prev) => prev.filter((s) => s.id !== id))} />

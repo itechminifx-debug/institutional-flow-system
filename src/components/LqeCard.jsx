@@ -2,13 +2,13 @@
 
 import { formatPrice } from "@/lib/formatNumbers";
 
-function SequencePanel({ title, emoji, step, accent = "blue" }) {
+function SequencePanel({ title, emoji, step, accent = "blue", children }) {
   const accentMap = {
-    blue: "border-blue-800/60 bg-blue-950/20",
-    purple: "border-purple-800/60 bg-purple-950/20",
+    blue:    "border-blue-800/60 bg-blue-950/20",
+    purple:  "border-purple-800/60 bg-purple-950/20",
     emerald: "border-emerald-800/60 bg-emerald-950/20",
-    orange: "border-orange-800/60 bg-orange-950/20",
-    yellow: "border-yellow-800/60 bg-yellow-950/20",
+    orange:  "border-orange-800/60 bg-orange-950/20",
+    yellow:  "border-yellow-800/60 bg-yellow-950/20",
   };
   const cls = accentMap[accent] || accentMap.blue;
 
@@ -32,6 +32,7 @@ function SequencePanel({ title, emoji, step, accent = "blue" }) {
             </div>
           </div>
         ))}
+        {children}
       </div>
     </div>
   );
@@ -58,8 +59,7 @@ export default function LqeCard({ data }) {
       <SequencePanel title="Context & Time" emoji="🌍" step={context} accent="blue" />
       <SequencePanel title="Liquidity Sweep" emoji="💧" step={sweep} accent="purple" />
       <SequencePanel title="Structure Shift" emoji="⚡" step={structure} accent="emerald" />
-      
-      {/* Ladder Panel */}
+
       {ladder && ladder.ladderInfo && (
         <SequencePanel title="PD Array Matrix (Ladder)" emoji="🪜" step={ladder} accent="yellow">
           <div className="mt-2 p-2 rounded bg-black/40 border border-gray-800 text-xs space-y-1">
@@ -67,7 +67,18 @@ export default function LqeCard({ data }) {
             <p className="text-gray-400">Bottom Edge: <span className="text-white font-bold tabular-nums">{formatPrice(ladder.ladderInfo.bottomEdge)}</span></p>
             <p className="text-gray-400">Position: <span className={`font-bold ${ladder.ladderInfo.position === "middle" ? "text-red-300" : "text-green-300"}`}>{ladder.ladderInfo.position.toUpperCase()}</span></p>
             {ladder.ladderInfo.activeFVG && (
-              <p className="text-gray-400">Active FVG: <span className="text-orange-300 font-bold">{ladder.ladderInfo.activeFVG.direction.toUpperCase()}</span></p>
+              <div className="space-y-0.5">
+                <p className="text-gray-400">
+                  Active: <span className="text-orange-300 font-bold">
+                    {ladder.ladderInfo.activeFVG.direction?.toUpperCase()} {ladder.ladderInfo.activeFVG.array_type?.toUpperCase()}
+                  </span>
+                </p>
+                {ladder.ladderInfo.activeFVG.flip_state === "flipped" && (
+                  <p className="text-purple-300 text-xs font-bold">
+                    🔀 Flipped {ladder.ladderInfo.activeFVG.flip_date || "—"} @ {ladder.ladderInfo.activeFVG.flip_price ? formatPrice(ladder.ladderInfo.activeFVG.flip_price) : "—"}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </SequencePanel>
@@ -85,6 +96,9 @@ export default function LqeCard({ data }) {
             <div><p className="text-xs text-gray-500">Stop Loss</p><p className="font-bold tabular-nums text-red-400">{formatPrice(trade.sl)}</p></div>
             <div><p className="text-xs text-gray-500">Target (DOL)</p><p className="font-bold tabular-nums text-green-400">{formatPrice(trade.tp)}</p></div>
             <div><p className="text-xs text-gray-500">RR</p><p className={`font-bold tabular-nums ${trade.rr >= 3 ? "text-green-300" : "text-yellow-300"}`}>1:{trade.rr?.toFixed(2) ?? "—"}</p></div>
+            {trade.riskAmount !== undefined && (
+              <div><p className="text-xs text-gray-500">Risk</p><p className="font-bold tabular-nums text-white">${trade.riskAmount}</p></div>
+            )}
           </div>
         </div>
       )}
