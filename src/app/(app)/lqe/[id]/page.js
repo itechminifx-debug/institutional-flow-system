@@ -16,6 +16,7 @@ export default function LqeDetailPage() {
   const id = params?.id;
 
   const [row, setRow] = useState(null);
+  const [arrays, setArrays] = useState([]); // PATCH: Store arrays
   const [screenshots, setScreenshots] = useState([]);
   const [userId, setUserId] = useState(null);
   const [accountSize, setAccountSize] = useState(0);
@@ -50,9 +51,12 @@ export default function LqeDetailPage() {
         return;
       }
 
+      // PATCH: Fetch the arrays (Ladder) from the DB
+      const { data: arrayData } = await supabase.from("lqe_arrays").select("*").eq("setup_id", id).order("created_at");
       const { data: shotsData } = await supabase.from("lqe_screenshots").select("*").eq("setup_id", id).order("created_at");
 
       setRow(setupData);
+      setArrays(arrayData || []); // PATCH: Set arrays
       setScreenshots(shotsData || []);
       setNotesDraft(setupData.notes || "");
       setLoading(false);
@@ -62,6 +66,17 @@ export default function LqeDetailPage() {
 
   const evaluation = useMemo(() => {
     if (!row) return null;
+    
+    // PATCH: Map DB arrays to engine format
+    const mappedArrays = arrays.map(a => ({
+      id: a.id,
+      direction: a.direction || "bullish",
+      high: a.high,
+      low: a.low,
+      date_formed: a.date_formed,
+      is_mitigated: a.is_mitigated,
+    }));
+
     return evaluateLqe({
       dailyBias: row.daily_bias,
       session: row.session,
@@ -75,21 +90,13 @@ export default function LqeDetailPage() {
       mssConfirmed: row.mss_confirmed,
       chochConfirmed: row.choch_confirmed,
       displacementPresent: row.displacement_present,
-      pdArrayType: row.pd_array_type,
-      pdArrayHigh: row.pd_array_high,
-      pdArrayLow: row.pd_array_low,
-      isRejectionBlock: row.is_rejection_block,
+      arrays: mappedArrays, // PATCH: Pass arrays to engine
       targetPrice: row.target_price,
       targetLiquidityType: row.target_liquidity_type,
-      mitigationStatus: row.mitigation_status || "unmitigated",
-      parentArrayHigh: row.parent_array_high,
-      parentArrayLow: row.parent_array_low,
-      parentArrayTimeframe: row.parent_array_timeframe,
-      targetClass: row.target_class || "external",
       accountSize,
       riskPercent,
     });
-  }, [row, accountSize, riskPercent]);
+  }, [row, arrays, accountSize, riskPercent]);
 
   async function handleSaveNotes() {
     setSavingNotes(true); setNotesSaved(false); setError("");
@@ -118,22 +125,6 @@ export default function LqeDetailPage() {
     </main>
   );
 
-  // PATCH: Adaptive Badges
-  const badges = [];
-  if (row.mitigation_status === "mitigated_rejected") {
-    badges.push({ key: "mitigated", label: "🔗 Mitigated + Rejected", cls: "bg-orange-900/40 border-orange-700 text-orange-200" });
-  } else if (row.mitigation_status === "mitigated_failed") {
-    badges.push({ key: "failed", label: "❌ Mitigation Failed", cls: "bg-red-900/40 border-red-700 text-red-200" });
-  } else if (row.mitigation_status === "mitigating") {
-    badges.push({ key: "mitigating", label: "⏳ Mitigating", cls: "bg-yellow-900/40 border-yellow-700 text-yellow-200" });
-  }
-  
-  if (row.target_class === "external") {
-    badges.push({ key: "erl", label: "🎯 Targeting ERL", cls: "bg-green-900/40 border-green-700 text-green-200" });
-  } else {
-    badges.push({ key: "irl", label: "⚠️ Targeting IRL (Trap)", cls: "bg-red-900/40 border-red-700 text-red-200" });
-  }
-
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
       <div className="max-w-3xl mx-auto space-y-5">
@@ -154,15 +145,6 @@ export default function LqeDetailPage() {
             <h1 className="text-2xl font-bold">⚙️ LQE Setup</h1>
             <p className="text-gray-400 text-sm">{row.pair} · {row.timeframe} · {row.session || "—"}</p>
             <p className="text-xs text-gray-500 mt-1">Saved {new Date(row.created_at).toLocaleString()}</p>
-            {badges.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                {badges.map((b) => (
-                  <span key={b.key} className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${b.cls}`}>
-                    {b.label}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={() => router.push(`/lqe?edit=${row.id}`)} className="text-xs px-3 py-2 rounded-lg bg-blue-900/40 text-blue-300 font-semibold">✏️ Edit</button>
