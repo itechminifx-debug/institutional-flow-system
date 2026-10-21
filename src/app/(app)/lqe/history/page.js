@@ -52,9 +52,7 @@ export default function LqeHistoryPage() {
     setLoading(false);
   }, [supabase]);
 
-  useEffect(() => {
-    loadRows();
-  }, [loadRows]);
+  useEffect(() => { loadRows(); }, [loadRows]);
 
   useEffect(() => {
     const handleFocus = () => { loadRows(); };
@@ -109,6 +107,7 @@ export default function LqeHistoryPage() {
                         <span className="text-sm font-bold">{r.pair}</span>
                         <span className="text-xs text-gray-500">· {r.timeframe}</span>
                         {r.daily_bias && <span className="text-xs text-gray-400">· {r.daily_bias === "bullish" ? "🟢" : "🔴"}</span>}
+                        {r.shallow_pullback_mode && <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-yellow-900/40 border-yellow-700 text-yellow-200 font-bold">⚠️ SHALLOW</span>}
                       </div>
                       {!isDraft && (
                         <div className="grid grid-cols-3 gap-3 mt-2 text-xs">

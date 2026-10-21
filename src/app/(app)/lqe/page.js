@@ -41,6 +41,7 @@ function LqePageContent() {
     rangeHigh: "",
     rangeLow: "",
     currentPrice: "",
+    zoneSideOverride: "auto",
     sweepType: "ssl",
     sweepLevel: "",
     sweepConfirmed: false,
@@ -97,6 +98,7 @@ function LqePageContent() {
         rangeHigh: setupData.dealing_range_high?.toString() || "",
         rangeLow: setupData.dealing_range_low?.toString() || "",
         currentPrice: setupData.current_price?.toString() || "",
+        zoneSideOverride: setupData.zone_side_override || "auto",
         sweepType: setupData.sweep_type || "ssl",
         sweepLevel: setupData.sweep_level?.toString() || "",
         sweepConfirmed: setupData.sweep_confirmed || false,
@@ -153,6 +155,7 @@ function LqePageContent() {
       arrays: form.arrays,
       targetPrice: form.targetPrice,
       targetLiquidityType: form.targetLiquidityType,
+      zoneSideOverride: form.zoneSideOverride === "auto" ? null : form.zoneSideOverride,
       accountSize,
       riskPercent,
     });
@@ -175,6 +178,9 @@ function LqePageContent() {
       dealing_range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
       dealing_range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
       current_price: form.currentPrice ? parseFloat(form.currentPrice) : null,
+      zone_side: form.zoneSideOverride || "auto",
+      zone_side_override: form.zoneSideOverride === "auto" ? null : form.zoneSideOverride,
+      shallow_pullback_mode: evaluation.shallowPullbackMode || false,
       sweep_type: form.sweepType,
       sweep_level: form.sweepLevel ? parseFloat(form.sweepLevel) : null,
       sweep_confirmed: form.sweepConfirmed,
@@ -194,7 +200,6 @@ function LqePageContent() {
 
     let setupRow;
     if (isEdit && existingSetupId) {
-      // PATCH: explicitly bump updated_at on every save
       const { data, error: updErr } = await supabase
         .from("lqe_setups")
         .update({ ...payload, updated_at: new Date().toISOString() })
@@ -292,7 +297,6 @@ function LqePageContent() {
           <p className="text-gray-400 text-sm">Context → Sweep → Structure → Ladder → Delivery</p>
         </div>
 
-        {/* Context Box */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <PairPicker value={form.pair} onChange={(p) => update("pair", p)} label="Pair" />
@@ -308,7 +312,6 @@ function LqePageContent() {
           </div>
         </div>
 
-        {/* STEP 1: Context */}
         <div className="p-4 rounded-lg bg-gray-900 border border-blue-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-blue-300">🌍 Step 1 — Context & Time</h2>
           <div className="grid grid-cols-2 gap-3">
@@ -331,9 +334,20 @@ function LqePageContent() {
             <div><label className="block text-xs mb-1 text-gray-400">Range Low</label><input type="number" step="any" value={form.rangeLow} onChange={(e) => update("rangeLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
             <div><label className="block text-xs mb-1 text-gray-400">Current Price</label><input type="number" step="any" value={form.currentPrice} onChange={(e) => update("currentPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
           </div>
+          <div className="pt-2 border-t border-blue-800/40">
+            <label className="block text-xs mb-1 text-gray-400">Zone Side Detection</label>
+            <select value={form.zoneSideOverride} onChange={(e) => update("zoneSideOverride", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
+              <option value="auto">🤖 Auto (from Dealing Range)</option>
+              <option value="premium">⬆️ Premium</option>
+              <option value="discount">⬇️ Discount</option>
+              <option value="equilibrium">➖ Equilibrium</option>
+            </select>
+            {form.zoneSideOverride === "auto" && !form.rangeHigh && (
+              <p className="text-[11px] text-yellow-300/90 mt-1">⚠️ Auto-detect requires Dealing Range. Fill it in, or set manually.</p>
+            )}
+          </div>
         </div>
 
-        {/* STEP 2: Sweep */}
         <div className="p-4 rounded-lg bg-gray-900 border border-purple-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-purple-300">💧 Step 2 — Liquidity Sweep</h2>
           <div className="grid grid-cols-2 gap-3">
@@ -361,7 +375,6 @@ function LqePageContent() {
           </div>
         </div>
 
-        {/* STEP 3: Structure */}
         <div className="p-4 rounded-lg bg-gray-900 border border-emerald-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-300">⚡ Step 3 — Structure Shift</h2>
           <div className="grid grid-cols-2 gap-3">
@@ -386,7 +399,6 @@ function LqePageContent() {
           </button>
         </div>
 
-        {/* STEP 4: PD Array Matrix */}
         <div className="p-4 rounded-lg bg-gray-900 border border-yellow-800/60 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-sm font-semibold text-yellow-300">🪜 Step 4 — PD Array Matrix (Ladder)</h2>
@@ -442,7 +454,6 @@ function LqePageContent() {
                 <input type="text" value={a.note} onChange={(e) => updateArray(a.id, "note", e.target.value)} placeholder="Note (optional)" className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
               </div>
 
-              {/* Flip State */}
               <div className="pt-2 border-t border-gray-800 space-y-2">
                 <button type="button" onClick={() => updateArray(a.id, "flip_state", a.flip_state === "flipped" ? "intact" : "flipped")} className={`w-full text-left px-2 py-1.5 rounded border text-xs transition ${a.flip_state === "flipped" ? "bg-purple-900/40 border-purple-700 text-purple-200" : "bg-black border-gray-800 text-gray-400"}`}>
                   {a.flip_state === "flipped"
@@ -467,7 +478,6 @@ function LqePageContent() {
           ))}
         </div>
 
-        {/* STEP 5 & 6: Delivery */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-700/60 space-y-3">
           <h2 className="text-sm font-semibold text-gray-300">🎯 Step 5 & 6 — Delivery (Target)</h2>
           <div className="grid grid-cols-2 gap-3">

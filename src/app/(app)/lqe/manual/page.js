@@ -92,7 +92,7 @@ export default function LqeManualPage() {
           </button>
           <h1 className="text-3xl font-bold">⚙️ Liquidity Engine Manual</h1>
           <p className="text-gray-400 text-sm mt-1">
-            The strict ICT Sequence: Context → Sweep → Structure → Array → Delivery
+            The strict ICT Sequence: Context → Sweep → Structure → Ladder → Delivery
           </p>
           <p className="text-gray-500 text-xs mt-2">
             This manual explains the exact logic the LQE system uses to validate a setup.
@@ -108,10 +108,11 @@ export default function LqeManualPage() {
               { id: "step-1", label: "2. Step 1 — Context & Time" },
               { id: "step-2", label: "3. Step 2 — Liquidity Sweep" },
               { id: "step-3", label: "4. Step 3 — Structure Shift" },
-              { id: "step-4", label: "5. Step 4 & 5 — Array & Entry" },
-              { id: "step-6", label: "6. Step 6 — Delivery" },
-              { id: "field-guide", label: "7. Form Field Guide" },
-              { id: "golden-rules", label: "8. Golden Rules" },
+              { id: "step-4", label: "5. Step 4 — PD Array Matrix (Ladder)" },
+              { id: "zones", label: "6. Zone Rules — Premium vs Discount" },
+              { id: "step-6", label: "7. Step 5 & 6 — Delivery" },
+              { id: "field-guide", label: "8. Form Field Guide" },
+              { id: "golden-rules", label: "9. Golden Rules" },
             ].map((t) => (
               <a key={t.id} href={`#${t.id}`} className="text-orange-300 hover:text-orange-200 py-0.5">
                 {t.label}
@@ -143,12 +144,17 @@ export default function LqeManualPage() {
           </SubSection>
           <SubSection title="2. Kill Zones">
             <p>
-              The engine hard-filters for **London (2-5 AM EST)** and **NY AM (7-10 AM EST)**. If you are outside these windows, the context score will drop and the setup will be marked as low probability.
+              The engine hard-filters for <strong>London (2-5 AM EST)</strong> and <strong>NY AM (7-10 AM EST)</strong>. If you are outside these windows, the context score will drop and the setup will be marked as low probability.
             </p>
           </SubSection>
           <SubSection title="3. Premium/Discount">
             <p>
               Mark your Dealing Range (High and Low). The engine checks if your current price is in the discount (for a bullish bias) or premium (for a bearish bias). If you are buying in premium, the system flags it.
+            </p>
+          </SubSection>
+          <SubSection title="4. Zone Side Detection">
+            <p>
+              The engine can auto-detect whether your active array sits in Premium, Discount, or at Equilibrium — using your Dealing Range and the array&apos;s bounds. If the Dealing Range is missing or wrong, you can override the detection manually (Premium / Discount / Equilibrium).
             </p>
           </SubSection>
         </Section>
@@ -160,12 +166,12 @@ export default function LqeManualPage() {
           </p>
           <SubSection title="Sweep Type & Level">
             <p>
-              If you are bullish, you need a **Sell-Side (SSL)** sweep. If you are bearish, you need a **Buy-Side (BSL)** sweep. Enter the exact price level that was swept.
+              If you are bullish, you need a <strong>Sell-Side (SSL)</strong> sweep. If you are bearish, you need a <strong>Buy-Side (BSL)</strong> sweep. Enter the exact price level that was swept.
             </p>
           </SubSection>
           <SubSection title="Sweep Confirmed (Close)">
             <p>
-              The engine requires the candle to **close back inside the range**. A wick alone is not enough. This is the "Sweep vs Run" distinction from the PDFs.
+              The engine requires the candle to <strong>close back inside the range</strong>. A wick alone is not enough. This is the &quot;Sweep vs Run&quot; distinction from the PDFs.
             </p>
           </SubSection>
           <SubSection title="SMT Divergence (Bonus)">
@@ -182,7 +188,7 @@ export default function LqeManualPage() {
           </p>
           <SubSection title="MSS & CHoCH">
             <p>
-              Check both boxes if you have a **Market Structure Shift (MSS)** on the higher timeframe and a **Change of Character (CHoCH)** on the lower timeframe.
+              Check both boxes if you have a <strong>Market Structure Shift (MSS)</strong> on the higher timeframe and a <strong>Change of Character (CHoCH)</strong> on the lower timeframe.
             </p>
           </SubSection>
           <SubSection title="Displacement">
@@ -192,56 +198,180 @@ export default function LqeManualPage() {
           </SubSection>
         </Section>
 
-        {/* 5. Step 4 & 5 */}
-        <Section id="step-4" title="Step 4 & 5 — PD Array & Entry" emoji="🧱" accent="yellow">
+        {/* 5. Step 4 — Ladder */}
+        <Section id="step-4" title="Step 4 — PD Array Matrix (Ladder)" emoji="🪜" accent="yellow">
           <p>
-            Where do you enter? The engine calculates this automatically based on the PD Array you mark.
+            This is where the LQE system goes beyond a single FVG. You are logging <strong>every PD array</strong> that price could interact with — creating a ladder of arrays.
           </p>
-          <SubSection title="PD Array Types">
+
+          <SubSection title="The Ladder Concept">
+            <p>
+              When price creates multiple imbalances (FVGs, OBs, Breakers, etc.), it creates a <strong>magnet zone</strong>. The market is inefficient here and will rotate between the edges of the ladder to fill orders. The top of the ladder acts as Premium resistance, the bottom as Discount support.
+            </p>
+            <Rule tone="yellow">
+              <strong>Do not trade the middle.</strong> The middle of the ladder is no-man&apos;s-land — the engine will block you.
+            </Rule>
+          </SubSection>
+
+          <SubSection title="How to Log Each Array">
             <ul className="list-disc list-inside space-y-1 ml-2 text-xs">
-              <li><strong>FVG:</strong> The most common imbalance.</li>
-              <li><strong>OB:</strong> The last opposing candle before displacement.</li>
-              <li><strong>Rejection Block:</strong> A wick that pierced a level and closed back inside.</li>
-              <li><strong>Breaker:</strong> A failed OB that flips polarity.</li>
-              <li><strong>Unicorn:</strong> An OB overlapping an FVG (highest probability).</li>
+              <li><strong>Type:</strong> FVG, OB, Breaker, Mitigation, Rejection, Void, Imbalance, Propulsion, OTE, or CE.</li>
+              <li><strong>Direction:</strong> Bullish or Bearish (as originally formed).</li>
+              <li><strong>Low / High:</strong> The exact bounds of the array.</li>
+              <li><strong>Date Formed:</strong> So the system knows if it&apos;s current or months old.</li>
+              <li><strong>Mitigated:</strong> Has price already filled it, or is it still untouched?</li>
+              <li><strong>Flip State:</strong> Intact (works in original direction) or Flipped (works in opposite direction).</li>
             </ul>
           </SubSection>
-          <SubSection title="OTE (Optimal Trade Entry)">
+
+          <SubSection title="The Flip Concept">
             <p>
-              The engine automatically calculates the **70.5% retracement** of your entry zone. This is the highest-probability price to click the buy or sell button.
+              A Bullish FVG formed 3-6 months ago during a bullish trend can become a valid <strong>bearish</strong> entry if price has closed cleanly through it. This is called a <strong>polarity flip</strong> (or IFVG).
+            </p>
+            <p className="text-xs text-purple-200">
+              When you mark an array as Flipped, the engine reverses its direction. A Bullish-Flipped array behaves like a Bearish array. The engine requires you to log the <strong>Flip Date</strong> and <strong>Flip Price</strong> (the close that violated it).
+            </p>
+          </SubSection>
+
+          <SubSection title="The Engine's Ladder Gates">
+            <ol className="list-decimal list-inside space-y-1 ml-2 text-xs">
+              <li>Price must be <strong>inside</strong> one of your arrays.</li>
+              <li>Price must <strong>not</strong> be in the middle of the ladder.</li>
+              <li>The active array&apos;s <strong>effective direction</strong> (intact or flipped) must match your bias.</li>
+              <li>The active array must pass its <strong>type-specific requirements</strong> (e.g., Breaker needs a prior CHoCH).</li>
+              <li>The active array must be in the <strong>correct zone</strong> (see next section).</li>
+            </ol>
+          </SubSection>
+        </Section>
+
+        {/* 6. Zone Rules */}
+        <Section id="zones" title="Zone Rules: Premium vs Discount" emoji="⚖️" accent="yellow">
+          <Rule tone="yellow">
+            <strong>The Golden Rule:</strong> Premium shorts are about high probability and safety. Discount shorts are about extreme momentum, but require razor-thin stop losses and a perfect LTF trigger.
+          </Rule>
+
+          <SubSection title="What Premium & Discount Mean">
+            <p>
+              Every dealing range splits at its 50% midpoint (the Equilibrium, or CE). Anything <strong>above</strong> the CE is <strong>Premium</strong> (expensive — sell here). Anything <strong>below</strong> the CE is <strong>Discount</strong> (cheap — buy here).
+            </p>
+            <p>
+              Shorting in Premium = selling expensive. Buying in Discount = buying cheap. Those are the correct zones.
+            </p>
+          </SubSection>
+
+          <SubSection title="Trading in the Correct Zone (A+ Setup)">
+            <p>
+              If your bias is bearish and the array is above the CE (Premium), you are selling expensive. This is the ideal setup:
+            </p>
+            <ul className="list-disc list-inside space-y-1 ml-2 text-xs">
+              <li>Normal stop loss above the FVG or sweep extreme</li>
+              <li>Target the Range Low (SSL)</li>
+              <li>No extra confirmation required beyond the standard sequence</li>
+            </ul>
+            <p className="text-xs text-green-200 mt-2">
+              ✅ Engine verdict: &quot;Premium — A+ Setup. Normal rules apply.&quot;
+            </p>
+          </SubSection>
+
+          <SubSection title="Trading in the Wrong Zone (Shallow Pullback)">
+            <p>
+              If your bias is bearish and the array is <strong>below</strong> the CE (Discount), you are selling cheap. This only works when momentum is extreme, and requires three extra rules:
+            </p>
+            <ol className="list-decimal list-inside space-y-1 ml-2 text-xs">
+              <li>
+                <strong>LTF CHoCH is mandatory.</strong> No 5M CHoCH = no trade. The engine will block you.
+              </li>
+              <li>
+                <strong>Stop is razor-thin.</strong> Placed at the FVG edge, not the sweep extreme. If price pushes back to Premium, your thesis is wrong — you want to be out at minimal cost.
+              </li>
+              <li>
+                <strong>Target is immediate.</strong> Take the nearest Range Low / SSL, not the far DOL. Take partials quick.
+              </li>
+            </ol>
+            <p className="text-xs text-yellow-200 mt-2">
+              ⚠️ Engine verdict: &quot;Shallow Pullback — Stricter rules apply.&quot; The system requires the LTF CHoCH to unblock.
+            </p>
+          </SubSection>
+
+          <SubSection title="The Mirror Case (Bullish)">
+            <p>
+              Everything above mirrors for a long. Bullish bias + Discount array = A+ setup (buy cheap). Bullish bias + Premium array = Shallow Pullback Exception (buying expensive — requires CHoCH, tight stop, quick target).
+            </p>
+          </SubSection>
+
+          <SubSection title="Auto-Detection">
+            <p>
+              The engine auto-detects zone side by comparing the array&apos;s CE against the dealing range&apos;s CE. If your dealing range is missing or wrong, you can override the detection manually on the form (Premium / Discount / Equilibrium).
+            </p>
+          </SubSection>
+
+          <Rule tone="red">
+            <strong>The checkpoint answers:</strong>{" "}
+            (1) Premium = safe, Discount = dangerous.{" "}
+            (2) Discount short requires 5M CHoCH.{" "}
+            (3) Stop goes at FVG edge — tight, because if price pushes back to Premium, your thesis is wrong.
+          </Rule>
+        </Section>
+
+        {/* 7. Step 5 & 6 */}
+        <Section id="step-6" title="Step 5 & 6 — Entry & Delivery" emoji="🎯" accent="orange">
+          <p>
+            Once all gates pass, the engine calculates the entry and target automatically.
+          </p>
+          <SubSection title="Entry Calculation">
+            <p>
+              The ideal entry is the <strong>50% CE (Consequent Encroachment)</strong> of the active array. From there, the engine also calculates the <strong>OTE (Optimal Trade Entry)</strong> — the 70.5% retracement of the leg from the sweep to the array CE. That is the highest-probability fill.
+            </p>
+          </SubSection>
+          <SubSection title="Stop Loss">
+            <p>
+              <strong>Normal setups:</strong> Stop goes beyond the sweep extreme (the invalidation of the entire sequence).
+            </p>
+            <p>
+              <strong>Shallow Pullback setups:</strong> Stop goes at the FVG edge (razor-thin). The engine automatically places it there when in shallow mode.
+            </p>
+          </SubSection>
+          <SubSection title="Target">
+            <p>
+              The target is the <strong>Draw on Liquidity (DOL)</strong> — the next untapped liquidity pool in the direction of the trade. This is either EQH/EQL, PDH/PDL, a swing high/low, or a liquidity void.
+            </p>
+            <p>
+              <strong>Shallow Pullback:</strong> Target the <strong>nearest</strong> pool (immediate Range Low/High), not the furthest.
+            </p>
+          </SubSection>
+          <SubSection title="Risk-Reward">
+            <p>
+              The engine computes R:R automatically. If R:R is below 1:3, the card warns you — but it does not block the trade (that is your discretion).
             </p>
           </SubSection>
         </Section>
 
-        {/* 6. Step 6 */}
-        <Section id="step-6" title="Step 6 — Delivery (Target)" emoji="🎯" accent="orange">
-          <p>
-            Where is the liquidity above or below that price wants to reach? This is your Draw on Liquidity (DOL).
-          </p>
-          <p>
-            Enter the Target Price. The engine will calculate your R:R. If the R:R is less than 1:3, the system will warn you.
-          </p>
-          <Rule tone="green">
-            <strong>Target the Nearest Pool.</strong> Do not target the furthest high if there is an equal high right in front of price.
-          </Rule>
-        </Section>
-
-        {/* 7. Field Guide */}
+        {/* 8. Field Guide */}
         <Section id="field-guide" title="Form Field Guide" emoji="📋" accent="gray">
           <p className="text-xs text-gray-400 mb-2">Exact mapping of the LQE form fields.</p>
           <div className="space-y-2">
             <FieldGuide label="Daily Bias" field="dailyBias" description="Direction of the higher timeframe." />
             <FieldGuide label="Session" field="session" description="Must be London or NY AM for a valid killzone." />
             <FieldGuide label="Range High/Low" field="rangeHigh / rangeLow" description="The dealing range for premium/discount calculation." />
+            <FieldGuide label="Zone Side Override" field="zoneSideOverride" description="Auto / Premium / Discount / Equilibrium. Auto uses dealing range." />
             <FieldGuide label="Sweep Level" field="sweepLevel" description="The exact price that was swept (the stop loss level of retail)." />
             <FieldGuide label="Sweep Confirmed" field="sweepConfirmed" description="Checked if the candle closed back inside the range." />
-            <FieldGuide label="Displacement" field="displacementPresent" description="Checked if the move left an FVG and was aggressive." />
-            <FieldGuide label="Array High/Low" field="pdArrayHigh / pdArrayLow" description="The boundaries of your entry zone (FVG/OB)." />
-            <FieldGuide label="Target Price" field="targetPrice" description="The next liquidity pool (EQH/EQL/PDH/PDL)." />
+            <FieldGuide label="SMT Divergence" field="smtDivergence" description="Checked if a correlated pair failed to sweep the same level." />
+            <FieldGuide label="MSS Confirmed" field="mssConfirmed" description="Higher-timeframe market structure shift." />
+            <FieldGuide label="LTF CHoCH" field="chochConfirmed" description="Lower-timeframe change of character." />
+            <FieldGuide label="Displacement" field="displacementPresent" description="Checked if the move was aggressive, leaving an FVG." />
+            <FieldGuide label="Array Type" field="array_type" description="FVG, OB, Breaker, Mitigation, Rejection, Void, Imbalance, Propulsion, OTE, CE." />
+            <FieldGuide label="Array Direction" field="direction" description="Bullish or Bearish — as originally formed." />
+            <FieldGuide label="Array High/Low" field="pdArrayHigh / pdArrayLow" description="The boundaries of the entry zone." />
+            <FieldGuide label="Array Date" field="date_formed" description="When the array formed. Old arrays are often flipped." />
+            <FieldGuide label="Mitigated" field="is_mitigated" description="Has price already filled this array?" />
+            <FieldGuide label="Flip State" field="flip_state" description="Intact (original direction) or Flipped (opposite)." />
+            <FieldGuide label="Flip Date / Price" field="flip_date / flip_price" description="When price closed through the array (the flip event)." />
+            <FieldGuide label="Target DOL Price" field="targetPrice" description="The next liquidity pool (EQH/EQL/PDH/PDL)." />
           </div>
         </Section>
 
-        {/* 8. Golden Rules */}
+        {/* 9. Golden Rules */}
         <Section id="golden-rules" title="Golden Rules" emoji="🏆" accent="emerald">
           <div className="space-y-2">
             {[
@@ -249,8 +379,11 @@ export default function LqeManualPage() {
               "A wick is not a CHoCH. Wait for the candle close.",
               "You must have displacement. Without it, the structure shift is weak.",
               "If you are outside London or NY AM, you are trading a low-probability window.",
+              "Do not trade the middle of the ladder. Wait for an edge.",
               "Never enter in the middle of the array. The engine calculates the 70.5% OTE for you.",
               "Target the nearest pool. If the R:R is below 1:3, skip the trade.",
+              "Premium shorts are safe; Discount shorts are dangerous. Only take Discount shorts with LTF CHoCH, tight stop, and quick target.",
+              "A flipped array reverses polarity. A bullish FVG that price closed through is now a bearish entry — log the flip.",
               "If the sequence is incomplete, the system will not let you save. Do not force it.",
               "Discipline beats intelligence. The sequence is the edge.",
             ].map((r, i) => (

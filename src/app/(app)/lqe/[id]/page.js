@@ -96,6 +96,7 @@ export default function LqeDetailPage() {
       arrays: mappedArrays,
       targetPrice: row.target_price,
       targetLiquidityType: row.target_liquidity_type,
+      zoneSideOverride: row.zone_side_override || null,
       accountSize,
       riskPercent,
     });

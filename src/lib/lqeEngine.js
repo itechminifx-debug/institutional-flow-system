@@ -1,5 +1,5 @@
 // ============================================================
-// LQE — LIQUIDITY ENGINE (FULL + FLIP STATE)
+// LQE — LIQUIDITY ENGINE (FULL + ZONE SIDE + SHALLOW PULLBACK)
 // ============================================================
 
 import { computeCe } from "@/lib/liquidityZoneEngine";
@@ -36,6 +36,41 @@ export function pdArrayTypeInfo(key) {
 function num(v) {
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
+}
+
+// ============================================================
+// ZONE SIDE DETECTION
+// ============================================================
+export function detectZoneSide({ array, dealingRangeHigh, dealingRangeLow, override }) {
+  if (override && override !== "auto") {
+    return { zoneSide: override, source: "manual" };
+  }
+
+  const rHigh = num(dealingRangeHigh);
+  const rLow = num(dealingRangeLow);
+  const arrHigh = num(array.high);
+  const arrLow = num(array.low);
+
+  if (rHigh === null || rLow === null || arrHigh === null || arrLow === null || rHigh <= rLow) {
+    return { zoneSide: "unknown", source: "insufficient-data" };
+  }
+
+  const ce = computeCe(rHigh, rLow);
+  const arrayCe = computeCe(arrHigh, arrLow);
+
+  if (arrayCe === null) {
+    return { zoneSide: "unknown", source: "insufficient-data" };
+  }
+
+  const tolerance = ce * 0.001;
+  if (Math.abs(arrayCe - ce) < tolerance) {
+    return { zoneSide: "equilibrium", source: "auto" };
+  }
+
+  return {
+    zoneSide: arrayCe > ce ? "premium" : "discount",
+    source: "auto",
+  };
 }
 
 // ============================================================
@@ -100,9 +135,12 @@ export function evaluateStructure({ mssConfirmed, chochConfirmed, displacementPr
 }
 
 // ============================================================
-// STEP 4a: ARRAY TYPE + FLIP VALIDATION
+// STEP 4a: ARRAY TYPE + FLIP + ZONE SIDE
 // ============================================================
-export function validateArrayType({ array, bias, hasDisplacement, hasChoch, hasSweep }) {
+export function validateArrayType({
+  array, bias, hasDisplacement, hasChoch, hasSweep,
+  dealingRangeHigh, dealingRangeLow, zoneSideOverride,
+}) {
   const gates = [];
   const typeInfo = pdArrayTypeInfo(array.array_type);
 
@@ -134,6 +172,59 @@ export function validateArrayType({ array, bias, hasDisplacement, hasChoch, hasS
       detail: hasFlipDetails
         ? `Flipped ${array.flip_date || "—"} @ ${array.flip_price || "—"}.`
         : "⚠️ Array marked as flipped but no flip price/date logged.",
+    });
+  }
+
+  const zoneDetection = detectZoneSide({
+    array,
+    dealingRangeHigh,
+    dealingRangeLow,
+    override: zoneSideOverride,
+  });
+  const zoneSide = zoneDetection.zoneSide;
+
+  const expectedZone = bias === "bullish" ? "discount" : "premium";
+  const isWrongZone = zoneSide !== "unknown" && zoneSide !== "equilibrium" && zoneSide !== expectedZone;
+  const shallowPullbackMode = isWrongZone;
+
+  gates.push({
+    key: "zone_side",
+    label: "Zone side (premium/discount)",
+    pass: !isWrongZone,
+    warning: shallowPullbackMode,
+    detail:
+      zoneSide === "unknown"
+        ? "⚠️ Cannot detect zone side — need dealing range + array bounds."
+        : !isWrongZone
+        ? `✅ ${bias} ${typeInfo.label} in ${zoneSide} zone (correct). Normal rules apply.`
+        : `⚠️ ${bias} ${typeInfo.label} is in ${zoneSide} zone (WRONG). This is a shallow pullback — stricter rules apply.`,
+  });
+
+  if (shallowPullbackMode) {
+    gates.push({
+      key: "shallow_choch",
+      label: "Shallow Pullback: LTF CHoCH required",
+      pass: !!hasChoch,
+      detail: hasChoch
+        ? "✅ 5M CHoCH confirmed. Bounce has failed structurally."
+        : "🚫 Shallow Pullback without LTF CHoCH = NO TRADE. Wait for the 5M CHoCH.",
+    });
+
+    const arrayEdge = bias === "bearish" ? num(array.high) : num(array.low);
+    gates.push({
+      key: "shallow_tight_stop",
+      label: "Shallow Pullback: razor-thin stop",
+      pass: true,
+      warning: true,
+      detail: `⚠️ Stop must be just above ${arrayEdge} (FVG edge), not the sweep extreme. Wider stop = higher chance of getting bounced out.`,
+    });
+
+    gates.push({
+      key: "shallow_quick_target",
+      label: "Shallow Pullback: quick target",
+      pass: true,
+      warning: true,
+      detail: "⚠️ Target the immediate Range Low / nearest SSL. Do not aim for the far DOL on this trade.",
     });
   }
 
@@ -188,13 +279,23 @@ export function validateArrayType({ array, bias, hasDisplacement, hasChoch, hasS
   });
 
   const passed = gates.filter(g => g.pass).length;
-  return { ready: passed === gates.length, gates, score: Math.round((passed / gates.length) * 100) };
+  return {
+    ready: passed === gates.length,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+    zoneSide,
+    shallowPullbackMode,
+  };
 }
 
 // ============================================================
 // STEP 4b: PD ARRAY MATRIX (LADDER)
 // ============================================================
-export function evaluateLadder({ arrays = [], currentPrice, dailyBias, hasDisplacement, hasChoch, hasSweep }) {
+export function evaluateLadder({
+  arrays = [], currentPrice, dailyBias,
+  hasDisplacement, hasChoch, hasSweep,
+  dealingRangeHigh, dealingRangeLow, zoneSideOverride,
+}) {
   const gates = [];
   const current = num(currentPrice);
 
@@ -206,6 +307,8 @@ export function evaluateLadder({ arrays = [], currentPrice, dailyBias, hasDispla
       gates: [{ key: "no_arrays", label: "No arrays logged", pass: false, detail: "Add at least one array to the ladder." }],
       score: 0,
       ladderInfo: null,
+      zoneSide: "unknown",
+      shallowPullbackMode: false,
     };
   }
 
@@ -239,6 +342,9 @@ export function evaluateLadder({ arrays = [], currentPrice, dailyBias, hasDispla
     detail: position === "middle" ? "⚠️ Middle of ladder — NO TRADE." : position === "top" ? "At top edge." : position === "bottom" ? "At bottom edge." : "Outside ladder.",
   });
 
+  let zoneSide = "unknown";
+  let shallowPullbackMode = false;
+
   if (activeFVG) {
     const typeValidation = validateArrayType({
       array: activeFVG,
@@ -246,8 +352,13 @@ export function evaluateLadder({ arrays = [], currentPrice, dailyBias, hasDispla
       hasDisplacement,
       hasChoch,
       hasSweep,
+      dealingRangeHigh,
+      dealingRangeLow,
+      zoneSideOverride,
     });
     gates.push(...typeValidation.gates);
+    zoneSide = typeValidation.zoneSide;
+    shallowPullbackMode = typeValidation.shallowPullbackMode;
   }
 
   const passed = gates.filter(g => g.pass).length;
@@ -256,13 +367,19 @@ export function evaluateLadder({ arrays = [], currentPrice, dailyBias, hasDispla
     gates,
     score: Math.round((passed / gates.length) * 100),
     ladderInfo: { topEdge, bottomEdge, position, activeFVG, count: sorted.length, sorted },
+    zoneSide,
+    shallowPullbackMode,
   };
 }
 
 // ============================================================
 // STEP 5 & 6: TRADE MATH
 // ============================================================
-export function computeLqeTrade({ dailyBias, activeFVG, sweepLevel, targetPrice, accountSize = 0, riskPercent = 1 }) {
+export function computeLqeTrade({
+  dailyBias, activeFVG, sweepLevel, targetPrice,
+  accountSize = 0, riskPercent = 1,
+  shallowPullbackMode = false,
+}) {
   if (!activeFVG) return null;
   const zHigh = num(activeFVG.high);
   const zLow  = num(activeFVG.low);
@@ -273,7 +390,13 @@ export function computeLqeTrade({ dailyBias, activeFVG, sweepLevel, targetPrice,
   const entry = computeCe(zHigh, zLow);
   if (!entry) return null;
 
-  let sl = sweep !== null ? sweep : (dailyBias === "bullish" ? zLow : zHigh);
+  let sl;
+  if (shallowPullbackMode) {
+    sl = dailyBias === "bullish" ? zLow : zHigh;
+  } else {
+    sl = sweep !== null ? sweep : (dailyBias === "bullish" ? zLow : zHigh);
+  }
+
   const slValid = (dailyBias === "bullish" && sl < entry) || (dailyBias === "bearish" && sl > entry);
   if (!slValid) return { invalid: true, invalidReason: "Stop is on wrong side of entry." };
 
@@ -282,7 +405,17 @@ export function computeLqeTrade({ dailyBias, activeFVG, sweepLevel, targetPrice,
   const rr = risk > 0 ? reward / risk : 0;
   const oteEntry = dailyBias === "bullish" ? sl + ((entry - sl) * 0.705) : sl - ((entry - sl) * 0.705);
 
-  const trade = { direction: dailyBias === "bullish" ? "BUY" : "SELL", entry, oteEntry, sl, tp: dol, rr, invalid: false };
+  const trade = {
+    direction: dailyBias === "bullish" ? "BUY" : "SELL",
+    entry,
+    oteEntry,
+    sl,
+    tp: dol,
+    rr,
+    invalid: false,
+    shallowPullbackMode,
+  };
+
   if (accountSize > 0 && risk > 0) {
     const riskAmount = (accountSize * (riskPercent || 1)) / 100;
     trade.riskAmount = Math.round(riskAmount * 100) / 100;
@@ -299,6 +432,7 @@ export function evaluateLqe({
   mssConfirmed, chochConfirmed, displacementPresent,
   arrays = [],
   targetPrice, targetLiquidityType,
+  zoneSideOverride = null,
   accountSize = 0, riskPercent = 1,
 }) {
   const context   = evaluateContext({ dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice });
@@ -309,6 +443,9 @@ export function evaluateLqe({
     hasDisplacement: !!displacementPresent,
     hasChoch: !!chochConfirmed || !!mssConfirmed,
     hasSweep: !!sweepConfirmed,
+    dealingRangeHigh,
+    dealingRangeLow,
+    zoneSideOverride,
   });
 
   const isReady = context.ready && sweep.ready && structure.ready && ladder.ready;
@@ -321,6 +458,7 @@ export function evaluateLqe({
       targetPrice,
       accountSize,
       riskPercent,
+      shallowPullbackMode: ladder.shallowPullbackMode,
     });
   }
 
@@ -334,5 +472,7 @@ export function evaluateLqe({
     context, sweep, structure, ladder, trade,
     preEntryReady: isReady && trade && !trade.invalid,
     reasons,
+    zoneSide: ladder.zoneSide,
+    shallowPullbackMode: ladder.shallowPullbackMode,
   };
 }
