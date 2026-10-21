@@ -44,6 +44,15 @@ const GROUPS = [
     ],
   },
   {
+    title: "FWT System",
+    links: [
+      { href: "/fwt", label: "FWT Setup" },
+      { href: "/fwt/journal", label: "FWT Journal" },
+      { href: "/fwt/history", label: "FWT History" },
+      { href: "/fwt/manual", label: "FWT Manual" },
+    ],
+  },
+  {
     title: "Layers System",
     links: [
       { href: "/layers", label: "Layers Setup" },
@@ -172,9 +181,12 @@ export default function Sidebar() {
             const isSldGroup = group.title === "SLD System";
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
+            const isFwtGroup = group.title === "FWT System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
-            const isSystemGroup = isSldGroup || isSmcGroup || isLqeGroup || isLayersGroup || isAmdGroup;
+            const isSystemGroup =
+              isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup ||
+              isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
@@ -186,6 +198,8 @@ export default function Sidebar() {
                       ? "text-orange-400"
                       : isLqeGroup
                       ? "text-orange-400"
+                      : isFwtGroup
+                      ? "text-teal-400"
                       : isLayersGroup
                       ? "text-purple-400"
                       : isAmdGroup
@@ -204,6 +218,8 @@ export default function Sidebar() {
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"
                         : isLqeGroup
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"
+                        : isFwtGroup
+                        ? "pl-2 border-l-2 border-teal-800/60 ml-2"
                         : isLayersGroup
                         ? "pl-2 border-l-2 border-purple-800/60 ml-2"
                         : "pl-2 border-l-2 border-blue-800/60 ml-2"
