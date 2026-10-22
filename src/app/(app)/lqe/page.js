@@ -41,6 +41,7 @@ function LqePageContent() {
     rangeHigh: "",
     rangeLow: "",
     currentPrice: "",
+    ema50Value: "",
     zoneSideOverride: "auto",
     sweepType: "ssl",
     sweepLevel: "",
@@ -98,6 +99,7 @@ function LqePageContent() {
         rangeHigh: setupData.dealing_range_high?.toString() || "",
         rangeLow: setupData.dealing_range_low?.toString() || "",
         currentPrice: setupData.current_price?.toString() || "",
+        ema50Value: setupData.ema50_value?.toString() || "",
         zoneSideOverride: setupData.zone_side_override || "auto",
         sweepType: setupData.sweep_type || "ssl",
         sweepLevel: setupData.sweep_level?.toString() || "",
@@ -145,6 +147,7 @@ function LqePageContent() {
       dealingRangeHigh: form.rangeHigh,
       dealingRangeLow: form.rangeLow,
       currentPrice: form.currentPrice,
+      ema50Value: form.ema50Value,
       sweepType: form.sweepType,
       sweepLevel: form.sweepLevel,
       sweepConfirmed: form.sweepConfirmed,
@@ -178,6 +181,8 @@ function LqePageContent() {
       dealing_range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
       dealing_range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
       current_price: form.currentPrice ? parseFloat(form.currentPrice) : null,
+      ema50_value: form.ema50Value ? parseFloat(form.ema50Value) : null,
+      ema50_conflict: evaluation.emaConflict || false,
       zone_side: form.zoneSideOverride || "auto",
       zone_side_override: form.zoneSideOverride === "auto" ? null : form.zoneSideOverride,
       shallow_pullback_mode: evaluation.shallowPullbackMode || false,
@@ -334,6 +339,29 @@ function LqePageContent() {
             <div><label className="block text-xs mb-1 text-gray-400">Range Low</label><input type="number" step="any" value={form.rangeLow} onChange={(e) => update("rangeLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
             <div><label className="block text-xs mb-1 text-gray-400">Current Price</label><input type="number" step="any" value={form.currentPrice} onChange={(e) => update("currentPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
           </div>
+
+          <div className="pt-2 border-t border-blue-800/40">
+            <label className="block text-xs mb-1 text-gray-400">
+              50 EMA Value <span className="text-blue-400">(trend filter)</span>
+            </label>
+            <input
+              type="number"
+              step="any"
+              value={form.ema50Value}
+              onChange={(e) => update("ema50Value", e.target.value)}
+              placeholder="e.g. 1.10250"
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+            />
+            {evaluation?.emaConflict && (
+              <div className="mt-2 p-2 rounded bg-yellow-950/40 border border-yellow-800">
+                <p className="text-xs text-yellow-200">
+                  ⚠️ Price is on the wrong side of the 50 EMA. Your {form.dailyBias} bias is
+                  fighting the trend filter — treat this as a counter-trend setup.
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="pt-2 border-t border-blue-800/40">
             <label className="block text-xs mb-1 text-gray-400">Zone Side Detection</label>
             <select value={form.zoneSideOverride} onChange={(e) => update("zoneSideOverride", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">

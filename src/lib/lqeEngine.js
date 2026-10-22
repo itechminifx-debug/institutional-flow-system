@@ -1,5 +1,5 @@
 // ============================================================
-// LQE — LIQUIDITY ENGINE (FULL + ZONE SIDE + SHALLOW PULLBACK)
+// LQE — LIQUIDITY ENGINE (FULL + ZONE SIDE + SHALLOW PULLBACK + 50 EMA)
 // ============================================================
 
 import { computeCe } from "@/lib/liquidityZoneEngine";
@@ -39,6 +39,53 @@ function num(v) {
 }
 
 // ============================================================
+// 50 EMA BIAS FILTER
+// ============================================================
+export function evaluateEmaBias({ ema50Value, currentPrice, dailyBias }) {
+  const ema = num(ema50Value);
+  const price = num(currentPrice);
+
+  if (ema === null || price === null) {
+    return {
+      ready: false,
+      bias: "unknown",
+      conflict: false,
+      gates: [{
+        key: "ema50",
+        label: "50 EMA bias filter",
+        pass: true,
+        warning: true,
+        detail: "⚠️ 50 EMA value not entered — bias filter not evaluated.",
+      }],
+    };
+  }
+
+  const bias = price > ema ? "bullish" : price < ema ? "bearish" : "flat";
+  const conflict = bias !== "flat" && bias !== dailyBias;
+  const aligned = bias === dailyBias;
+
+  return {
+    ready: true,
+    bias,
+    emaValue: ema,
+    price,
+    conflict,
+    gates: [{
+      key: "ema50",
+      label: "50 EMA bias filter",
+      pass: !conflict,
+      warning: conflict,
+      detail:
+        bias === "flat"
+          ? "Price is at the 50 EMA — no directional conviction."
+          : aligned
+          ? `✅ Price ${price} is ${bias} vs 50 EMA ${ema}. Trend confluence confirmed.`
+          : `⚠️ Price ${price} is ${bias} vs 50 EMA ${ema}. Your bias is ${dailyBias} — trading against the trend filter.`,
+    }],
+  };
+}
+
+// ============================================================
 // ZONE SIDE DETECTION
 // ============================================================
 export function detectZoneSide({ array, dealingRangeHigh, dealingRangeLow, override }) {
@@ -74,16 +121,29 @@ export function detectZoneSide({ array, dealingRangeHigh, dealingRangeLow, overr
 }
 
 // ============================================================
-// STEP 1: CONTEXT & TIME
+// STEP 1: CONTEXT & TIME (with 50 EMA)
 // ============================================================
-export function evaluateContext({ dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice }) {
+export function evaluateContext({ dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice, ema50Value }) {
   const gates = [];
 
   const hasBias = dailyBias === "bullish" || dailyBias === "bearish";
-  gates.push({ key: "bias", label: "Daily bias set", pass: hasBias, detail: hasBias ? `Bias: ${dailyBias}` : "Missing daily bias." });
+  gates.push({
+    key: "bias",
+    label: "Daily bias set",
+    pass: hasBias,
+    detail: hasBias ? `Bias: ${dailyBias}` : "Missing daily bias.",
+  });
+
+  const emaResult = evaluateEmaBias({ ema50Value, currentPrice, dailyBias });
+  gates.push(...emaResult.gates);
 
   const isKillZone = session === "london" || session === "ny_am";
-  gates.push({ key: "time", label: "Inside a Kill Zone", pass: isKillZone, detail: isKillZone ? `Session: ${session.toUpperCase()}` : "Outside high-probability windows." });
+  gates.push({
+    key: "time",
+    label: "Inside a Kill Zone",
+    pass: isKillZone,
+    detail: isKillZone ? `Session: ${session.toUpperCase()}` : "Outside high-probability windows.",
+  });
 
   let inZone = null;
   const rHigh = num(dealingRangeHigh);
@@ -94,10 +154,24 @@ export function evaluateContext({ dailyBias, session, dealingRangeHigh, dealingR
     if (dailyBias === "bullish") inZone = current < ce;
     else if (dailyBias === "bearish") inZone = current > ce;
   }
-  gates.push({ key: "zone", label: "Price in correct zone", pass: inZone === true, detail: inZone === null ? "Need Range and Current Price." : inZone ? `Correct ${dailyBias === "bullish" ? "discount" : "premium"} zone.` : "Wrong zone." });
+  gates.push({
+    key: "zone",
+    label: "Price in correct zone",
+    pass: inZone === true,
+    detail: inZone === null ? "Need Range and Current Price." : inZone ? `Correct ${dailyBias === "bullish" ? "discount" : "premium"} zone.` : "Wrong zone.",
+  });
 
-  const passed = gates.filter(g => g.pass).length;
-  return { ready: passed === gates.length, gates, score: Math.round((passed / gates.length) * 100) };
+  // Only non-warning gates count toward readiness
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
+
+  return {
+    ready: passed === blocking.length,
+    gates,
+    score: Math.round((passed / blocking.length) * 100),
+    emaBias: emaResult.bias,
+    emaConflict: emaResult.conflict,
+  };
 }
 
 // ============================================================
@@ -216,7 +290,7 @@ export function validateArrayType({
       label: "Shallow Pullback: razor-thin stop",
       pass: true,
       warning: true,
-      detail: `⚠️ Stop must be just above ${arrayEdge} (FVG edge), not the sweep extreme. Wider stop = higher chance of getting bounced out.`,
+      detail: `⚠️ Stop must be just above ${arrayEdge} (FVG edge), not the sweep extreme.`,
     });
 
     gates.push({
@@ -224,7 +298,7 @@ export function validateArrayType({
       label: "Shallow Pullback: quick target",
       pass: true,
       warning: true,
-      detail: "⚠️ Target the immediate Range Low / nearest SSL. Do not aim for the far DOL on this trade.",
+      detail: "⚠️ Target the immediate Range Low / nearest SSL. Do not aim for the far DOL.",
     });
   }
 
@@ -278,11 +352,12 @@ export function validateArrayType({
     detail: typeDetail,
   });
 
-  const passed = gates.filter(g => g.pass).length;
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
   return {
-    ready: passed === gates.length,
+    ready: passed === blocking.length,
     gates,
-    score: Math.round((passed / gates.length) * 100),
+    score: Math.round((passed / blocking.length) * 100),
     zoneSide,
     shallowPullbackMode,
   };
@@ -361,11 +436,12 @@ export function evaluateLadder({
     shallowPullbackMode = typeValidation.shallowPullbackMode;
   }
 
-  const passed = gates.filter(g => g.pass).length;
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
   return {
-    ready: passed === gates.length,
+    ready: passed === blocking.length,
     gates,
-    score: Math.round((passed / gates.length) * 100),
+    score: Math.round((passed / blocking.length) * 100),
     ladderInfo: { topEdge, bottomEdge, position, activeFVG, count: sorted.length, sorted },
     zoneSide,
     shallowPullbackMode,
@@ -427,7 +503,7 @@ export function computeLqeTrade({
 // FULL EVALUATION
 // ============================================================
 export function evaluateLqe({
-  dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice,
+  dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice, ema50Value,
   sweepType, sweepLevel, sweepConfirmed, smtDivergence,
   mssConfirmed, chochConfirmed, displacementPresent,
   arrays = [],
@@ -435,7 +511,7 @@ export function evaluateLqe({
   zoneSideOverride = null,
   accountSize = 0, riskPercent = 1,
 }) {
-  const context   = evaluateContext({ dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice });
+  const context   = evaluateContext({ dailyBias, session, dealingRangeHigh, dealingRangeLow, currentPrice, ema50Value });
   const sweep     = evaluateSweep({ dailyBias, sweepType, sweepLevel, sweepConfirmed, smtDivergence });
   const structure = evaluateStructure({ mssConfirmed, chochConfirmed, displacementPresent });
   const ladder    = evaluateLadder({
@@ -463,10 +539,10 @@ export function evaluateLqe({
   }
 
   const reasons = [];
-  if (!context.ready)   context.gates.filter(g => !g.pass).forEach(g => reasons.push(`Context: ${g.label}`));
+  if (!context.ready)   context.gates.filter(g => !g.pass && !g.warning).forEach(g => reasons.push(`Context: ${g.label}`));
   if (!sweep.ready)     sweep.gates.filter(g => !g.pass && !g.bonus).forEach(g => reasons.push(`Sweep: ${g.label}`));
   if (!structure.ready) structure.gates.filter(g => !g.pass).forEach(g => reasons.push(`Structure: ${g.label}`));
-  if (!ladder.ready)    ladder.gates.filter(g => !g.pass).forEach(g => reasons.push(`Ladder: ${g.label}`));
+  if (!ladder.ready)    ladder.gates.filter(g => !g.pass && !g.warning).forEach(g => reasons.push(`Ladder: ${g.label}`));
 
   return {
     context, sweep, structure, ladder, trade,
@@ -474,5 +550,7 @@ export function evaluateLqe({
     reasons,
     zoneSide: ladder.zoneSide,
     shallowPullbackMode: ladder.shallowPullbackMode,
+    emaBias: context.emaBias,
+    emaConflict: context.emaConflict,
   };
 }

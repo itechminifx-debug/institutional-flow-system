@@ -63,13 +63,28 @@ function ZoneSideBanner({ zoneSide, shallowPullbackMode, bias }) {
   );
 }
 
+function EmaVetoBanner({ emaConflict, emaDetail }) {
+  if (!emaConflict) return null;
+  return (
+    <div className="p-3 rounded-lg bg-red-950/40 border-2 border-red-700 space-y-1">
+      <p className="text-xs font-bold text-red-200">🚫 50 EMA Veto</p>
+      <p className="text-[11px] text-red-100/90">
+        {emaDetail || "Your bias conflicts with the 50 EMA."}{" "}
+        The setup is counter-trend — reduce risk or wait for the EMA to flip.
+      </p>
+    </div>
+  );
+}
+
 export default function LqeCard({ data }) {
   if (!data) return null;
 
-  const { context, sweep, structure, ladder, trade, preEntryReady, reasons, zoneSide, shallowPullbackMode } = data;
+  const { context, sweep, structure, ladder, trade, preEntryReady, reasons, zoneSide, shallowPullbackMode, emaBias, emaConflict } = data;
   const verdict = preEntryReady && trade ? trade.direction : "WAIT";
   const verdictColor = verdict === "BUY" ? "bg-green-900/40 border-green-600 text-green-200" : verdict === "SELL" ? "bg-red-900/40 border-red-600 text-red-200" : "bg-yellow-950/40 border-yellow-700 text-yellow-200";
   const verdictEmoji = verdict === "BUY" ? "🟢" : verdict === "SELL" ? "🔴" : "⏳";
+
+  const emaDetail = context?.gates?.find(g => g.key === "ema50")?.detail;
 
   return (
     <div className="p-4 rounded-lg bg-gray-900 border-2 border-orange-800 space-y-3">
@@ -78,8 +93,21 @@ export default function LqeCard({ data }) {
           <h2 className="text-sm font-bold text-orange-300">⚙️ Liquidity Engine (LQE)</h2>
           <p className="text-xs text-gray-500 mt-0.5">Context → Sweep → Structure → Ladder → Delivery</p>
         </div>
-        <span className={`text-xs px-3 py-1 rounded-full border-2 font-bold ${verdictColor}`}>{verdictEmoji} {verdict}</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {emaBias && emaBias !== "unknown" && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
+              emaConflict
+                ? "bg-red-900/40 border-red-700 text-red-200"
+                : "bg-green-900/40 border-green-700 text-green-200"
+            }`}>
+              {emaConflict ? "📉 EMA ✗" : "📈 EMA ✓"}
+            </span>
+          )}
+          <span className={`text-xs px-3 py-1 rounded-full border-2 font-bold ${verdictColor}`}>{verdictEmoji} {verdict}</span>
+        </div>
       </div>
+
+      <EmaVetoBanner emaConflict={emaConflict} emaDetail={emaDetail} />
 
       <ZoneSideBanner zoneSide={zoneSide} shallowPullbackMode={shallowPullbackMode} bias={context?.gates?.find(g => g.key === "bias")?.pass ? (context.gates.find(g => g.key === "bias").detail.includes("bullish") ? "bullish" : "bearish") : "unknown"} />
 
