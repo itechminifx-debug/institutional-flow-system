@@ -1,13 +1,7 @@
 // ============================================================
-// FWT — 4-HOUR WICK TRAP ENGINE
+// FWT — 4-HOUR WICK TRAP ENGINE (FULL + 50 EMA)
 // ============================================================
-// Sequence: Bias → 4H Wick → Wick Confirmed → 15M CHoCH → 15M FVG → 1M Entry → SL/TP
-//
-// Two modes:
-//   - 'live'   = trading inside the 4H candle while it's forming (aggressive)
-//   - 'closed' = the 4H candle has closed with a confirmed rejection wick (mechanical)
-//
-// The engine blocks saving if the sequence is incomplete.
+// Sequence: Bias → Wick → Wick Confirmed → 15M CHoCH → 15M FVG → 1M Entry → SL/TP
 // ============================================================
 
 export const FWT_SESSIONS = [
@@ -42,7 +36,54 @@ function fmt(v) {
 }
 
 // ============================================================
-// STEP 1: CONTEXT — DAILY BIAS + 4H CANDLE DATA
+// 50 EMA BIAS FILTER
+// ============================================================
+export function evaluateEmaBias({ ema50Value, currentPrice, dailyBias }) {
+  const ema = num(ema50Value);
+  const price = num(currentPrice);
+
+  if (ema === null || price === null) {
+    return {
+      ready: false,
+      bias: "unknown",
+      conflict: false,
+      gates: [{
+        key: "ema50",
+        label: "50 EMA bias filter",
+        pass: true,
+        warning: true,
+        detail: "⚠️ 50 EMA value not entered — bias filter not evaluated.",
+      }],
+    };
+  }
+
+  const bias = price > ema ? "bullish" : price < ema ? "bearish" : "flat";
+  const conflict = bias !== "flat" && bias !== dailyBias;
+  const aligned = bias === dailyBias;
+
+  return {
+    ready: true,
+    bias,
+    emaValue: ema,
+    price,
+    conflict,
+    gates: [{
+      key: "ema50",
+      label: "50 EMA bias filter",
+      pass: !conflict,
+      warning: conflict,
+      detail:
+        bias === "flat"
+          ? "Price is at the 50 EMA — no directional conviction."
+          : aligned
+          ? `✅ Price ${price} is ${bias} vs 50 EMA ${ema}. Trend confluence confirmed.`
+          : `⚠️ Price ${price} is ${bias} vs 50 EMA ${ema}. Your bias is ${dailyBias} — trading against the trend filter.`,
+    }],
+  };
+}
+
+// ============================================================
+// STEP 1: CONTEXT — DAILY BIAS + 4H CANDLE DATA + 50 EMA
 // ============================================================
 export function evaluateFwtContext({
   mode,
@@ -52,6 +93,7 @@ export function evaluateFwtContext({
   candleHigh,
   candleLow,
   candleClose,
+  ema50Value,
 }) {
   const gates = [];
 
@@ -63,6 +105,10 @@ export function evaluateFwtContext({
     pass: hasBias,
     detail: hasBias ? `Bias: ${dailyBias}` : "No daily bias. Cannot trade without HTF context.",
   });
+
+  // 50 EMA bias filter
+  const emaResult = evaluateEmaBias({ ema50Value, currentPrice, dailyBias });
+  gates.push(...emaResult.gates);
 
   // Candle data
   const o = num(candleOpen);
@@ -109,11 +155,16 @@ export function evaluateFwtContext({
     });
   }
 
-  const passed = gates.filter((g) => g.pass).length;
+  // Only non-warning gates count toward readiness
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
+
   return {
-    ready: passed === gates.length,
+    ready: passed === blocking.length,
     gates,
-    score: Math.round((passed / gates.length) * 100),
+    score: Math.round((passed / blocking.length) * 100),
+    emaBias: emaResult.bias,
+    emaConflict: emaResult.conflict,
   };
 }
 
@@ -263,8 +314,6 @@ export function evaluateFwtStructure({
   const wExt = num(wickExtreme);
   let fvgInWick = null;
   if (hasFvg && wExt !== null && chochLvl !== null) {
-    // For an upper wick (short): FVG should be between CHoCH level and wick extreme (above)
-    // For a lower wick (long): FVG should be between CHoCH level and wick extreme (below)
     if (wickDirection === "upper") fvgInWick = fvgH <= wExt && fvgL >= chochLvl;
     else if (wickDirection === "lower") fvgInWick = fvgL >= wExt && fvgH <= chochLvl;
   }
@@ -327,14 +376,12 @@ export function evaluateFwtEntry({
     detail: entry !== null ? `Entry: ${fmt(entry)}.` : "No entry price entered.",
   });
 
-  // SL must be beyond the wick extreme (with a small buffer allowed)
+  // SL must be beyond the wick extreme
   let slValid = false;
   if (entry !== null && sl !== null && wExt !== null) {
     if (dailyBias === "bearish") {
-      // Short: SL above entry, and SL >= wick extreme (with small tolerance)
       slValid = sl > entry && sl >= wExt;
     } else if (dailyBias === "bullish") {
-      // Long: SL below entry, and SL <= wick extreme
       slValid = sl < entry && sl <= wExt;
     }
   }
@@ -432,6 +479,7 @@ export function evaluateFwt({
   candleHigh,
   candleLow,
   candleClose,
+  ema50Value,
   wickDirection,
   wickExtreme,
   liquiditySweptType,
@@ -457,6 +505,7 @@ export function evaluateFwt({
     candleHigh,
     candleLow,
     candleClose,
+    ema50Value,
   });
 
   const wick = evaluateFwtWick({
@@ -507,9 +556,8 @@ export function evaluateFwt({
     });
   }
 
-  // Collect reasons if not ready
   const reasons = [];
-  if (!context.ready) context.gates.filter((g) => !g.pass).forEach((g) => reasons.push(`Context: ${g.label}`));
+  if (!context.ready) context.gates.filter((g) => !g.pass && !g.warning).forEach((g) => reasons.push(`Context: ${g.label}`));
   if (!wick.ready) wick.gates.filter((g) => !g.pass).forEach((g) => reasons.push(`Wick: ${g.label}`));
   if (!structure.ready) structure.gates.filter((g) => !g.pass).forEach((g) => reasons.push(`Structure: ${g.label}`));
   if (!entry.ready) entry.gates.filter((g) => !g.pass).forEach((g) => reasons.push(`Entry: ${g.label}`));
@@ -523,5 +571,7 @@ export function evaluateFwt({
     trade,
     preEntryReady: allReady && trade && !trade.invalid,
     reasons,
+    emaBias: context.emaBias,
+    emaConflict: context.emaConflict,
   };
 }

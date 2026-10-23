@@ -3,10 +3,6 @@
 import { formatPrice } from "@/lib/formatNumbers";
 import { WICK_DIRECTIONS, LIQUIDITY_SWEPT_TYPES } from "@/lib/fwtEngine";
 
-// ============================================================
-// Sub-components
-// ============================================================
-
 function StagePanel({ title, emoji, stage, accent = "teal", children }) {
   const accentMap = {
     teal:    "border-teal-800/60 bg-teal-950/20",
@@ -65,9 +61,6 @@ function StagePanel({ title, emoji, stage, accent = "teal", children }) {
   );
 }
 
-// ============================================================
-// The 4H Candle Visual — shows the trap setup visually
-// ============================================================
 function CandleVisual({
   mode,
   candleOpen,
@@ -92,7 +85,6 @@ function CandleVisual({
   const sl = parseFloat(stopLoss);
   const tp = parseFloat(targetPrice);
 
-  // Need at least high/low to draw
   if (isNaN(h) || isNaN(l) || h <= l) {
     return (
       <div className="p-3 rounded-lg bg-black/40 border border-gray-800 text-center">
@@ -101,7 +93,6 @@ function CandleVisual({
     );
   }
 
-  // Chart layout — vertical price axis (high at top, low at bottom)
   const priceRange = h - l;
   const padding = priceRange * 0.15;
   const topPrice = h + padding;
@@ -111,7 +102,6 @@ function CandleVisual({
   const chartTop = 20;
   const chartBottom = height - 20;
 
-  // Convert price → pixel Y (inverted: high price = low Y)
   const priceToY = (p) => {
     if (isNaN(p)) return null;
     const ratio = (p - bottomPrice) / totalRange;
@@ -128,7 +118,6 @@ function CandleVisual({
   const slY = !isNaN(sl) ? priceToY(sl) : null;
   const tpY = !isNaN(tp) ? priceToY(tp) : null;
 
-  // Body
   const bodyTop = oY !== null && cY !== null ? Math.min(oY, cY) : Math.min(hY, lY);
   const bodyHeight = oY !== null && cY !== null ? Math.max(Math.abs(cY - oY), 2) : 4;
   const bodyColor = cY !== null && oY !== null
@@ -154,10 +143,8 @@ function CandleVisual({
       </div>
 
       <div className="relative" style={{ height: `${height}px` }}>
-        {/* Chart background */}
         <div className="absolute inset-0 bg-black/30 rounded border border-gray-800" />
 
-        {/* Candle wicks (lines) */}
         <div
           className="absolute left-1/2 w-px bg-white/40"
           style={{
@@ -167,7 +154,6 @@ function CandleVisual({
           }}
         />
 
-        {/* Body */}
         <div
           className={`absolute left-1/2 w-8 rounded-sm ${bodyColor}`}
           style={{
@@ -177,7 +163,6 @@ function CandleVisual({
           }}
         />
 
-        {/* Wick extreme marker (the trap) */}
         {wExtY !== null && (
           <div
             className="absolute left-0 right-0 flex items-center"
@@ -191,7 +176,6 @@ function CandleVisual({
           </div>
         )}
 
-        {/* Current price marker */}
         {curY !== null && (
           <div
             className="absolute left-0 right-0 flex items-center"
@@ -205,7 +189,6 @@ function CandleVisual({
           </div>
         )}
 
-        {/* Entry marker */}
         {entryY !== null && (
           <div
             className="absolute left-0 right-0 flex items-center"
@@ -219,7 +202,6 @@ function CandleVisual({
           </div>
         )}
 
-        {/* SL marker */}
         {slY !== null && (
           <div
             className="absolute left-0 right-0 flex items-center"
@@ -233,7 +215,6 @@ function CandleVisual({
           </div>
         )}
 
-        {/* TP marker */}
         {tpY !== null && (
           <div
             className="absolute left-0 right-0 flex items-center"
@@ -248,7 +229,6 @@ function CandleVisual({
         )}
       </div>
 
-      {/* Legend */}
       <div className="grid grid-cols-2 gap-1 text-[10px] text-gray-400">
         <p>Open: <span className="text-white font-mono">{isNaN(o) ? "—" : formatPrice(o)}</span></p>
         <p>High: <span className="text-white font-mono">{formatPrice(h)}</span></p>
@@ -259,13 +239,10 @@ function CandleVisual({
   );
 }
 
-// ============================================================
-// MAIN CARD
-// ============================================================
 export default function FwtCard({ data }) {
   if (!data) return null;
 
-  const { mode, context, wick, structure, entry, trade, preEntryReady, reasons } = data;
+  const { mode, context, wick, structure, entry, trade, preEntryReady, reasons, emaBias, emaConflict } = data;
 
   const verdict = preEntryReady && trade ? trade.direction : "WAIT";
   const verdictColor =
@@ -274,8 +251,8 @@ export default function FwtCard({ data }) {
     : "bg-yellow-950/40 border-yellow-700 text-yellow-200";
   const verdictEmoji = verdict === "BUY" ? "🟢" : verdict === "SELL" ? "🔴" : "⏳";
 
-  // Extract candle info from context gates for the visual
   const candle = data.candle || {};
+  const emaDetail = context?.gates?.find(g => g.key === "ema50")?.detail;
 
   return (
     <div className="p-4 rounded-lg bg-gray-900 border-2 border-teal-800 space-y-3">
@@ -288,12 +265,22 @@ export default function FwtCard({ data }) {
             {mode === "closed" && <span className="ml-1 text-purple-400">· CLOSED</span>}
           </p>
         </div>
-        <span className={`text-xs px-3 py-1 rounded-full border-2 font-bold ${verdictColor}`}>
-          {verdictEmoji} {verdict}
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {emaBias && emaBias !== "unknown" && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
+              emaConflict
+                ? "bg-red-900/40 border-red-700 text-red-200"
+                : "bg-green-900/40 border-green-700 text-green-200"
+            }`}>
+              {emaConflict ? "📉 EMA ✗" : "📈 EMA ✓"}
+            </span>
+          )}
+          <span className={`text-xs px-3 py-1 rounded-full border-2 font-bold ${verdictColor}`}>
+            {verdictEmoji} {verdict}
+          </span>
+        </div>
       </div>
 
-      {/* Candle visual */}
       <CandleVisual
         mode={mode}
         candleOpen={candle.open}
@@ -309,13 +296,21 @@ export default function FwtCard({ data }) {
         dailyBias={candle.dailyBias}
       />
 
-      {/* Stage panels */}
+      {emaConflict && (
+        <div className="p-3 rounded-lg bg-red-950/40 border-2 border-red-700 space-y-1">
+          <p className="text-xs font-bold text-red-200">🚫 50 EMA Veto</p>
+          <p className="text-[11px] text-red-100/90">
+            {emaDetail || "Your bias conflicts with the 50 EMA."}{" "}
+            The setup is counter-trend — reduce risk or wait for the EMA to flip.
+          </p>
+        </div>
+      )}
+
       <StagePanel title="Stage 1 — Context & Candle" emoji="🌍" stage={context} accent="blue" />
       <StagePanel title="Stage 2 — 4H Wick (Manipulation)" emoji="⚡" stage={wick} accent="orange" />
       <StagePanel title="Stage 3 — 15M Structure Shift" emoji="🔍" stage={structure} accent="purple" />
       <StagePanel title="Stage 4 — 1M Entry Trigger" emoji="🎯" stage={entry} accent="emerald" />
 
-      {/* Trade card */}
       {trade && preEntryReady && !trade.invalid && (
         <div className="p-4 rounded-lg bg-teal-950/30 border-2 border-teal-700 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -362,14 +357,12 @@ export default function FwtCard({ data }) {
         </div>
       )}
 
-      {/* Invalid trade */}
       {trade?.invalid && (
         <div className="p-3 rounded-lg bg-red-950/40 border border-red-700 text-red-200 text-xs">
           <strong>Invalid Trade:</strong> {trade.invalidReason}
         </div>
       )}
 
-      {/* Reasons panel */}
       {!preEntryReady && reasons && reasons.length > 0 && (
         <div className="p-3 rounded-lg bg-yellow-950/30 border border-yellow-800 space-y-2">
           <p className="text-xs font-bold text-yellow-200">⏳ Sequence Incomplete</p>

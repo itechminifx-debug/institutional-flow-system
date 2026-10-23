@@ -28,35 +28,31 @@ function FwtPageContent() {
     session: "london",
     mode: "live",
 
-    // Step 1 — Context
     dailyBias: "bearish",
     currentPrice: "",
     candleOpen: "",
     candleHigh: "",
     candleLow: "",
     candleClose: "",
+    ema50Value: "",
 
-    // Step 2 — Wick
     wickDirection: "upper",
     wickExtreme: "",
     liquiditySweptType: "bsl",
     liquiditySweptLevel: "",
     wickConfirmed: false,
 
-    // Step 3 — 15M Structure
     m15ChochConfirmed: false,
     m15ChochLevel: "",
     m15FvgHigh: "",
     m15FvgLow: "",
 
-    // Step 4 — 1M Entry
     m1ChochConfirmed: false,
     m1RejectionPresent: false,
     entryPrice: "",
     stopLoss: "",
     targetPrice: "",
 
-    // Extra
     notes: "",
   });
 
@@ -107,6 +103,7 @@ function FwtPageContent() {
         candleHigh: setupData.candle_high?.toString() || "",
         candleLow: setupData.candle_low?.toString() || "",
         candleClose: setupData.candle_close?.toString() || "",
+        ema50Value: setupData.ema50_value?.toString() || "",
         wickDirection: setupData.wick_direction || "upper",
         wickExtreme: setupData.wick_extreme?.toString() || "",
         liquiditySweptType: setupData.liquidity_swept_type || "bsl",
@@ -143,6 +140,7 @@ function FwtPageContent() {
       candleHigh: form.candleHigh,
       candleLow: form.candleLow,
       candleClose: form.candleClose,
+      ema50Value: form.ema50Value,
       wickDirection: form.wickDirection,
       wickExtreme: form.wickExtreme,
       liquiditySweptType: form.liquiditySweptType,
@@ -162,7 +160,6 @@ function FwtPageContent() {
     });
   }, [form, accountSize, riskPercent]);
 
-  // Build the candle object the card needs for its visual
   const cardData = useMemo(() => {
     return {
       ...evaluation,
@@ -200,6 +197,8 @@ function FwtPageContent() {
       candle_high: form.candleHigh ? parseFloat(form.candleHigh) : null,
       candle_low: form.candleLow ? parseFloat(form.candleLow) : null,
       candle_close: form.candleClose ? parseFloat(form.candleClose) : null,
+      ema50_value: form.ema50Value ? parseFloat(form.ema50Value) : null,
+      ema50_conflict: evaluation.emaConflict || false,
       wick_direction: form.wickDirection,
       wick_extreme: form.wickExtreme ? parseFloat(form.wickExtreme) : null,
       liquidity_swept_type: form.liquiditySweptType,
@@ -283,7 +282,6 @@ function FwtPageContent() {
           <p className="text-gray-400 text-sm">Bias → Wick → 15M Shift → 1M Entry. Catch the body of the 4H candle.</p>
         </div>
 
-        {/* Top: Pair + Session + Mode */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <PairPicker value={form.pair} onChange={(p) => update("pair", p)} label="Pair" />
@@ -318,7 +316,6 @@ function FwtPageContent() {
           </div>
         </div>
 
-        {/* STAGE 1 — CONTEXT */}
         <div className="p-4 rounded-lg bg-gray-900 border border-blue-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-blue-300">🌍 Stage 1 — Context & 4H Candle</h2>
 
@@ -359,9 +356,30 @@ function FwtPageContent() {
               <input type="number" step="any" value={form.candleLow} onChange={(e) => update("candleLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
             </div>
           </div>
+
+          <div className="pt-2 border-t border-blue-800/40">
+            <label className="block text-xs mb-1 text-gray-400">
+              50 EMA Value <span className="text-blue-400">(trend filter)</span>
+            </label>
+            <input
+              type="number"
+              step="any"
+              value={form.ema50Value}
+              onChange={(e) => update("ema50Value", e.target.value)}
+              placeholder="e.g. 1.10250"
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+            />
+            {evaluation?.emaConflict && (
+              <div className="mt-2 p-2 rounded bg-yellow-950/40 border border-yellow-800">
+                <p className="text-xs text-yellow-200">
+                  ⚠️ Price is on the wrong side of the 50 EMA. Your {form.dailyBias} bias is
+                  fighting the trend filter — treat this as a counter-trend setup.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* STAGE 2 — WICK */}
         <div className="p-4 rounded-lg bg-gray-900 border border-orange-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-orange-300">⚡ Stage 2 — The 4H Wick (Manipulation)</h2>
 
@@ -432,7 +450,6 @@ function FwtPageContent() {
           </button>
         </div>
 
-        {/* STAGE 3 — 15M STRUCTURE */}
         <div className="p-4 rounded-lg bg-gray-900 border border-purple-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-purple-300">🔍 Stage 3 — 15M Structure Shift</h2>
 
@@ -471,7 +488,6 @@ function FwtPageContent() {
           </div>
         </div>
 
-        {/* STAGE 4 — 1M ENTRY */}
         <div className="p-4 rounded-lg bg-gray-900 border border-emerald-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-300">🎯 Stage 4 — 1M Entry Trigger</h2>
 
@@ -530,10 +546,8 @@ function FwtPageContent() {
           </div>
         </div>
 
-        {/* Live Card */}
         {evaluation && <FwtCard data={cardData} />}
 
-        {/* Screenshots */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
           <ScreenshotUploader
             setupId={existingSetupId}
@@ -549,7 +563,6 @@ function FwtPageContent() {
           />
         </div>
 
-        {/* Notes */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
           <label className="block text-xs mb-1 text-gray-400">Notes</label>
           <textarea value={form.notes} onChange={(e) => update("notes", e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 resize-none text-sm" />
