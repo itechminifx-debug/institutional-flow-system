@@ -8,6 +8,7 @@ import { evaluateSld, sldTypeInfo } from "@/lib/sldEngine";
 import SldCard from "@/components/SldCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+import LinkedDecksPanel from "@/components/LinkedDecksPanel";
 
 export default function SldDetailPage() {
   const params = useParams();
@@ -424,7 +425,11 @@ export default function SldDetailPage() {
             ))}
           </div>
         )}
-
+<LinkedDecksPanel
+  setupTable="sld_setups"
+  setupId={row.id}
+  setupLabel={`${row.pair} — ${row.sequence_type || ""}`}
+/>
         <button type="button" onClick={() => router.push("/sld/journal")}
           className="w-full py-3 rounded-lg bg-gray-800 font-bold">
           ← Back to SLD Journal

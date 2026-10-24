@@ -8,6 +8,7 @@ import { evaluateFwt } from "@/lib/fwtEngine";
 import FwtCard from "@/components/FwtCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+import LinkedDecksPanel from "@/components/LinkedDecksPanel";
 
 export default function FwtDetailPage() {
   const params = useParams();
@@ -322,6 +323,11 @@ export default function FwtDetailPage() {
             {savingNotes ? "Saving..." : "💾 Save Notes"}
           </button>
         </div>
+<LinkedDecksPanel
+  setupTable="fwt_setups"
+  setupId={row.id}
+  setupLabel={`${row.pair} — ${row.session || ""}`}
+/>
 
         <button
           type="button"

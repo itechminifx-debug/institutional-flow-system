@@ -8,6 +8,7 @@ import { evaluateSmc } from "@/lib/smcEngine";
 import SmcCard from "@/components/SmcCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+import LinkedDecksPanel from "@/components/LinkedDecksPanel";
 
 export default function SmcDetailPage() {
   const params = useParams();
@@ -158,7 +159,11 @@ export default function SmcDetailPage() {
           <textarea value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} rows={6} placeholder="Observations, outcome, lessons..." className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 resize-none text-sm" />
           <button type="button" onClick={handleSaveNotes} disabled={savingNotes || notesDraft === (row.notes || "")} className="w-full py-2 rounded-lg bg-purple-800 font-bold text-sm disabled:opacity-50">{savingNotes ? "Saving..." : "💾 Save Notes"}</button>
         </div>
-
+<LinkedDecksPanel
+  setupTable="smc_setups"
+  setupId={row.id}
+  setupLabel={`${row.pair} — ${row.session || ""}`}
+/>
         <button type="button" onClick={() => router.push("/smc/journal")} className="w-full py-3 rounded-lg bg-gray-800 font-bold">← Back to SMC Journal</button>
       </div>
     </main>

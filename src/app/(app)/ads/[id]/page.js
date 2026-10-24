@@ -8,6 +8,7 @@ import { evaluateAds } from "@/lib/adsEngine";
 import AdsCard from "@/components/AdsCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+import LinkedDecksPanel from "@/components/LinkedDecksPanel";
 
 export default function AdsDetailPage() {
   const params = useParams();
@@ -369,7 +370,11 @@ export default function AdsDetailPage() {
             {savingNotes ? "Saving..." : "💾 Save Notes"}
           </button>
         </div>
-
+<LinkedDecksPanel
+  setupTable="ads_setups"
+  setupId={row.id}
+  setupLabel={`${row.pair} — ${row.session || ""}`}
+/>
         <button
           type="button"
           onClick={() => router.push("/ads/journal")}

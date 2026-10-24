@@ -6,6 +6,14 @@ import { usePathname } from "next/navigation";
 
 const GROUPS = [
   {
+    title: "Research",
+    links: [
+      { href: "/decks", label: "Research Decks" },
+      { href: "/decks/daily", label: "Daily Deck" },
+      { href: "/decks/new", label: "New Deck" },
+    ],
+  },
+  {
     title: "Trading",
     links: [
       { href: "/rejection-block", label: "Rejection Block" },
@@ -166,13 +174,10 @@ export default function Sidebar() {
         >
           {open ? "✕" : "☰"}
         </button>
-        <Link href="/dashboard" className="font-bold text-sm">
-          IFS
-        </Link>
+        <Link href="/dashboard" className="font-bold text-sm">IFS</Link>
         <div className="w-6" />
       </div>
 
-      {/* Mobile overlay */}
       {open && (
         <div
           className="md:hidden fixed inset-0 z-30 bg-black/60"
@@ -180,7 +185,6 @@ export default function Sidebar() {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 z-40 h-screen w-[220px] bg-black border-r border-gray-800 overflow-y-auto
           transform transition-transform duration-200
@@ -189,13 +193,12 @@ export default function Sidebar() {
           pt-3`}
       >
         <div className="hidden md:block px-4 pb-3 border-b border-gray-800">
-          <Link href="/dashboard" className="font-bold text-sm">
-            IFS
-          </Link>
+          <Link href="/dashboard" className="font-bold text-sm">IFS</Link>
         </div>
 
         <nav className="px-2 py-3 space-y-4">
           {GROUPS.map((group) => {
+            const isResearch = group.title === "Research";
             const isSldGroup = group.title === "SLD System";
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
@@ -205,14 +208,16 @@ export default function Sidebar() {
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
             const isSystemGroup =
-              isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup || isAdsGroup || isAmsGroup ||
-              isLayersGroup || isAmdGroup;
+              isResearch || isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup ||
+              isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
                 <p
                   className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
-                    isSldGroup
+                    isResearch
+                      ? "text-indigo-400"
+                      : isSldGroup
                       ? "text-emerald-400"
                       : isSmcGroup
                       ? "text-orange-400"
@@ -236,7 +241,9 @@ export default function Sidebar() {
                 <div
                   className={`space-y-0.5 ${
                     isSystemGroup
-                      ? isSldGroup
+                      ? isResearch
+                        ? "pl-2 border-l-2 border-indigo-800/60 ml-2"
+                        : isSldGroup
                         ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
                         : isSmcGroup
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"

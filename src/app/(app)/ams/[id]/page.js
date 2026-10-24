@@ -8,6 +8,7 @@ import { evaluateAms } from "@/lib/amsEngine";
 import AmsCard from "@/components/AmsCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+import LinkedDecksPanel from "@/components/LinkedDecksPanel";
 
 export default function AmsDetailPage() {
   const params = useParams();
@@ -453,7 +454,11 @@ export default function AmsDetailPage() {
             {savingNotes ? "Saving..." : "💾 Save Notes"}
           </button>
         </div>
-
+<LinkedDecksPanel
+  setupTable="ams_setups"
+  setupId={row.id}
+  setupLabel={`${row.pair} — ${row.scenario || ""}`}
+/>
         <button
           type="button"
           onClick={() => router.push("/ams/journal")}

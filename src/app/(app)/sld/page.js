@@ -17,6 +17,7 @@ import SldCard from "@/components/SldCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
 
+
 function emptyCandle() { return { open: "", high: "", low: "", close: "" }; }
 function emptyDol() {
   return {
