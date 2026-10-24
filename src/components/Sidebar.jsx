@@ -62,6 +62,15 @@ const GROUPS = [
     ],
   },
   {
+    title: "AMS System",
+    links: [
+      { href: "/ams", label: "AMS Setup" },
+      { href: "/ams/journal", label: "AMS Journal" },
+      { href: "/ams/history", label: "AMS History" },
+      { href: "/ams/manual", label: "AMS Manual" },
+    ],
+  },
+  {
     title: "Layers System",
     links: [
       { href: "/layers", label: "Layers Setup" },
@@ -192,10 +201,11 @@ export default function Sidebar() {
             const isLqeGroup = group.title === "LQE System";
             const isFwtGroup = group.title === "FWT System";
             const isAdsGroup = group.title === "ADS System";
+            const isAmsGroup = group.title === "AMS System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
             const isSystemGroup =
-              isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup || isAdsGroup ||
+              isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup || isAdsGroup || isAmsGroup ||
               isLayersGroup || isAmdGroup;
 
             return (
@@ -212,6 +222,8 @@ export default function Sidebar() {
                       ? "text-teal-400"
                       : isAdsGroup
                       ? "text-amber-400"
+                      : isAmsGroup
+                      ? "text-red-400"
                       : isLayersGroup
                       ? "text-purple-400"
                       : isAmdGroup
@@ -234,6 +246,8 @@ export default function Sidebar() {
                         ? "pl-2 border-l-2 border-teal-800/60 ml-2"
                         : isAdsGroup
                         ? "pl-2 border-l-2 border-amber-800/60 ml-2"
+                        : isAmsGroup
+                        ? "pl-2 border-l-2 border-red-800/60 ml-2"
                         : isLayersGroup
                         ? "pl-2 border-l-2 border-purple-800/60 ml-2"
                         : "pl-2 border-l-2 border-blue-800/60 ml-2"
