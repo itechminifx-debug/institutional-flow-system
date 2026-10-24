@@ -14,6 +14,8 @@ import {
   formatTagsForInput,
 } from "@/lib/decksEngine";
 import { renderMarkdown } from "@/lib/markdown";
+import ScreenshotUploader from "@/components/ScreenshotUploader";
+import ScreenshotGallery from "@/components/ScreenshotGallery";
 
 function DeckEditorContent() {
   const router = useRouter();
@@ -23,7 +25,6 @@ function DeckEditorContent() {
   const editId = searchParams?.get("edit") || null;
   const isEdit = !!editId;
 
-  // Setup linking preload: ?link_table=ams_setups&link_id=xxx&link_label=Vol+80
   const preloadLinkTable = searchParams?.get("link_table") || null;
   const preloadLinkId = searchParams?.get("link_id") || null;
   const preloadLinkLabel = searchParams?.get("link_label") || null;
@@ -40,7 +41,8 @@ function DeckEditorContent() {
     status: "published",
   });
 
-  const [decks, setDecks] = useState([]); // for linked setup display
+  const [userId, setUserId] = useState(null);
+  const [screenshots, setScreenshots] = useState([]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -49,10 +51,9 @@ function DeckEditorContent() {
 
   const [existingId, setExistingId] = useState(null);
   const [showTemplates, setShowTemplates] = useState(!isEdit);
-  const [previewMode, setPreviewMode] = useState("split"); // 'edit' | 'split' | 'preview'
+  const [previewMode, setPreviewMode] = useState("split");
   const [showLinkPicker, setShowLinkPicker] = useState(false);
 
-  // Link picker state
   const [linkTable, setLinkTable] = useState(preloadLinkTable || "sld_setups");
   const [linkOptions, setLinkOptions] = useState([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
@@ -60,14 +61,15 @@ function DeckEditorContent() {
   const textareaRef = useRef(null);
 
   // ============================================================
-  // LOAD EXISTING DECK
+  // LOAD EXISTING DECK (with screenshots)
   // ============================================================
   useEffect(() => {
     async function load() {
-      if (!isEdit) return;
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
+
+      if (!isEdit) return;
 
       setLoading(true);
       const { data, error: loadErr } = await supabase
@@ -94,6 +96,14 @@ function DeckEditorContent() {
         status: data.status || "published",
       });
 
+      // Load screenshots
+      const { data: shots } = await supabase
+        .from("deck_screenshots")
+        .select("*")
+        .eq("deck_id", data.id)
+        .order("display_order", { ascending: true });
+      setScreenshots(shots || []);
+
       setExistingId(data.id);
       setShowTemplates(false);
       setLoading(false);
@@ -113,9 +123,7 @@ function DeckEditorContent() {
         .select("id, pair, created_at")
         .order("created_at", { ascending: false })
         .limit(30);
-      if (!linkErr && data) {
-        setLinkOptions(data);
-      }
+      if (!linkErr && data) setLinkOptions(data);
       setLoadingLinks(false);
     }
     loadLinks();
@@ -142,33 +150,12 @@ function DeckEditorContent() {
 
     setShowTemplates(false);
 
-    // Focus the textarea after applying template
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
         textareaRef.current.setSelectionRange(0, 0);
       }
     }, 50);
-  }
-
-  function insertAtCursor(snippet) {
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      update("content", form.content + "\n" + snippet);
-      return;
-    }
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const before = form.content.slice(0, start);
-    const after = form.content.slice(end);
-    const next = before + snippet + after;
-    update("content", next);
-
-    setTimeout(() => {
-      textarea.focus();
-      const pos = start + snippet.length;
-      textarea.setSelectionRange(pos, pos);
-    }, 10);
   }
 
   function applyFormatting(format) {
@@ -182,54 +169,21 @@ function DeckEditorContent() {
     let cursorOffset = 0;
 
     switch (format) {
-      case "bold":
-        wrapped = `**${selected || "bold text"}**`;
-        cursorOffset = 2;
-        break;
-      case "italic":
-        wrapped = `*${selected || "italic text"}*`;
-        cursorOffset = 1;
-        break;
-      case "code":
-        wrapped = `\`${selected || "code"}\``;
-        cursorOffset = 1;
-        break;
-      case "h1":
-        wrapped = `# ${selected || "Heading 1"}`;
-        cursorOffset = 2;
-        break;
-      case "h2":
-        wrapped = `## ${selected || "Heading 2"}`;
-        cursorOffset = 3;
-        break;
-      case "h3":
-        wrapped = `### ${selected || "Heading 3"}`;
-        cursorOffset = 4;
-        break;
+      case "bold": wrapped = `**${selected || "bold text"}**`; cursorOffset = 2; break;
+      case "italic": wrapped = `*${selected || "italic text"}*`; cursorOffset = 1; break;
+      case "code": wrapped = `\`${selected || "code"}\``; cursorOffset = 1; break;
+      case "h1": wrapped = `# ${selected || "Heading 1"}`; cursorOffset = 2; break;
+      case "h2": wrapped = `## ${selected || "Heading 2"}`; cursorOffset = 3; break;
+      case "h3": wrapped = `### ${selected || "Heading 3"}`; cursorOffset = 4; break;
       case "list":
-        wrapped = selected
-          ? selected.split("\n").map(l => `- ${l}`).join("\n")
-          : "- Item 1\n- Item 2";
+        wrapped = selected ? selected.split("\n").map(l => `- ${l}`).join("\n") : "- Item 1\n- Item 2";
         cursorOffset = 2;
         break;
-      case "checkbox":
-        wrapped = `- [ ] Task`;
-        cursorOffset = 6;
-        break;
-      case "quote":
-        wrapped = `> ${selected || "Quote"}`;
-        cursorOffset = 2;
-        break;
-      case "link":
-        wrapped = `[${selected || "link text"}](https://)`;
-        cursorOffset = 0;
-        break;
-      case "hr":
-        wrapped = `\n---\n`;
-        cursorOffset = 5;
-        break;
-      default:
-        return;
+      case "checkbox": wrapped = `- [ ] Task`; cursorOffset = 6; break;
+      case "quote": wrapped = `> ${selected || "Quote"}`; cursorOffset = 2; break;
+      case "link": wrapped = `[${selected || "link text"}](https://)`; cursorOffset = 0; break;
+      case "hr": wrapped = `\n---\n`; cursorOffset = 5; break;
+      default: return;
     }
 
     const before = form.content.slice(0, start);
@@ -244,7 +198,6 @@ function DeckEditorContent() {
   }
 
   function handleKeyDown(e) {
-    // Cmd/Ctrl + B for bold, I for italic, K for code
     if ((e.metaKey || e.ctrlKey)) {
       if (e.key === "b") { e.preventDefault(); applyFormatting("bold"); }
       else if (e.key === "i") { e.preventDefault(); applyFormatting("italic"); }
@@ -283,7 +236,6 @@ function DeckEditorContent() {
 
     let deckRow;
     if (isEdit && existingId) {
-      // Save version before updating
       const { data: existingDeck } = await supabase
         .from("decks")
         .select("title, content, tags")
@@ -341,6 +293,16 @@ function DeckEditorContent() {
   }
 
   // ============================================================
+  // ENSURE DECK EXISTS (for screenshot upload)
+  // ============================================================
+  async function ensureDeckSaved() {
+    if (existingId) return existingId;
+    const row = await saveDeck({ status: "draft" });
+    if (!row) throw new Error("Failed to save deck before uploading screenshot.");
+    return row.id;
+  }
+
+  // ============================================================
   // LINK SETUP PICKER
   // ============================================================
   function pickLinkedSetup(setup) {
@@ -386,7 +348,7 @@ function DeckEditorContent() {
           </div>
         </div>
 
-        {/* Template picker (new decks only) */}
+        {/* Template picker */}
         {showTemplates && !isEdit && (
           <div className="p-4 rounded-lg bg-indigo-950/30 border-2 border-indigo-800/60 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -394,11 +356,7 @@ function DeckEditorContent() {
                 <h2 className="text-sm font-bold text-indigo-200">Pick a template</h2>
                 <p className="text-xs text-indigo-300/70 mt-0.5">Or start blank.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowTemplates(false)}
-                className="text-xs text-gray-400 hover:text-white"
-              >
+              <button type="button" onClick={() => setShowTemplates(false)} className="text-xs text-gray-400 hover:text-white">
                 Skip → Blank
               </button>
             </div>
@@ -434,11 +392,7 @@ function DeckEditorContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">Category</label>
-              <select
-                value={form.category}
-                onChange={(e) => update("category", e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
-              >
+              <select value={form.category} onChange={(e) => update("category", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
                 {DECK_CATEGORIES.map(c => (
                   <option key={c.key} value={c.key}>{c.emoji} {c.label}</option>
                 ))}
@@ -475,11 +429,7 @@ function DeckEditorContent() {
                 <span className="text-xs text-amber-200 flex-1">
                   🔗 {linkedTableInfo.emoji} {linkedTableInfo.label} · {form.linkedSetupLabel}
                 </span>
-                <button
-                  type="button"
-                  onClick={clearLinkedSetup}
-                  className="text-xs text-red-400 hover:text-red-300"
-                >
+                <button type="button" onClick={clearLinkedSetup} className="text-xs text-red-400 hover:text-red-300">
                   ✕
                 </button>
               </div>
@@ -504,11 +454,7 @@ function DeckEditorContent() {
                 <button type="button" onClick={() => setShowLinkPicker(false)} className="text-gray-400 hover:text-white text-sm">✕</button>
               </div>
               <div className="p-3 border-b border-gray-800">
-                <select
-                  value={linkTable}
-                  onChange={(e) => setLinkTable(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
-                >
+                <select value={linkTable} onChange={(e) => setLinkTable(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
                   {SETUP_TABLES.map(t => (
                     <option key={t.key} value={t.key}>{t.emoji} {t.label} System</option>
                   ))}
@@ -537,22 +483,21 @@ function DeckEditorContent() {
 
         {/* Editor + Preview */}
         <div className="rounded-lg bg-gray-900 border border-gray-800 overflow-hidden">
-          {/* Toolbar */}
           <div className="flex items-center justify-between flex-wrap gap-2 p-2 border-b border-gray-800 bg-black/40">
             <div className="flex items-center gap-1 flex-wrap">
               <button type="button" onClick={() => applyFormatting("bold")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold" title="Bold (Ctrl+B)">B</button>
               <button type="button" onClick={() => applyFormatting("italic")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 italic" title="Italic (Ctrl+I)">I</button>
               <button type="button" onClick={() => applyFormatting("code")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-mono" title="Code (Ctrl+K)">`c`</button>
               <span className="text-gray-700">|</span>
-              <button type="button" onClick={() => applyFormatting("h1")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold" title="Heading 1">H1</button>
-              <button type="button" onClick={() => applyFormatting("h2")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold" title="Heading 2">H2</button>
-              <button type="button" onClick={() => applyFormatting("h3")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold" title="Heading 3">H3</button>
+              <button type="button" onClick={() => applyFormatting("h1")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold">H1</button>
+              <button type="button" onClick={() => applyFormatting("h2")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold">H2</button>
+              <button type="button" onClick={() => applyFormatting("h3")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 font-bold">H3</button>
               <span className="text-gray-700">|</span>
-              <button type="button" onClick={() => applyFormatting("list")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700" title="Bullet list">•</button>
-              <button type="button" onClick={() => applyFormatting("checkbox")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700" title="Checkbox">☐</button>
-              <button type="button" onClick={() => applyFormatting("quote")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700" title="Quote">&ldquo;</button>
-              <button type="button" onClick={() => applyFormatting("link")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700" title="Link">🔗</button>
-              <button type="button" onClick={() => applyFormatting("hr")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700" title="Horizontal rule">—</button>
+              <button type="button" onClick={() => applyFormatting("list")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700">•</button>
+              <button type="button" onClick={() => applyFormatting("checkbox")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700">☐</button>
+              <button type="button" onClick={() => applyFormatting("quote")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700">&ldquo;</button>
+              <button type="button" onClick={() => applyFormatting("link")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700">🔗</button>
+              <button type="button" onClick={() => applyFormatting("hr")} className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700">—</button>
             </div>
             <div className="flex items-center gap-1">
               {[
@@ -574,7 +519,6 @@ function DeckEditorContent() {
             </div>
           </div>
 
-          {/* Editor / Preview panes */}
           <div className={`grid ${previewMode === "split" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"} min-h-[500px]`}>
             {(previewMode === "edit" || previewMode === "split") && (
               <textarea
@@ -590,10 +534,7 @@ function DeckEditorContent() {
             {(previewMode === "preview" || previewMode === "split") && (
               <div className="p-4 bg-gray-950 border-l border-gray-800 overflow-y-auto max-h-[800px]">
                 {form.content ? (
-                  <div
-                    className="prose-custom"
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
-                  />
+                  <div className="prose-custom" dangerouslySetInnerHTML={{ __html: previewHtml }} />
                 ) : (
                   <p className="text-gray-600 text-sm italic">Preview will appear here as you write...</p>
                 )}
@@ -601,14 +542,41 @@ function DeckEditorContent() {
             )}
           </div>
 
-          {/* Word count */}
           <div className="p-2 border-t border-gray-800 text-[10px] text-gray-500 flex items-center justify-between">
             <span>{form.content.split(/\s+/).filter(Boolean).length} words · {form.content.length} chars</span>
             <span>{categoryInfo.emoji} {categoryInfo.label}</span>
           </div>
         </div>
 
-        {/* Error */}
+        {/* ============================================================ */}
+        {/* SCREENSHOTS — the missing block */}
+        {/* ============================================================ */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-emerald-800/60 space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-emerald-300">📸 Screenshots</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {existingId
+                ? `${screenshots.length} attached`
+                : "Save the deck as a draft first, then screenshots can be attached."}
+            </p>
+          </div>
+          <ScreenshotUploader
+            setupId={existingId}
+            userId={userId}
+            screenshots={screenshots}
+            onChange={setScreenshots}
+            table="deck_screenshots"
+            onEnsureSetup={ensureDeckSaved}
+          />
+          {screenshots.length > 0 && (
+            <ScreenshotGallery
+              screenshots={screenshots}
+              onDelete={(id) => setScreenshots(prev => prev.filter(s => s.id !== id))}
+            />
+          )}
+        </div>
+
+        {/* Error / Saved */}
         {error && <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">{error}</div>}
         {saved && <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">✅ Saved — redirecting...</div>}
 
