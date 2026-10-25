@@ -14,6 +14,15 @@ const GROUPS = [
     ],
   },
   {
+    title: "ICT Core",
+    links: [
+      { href: "/ict", label: "ICT Setup" },
+      { href: "/ict/journal", label: "ICT Journal" },
+      { href: "/ict/history", label: "ICT History" },
+      { href: "/ict/manual", label: "ICT Manual" },
+    ],
+  },
+  {
     title: "Trading",
     links: [
       { href: "/rejection-block", label: "Rejection Block" },
@@ -199,6 +208,7 @@ export default function Sidebar() {
         <nav className="px-2 py-3 space-y-4">
           {GROUPS.map((group) => {
             const isResearch = group.title === "Research";
+            const isIct = group.title === "ICT Core";
             const isSldGroup = group.title === "SLD System";
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
@@ -208,7 +218,7 @@ export default function Sidebar() {
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
             const isSystemGroup =
-              isResearch || isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup ||
+              isResearch || isIct || isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup ||
               isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
@@ -217,6 +227,8 @@ export default function Sidebar() {
                   className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
                     isResearch
                       ? "text-indigo-400"
+                      : isIct
+                      ? "text-cyan-400"
                       : isSldGroup
                       ? "text-emerald-400"
                       : isSmcGroup
@@ -243,6 +255,8 @@ export default function Sidebar() {
                     isSystemGroup
                       ? isResearch
                         ? "pl-2 border-l-2 border-indigo-800/60 ml-2"
+                        : isIct
+                        ? "pl-2 border-l-2 border-cyan-800/60 ml-2"
                         : isSldGroup
                         ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
                         : isSmcGroup
