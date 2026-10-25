@@ -549,7 +549,7 @@ function DeckEditorContent() {
         </div>
 
         {/* ============================================================ */}
-        {/* SCREENSHOTS — the missing block */}
+        {/* SCREENSHOTS */}
         {/* ============================================================ */}
         <div className="p-4 rounded-lg bg-gray-900 border border-emerald-800/60 space-y-3">
           <div>
@@ -572,6 +572,7 @@ function DeckEditorContent() {
             <ScreenshotGallery
               screenshots={screenshots}
               onDelete={(id) => setScreenshots(prev => prev.filter(s => s.id !== id))}
+              table="deck_screenshots"
             />
           )}
         </div>

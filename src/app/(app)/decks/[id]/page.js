@@ -340,6 +340,7 @@ export default function DeckReaderPage() {
             <ScreenshotGallery
               screenshots={screenshots}
               onDelete={(deletedId) => setScreenshots(prev => prev.filter(s => s.id !== deletedId))}
+              table="deck_screenshots"
             />
           </div>
         )}

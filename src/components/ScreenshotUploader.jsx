@@ -15,6 +15,7 @@ export default function ScreenshotUploader({
   onChange,
   disabled = false,
   table = "amd_screenshots",
+  onEnsureSetup, // Optional: callback to save parent before uploading
 }) {
   const supabase = createClient();
   const inputRef = useRef(null);
@@ -26,8 +27,20 @@ export default function ScreenshotUploader({
     setError("");
     if (!files || files.length === 0) return;
 
-    if (!setupId) {
-      setError("Save the setup as draft first, then you can attach screenshots.");
+    let currentSetupId = setupId;
+
+    // If we don't have a setupId yet, try to create one (via parent callback)
+    if (!currentSetupId && onEnsureSetup) {
+      try {
+        currentSetupId = await onEnsureSetup();
+      } catch (err) {
+        setError(err.message || "Failed to save the parent before uploading.");
+        return;
+      }
+    }
+
+    if (!currentSetupId) {
+      setError("Save the deck/setup as draft first, then you can attach screenshots.");
       return;
     }
     if (!userId) {
@@ -37,13 +50,16 @@ export default function ScreenshotUploader({
 
     const remaining = MAX_PER_SETUP - (screenshots?.length || 0);
     if (remaining <= 0) {
-      setError(`Max ${MAX_PER_SETUP} screenshots per setup.`);
+      setError(`Max ${MAX_PER_SETUP} screenshots allowed.`);
       return;
     }
 
     const fileList = Array.from(files).slice(0, remaining);
     setUploading(true);
     const newRows = [];
+
+    // Determine the correct foreign key column based on the table
+    const idColumn = table === "deck_screenshots" ? "deck_id" : "setup_id";
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
@@ -58,7 +74,7 @@ export default function ScreenshotUploader({
       }
 
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60);
-      const path = `${userId}/${setupId}/${Date.now()}-${i}-${safeName}`;
+      const path = `${userId}/${currentSetupId}/${Date.now()}-${i}-${safeName}`;
 
       setProgress(Math.round(((i + 0.5) / fileList.length) * 100));
 
@@ -75,11 +91,12 @@ export default function ScreenshotUploader({
         continue;
       }
 
+      // Insert metadata using the dynamic ID column
       const { data: metaRow, error: metaErr } = await supabase
         .from(table)
         .insert({
           user_id: userId,
-          setup_id: setupId,
+          [idColumn]: currentSetupId,
           storage_path: path,
           file_name: file.name,
           file_size: file.size,
@@ -126,11 +143,11 @@ export default function ScreenshotUploader({
       <button
         type="button"
         onClick={triggerFilePicker}
-        disabled={uploading || disabled || atLimit || !setupId}
+        disabled={uploading || disabled || atLimit}
         className={`w-full py-4 rounded-lg border-2 border-dashed transition text-sm font-semibold disabled:opacity-50 ${
           uploading
             ? "bg-blue-950/30 border-blue-700 text-blue-200"
-            : atLimit || !setupId
+            : atLimit
             ? "bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed"
             : "bg-black border-gray-700 text-gray-300 hover:border-blue-500 hover:text-blue-300"
         }`}
@@ -139,14 +156,12 @@ export default function ScreenshotUploader({
           ? `📤 Uploading... ${progress}%`
           : atLimit
           ? `Max ${MAX_PER_SETUP} screenshots reached`
-          : !setupId
-          ? "📸 Save draft first to enable uploads"
-          : "📸 Click to add chart screenshots"}
+          : "📸 Click to add screenshots"}
       </button>
 
-      {!uploading && setupId && !atLimit && (
+      {!uploading && !atLimit && (
         <p className="text-xs text-gray-500 text-center">
-          PNG · JPG · WEBP · up to 10 MB each · max {MAX_PER_SETUP} per setup
+          PNG · JPG · WEBP · up to 10 MB each · max {MAX_PER_SETUP}
         </p>
       )}
 

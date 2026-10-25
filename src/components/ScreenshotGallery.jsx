@@ -9,6 +9,7 @@ export default function ScreenshotGallery({
   screenshots,
   onDelete,
   readonly = false,
+  table = "amd_screenshots", // <-- Add this prop
 }) {
   const supabase = createClient();
   const [urls, setUrls] = useState({});
@@ -71,9 +72,9 @@ export default function ScreenshotGallery({
       console.error("Storage delete failed:", storageErr.message);
     }
 
-    // Delete metadata row
+    // Delete metadata row from the correct table
     const { error: metaErr } = await supabase
-      .from("amd_screenshots")
+      .from(table) // <-- Use the dynamic table prop
       .delete()
       .eq("id", shot.id);
 
