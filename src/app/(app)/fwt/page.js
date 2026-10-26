@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabaseClient";
 import {
   FWT_SESSIONS,
   FWT_MODES,
+  CONTAINER_MODES,
   WICK_DIRECTIONS,
   LIQUIDITY_SWEPT_TYPES,
   evaluateFwt,
@@ -27,32 +28,29 @@ function FwtPageContent() {
     pair: "Volatility 80",
     session: "london",
     mode: "live",
-
+    containerMode: "single",
     dailyBias: "bearish",
     currentPrice: "",
     candleOpen: "",
     candleHigh: "",
     candleLow: "",
     candleClose: "",
+    linkedCandles: [],
     ema50Value: "",
-
     wickDirection: "upper",
     wickExtreme: "",
     liquiditySweptType: "bsl",
     liquiditySweptLevel: "",
     wickConfirmed: false,
-
     m15ChochConfirmed: false,
     m15ChochLevel: "",
     m15FvgHigh: "",
     m15FvgLow: "",
-
     m1ChochConfirmed: false,
     m1RejectionPresent: false,
     entryPrice: "",
     stopLoss: "",
     targetPrice: "",
-
     notes: "",
   });
 
@@ -97,12 +95,14 @@ function FwtPageContent() {
         pair: setupData.pair || "Volatility 80",
         session: setupData.session || "london",
         mode: setupData.mode || "live",
+        containerMode: setupData.container_mode || "single",
         dailyBias: setupData.daily_bias || "bearish",
         currentPrice: setupData.current_price?.toString() || "",
         candleOpen: setupData.candle_open?.toString() || "",
         candleHigh: setupData.candle_high?.toString() || "",
         candleLow: setupData.candle_low?.toString() || "",
         candleClose: setupData.candle_close?.toString() || "",
+        linkedCandles: setupData.linked_candles || [],
         ema50Value: setupData.ema50_value?.toString() || "",
         wickDirection: setupData.wick_direction || "upper",
         wickExtreme: setupData.wick_extreme?.toString() || "",
@@ -131,15 +131,38 @@ function FwtPageContent() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  function addLinkedCandle() {
+    setForm(f => ({
+      ...f,
+      linkedCandles: [...f.linkedCandles, { id: Math.random().toString(36).slice(2), high: "", low: "" }],
+    }));
+  }
+
+  function updateLinkedCandle(id, field, value) {
+    setForm(f => ({
+      ...f,
+      linkedCandles: f.linkedCandles.map(lc => (lc.id === id ? { ...lc, [field]: value } : lc)),
+    }));
+  }
+
+  function removeLinkedCandle(id) {
+    setForm(f => ({
+      ...f,
+      linkedCandles: f.linkedCandles.filter(lc => lc.id !== id),
+    }));
+  }
+
   const evaluation = useMemo(() => {
     return evaluateFwt({
       mode: form.mode,
+      containerMode: form.containerMode,
       dailyBias: form.dailyBias,
       currentPrice: form.currentPrice,
       candleOpen: form.candleOpen,
       candleHigh: form.candleHigh,
       candleLow: form.candleLow,
       candleClose: form.candleClose,
+      linkedCandles: form.linkedCandles,
       ema50Value: form.ema50Value,
       wickDirection: form.wickDirection,
       wickExtreme: form.wickExtreme,
@@ -163,6 +186,7 @@ function FwtPageContent() {
   const cardData = useMemo(() => {
     return {
       ...evaluation,
+      linkedCandles: form.linkedCandles,
       candle: {
         open: form.candleOpen,
         high: form.candleHigh,
@@ -190,6 +214,7 @@ function FwtPageContent() {
       pair: form.pair,
       session: form.session,
       mode: form.mode,
+      container_mode: form.containerMode,
       status: isDraft ? "draft" : "complete",
       daily_bias: form.dailyBias,
       current_price: form.currentPrice ? parseFloat(form.currentPrice) : null,
@@ -197,6 +222,9 @@ function FwtPageContent() {
       candle_high: form.candleHigh ? parseFloat(form.candleHigh) : null,
       candle_low: form.candleLow ? parseFloat(form.candleLow) : null,
       candle_close: form.candleClose ? parseFloat(form.candleClose) : null,
+      linked_candles: form.linkedCandles.map(lc => ({ high: parseFloat(lc.high), low: parseFloat(lc.low) })).filter(lc => !isNaN(lc.high) && !isNaN(lc.low)),
+      combined_high: evaluation.effectiveHigh ?? null,
+      combined_low: evaluation.effectiveLow ?? null,
       ema50_value: form.ema50Value ? parseFloat(form.ema50Value) : null,
       ema50_conflict: evaluation.emaConflict || false,
       wick_direction: form.wickDirection,
@@ -279,7 +307,7 @@ function FwtPageContent() {
       <div className="max-w-3xl mx-auto space-y-5">
         <div>
           <h1 className="text-2xl font-bold">{isEdit ? "Edit FWT Setup" : "🕯️ FWT — 4-Hour Wick Trap"}</h1>
-          <p className="text-gray-400 text-sm">Bias → Wick → 15M Shift → 1M Entry. Catch the body of the 4H candle.</p>
+          <p className="text-gray-400 text-sm">Bias → Wick → 15M Shift → 1M Entry. Catch the body of the container.</p>
         </div>
 
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
@@ -296,18 +324,7 @@ function FwtPageContent() {
             <label className="block text-xs mb-1 text-gray-400">Mode</label>
             <div className="grid grid-cols-2 gap-2">
               {FWT_MODES.map((m) => (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => update("mode", m.key)}
-                  className={`text-left px-3 py-2 rounded-lg border text-xs transition ${
-                    form.mode === m.key
-                      ? m.key === "live"
-                        ? "bg-cyan-900/40 border-cyan-700 text-cyan-200"
-                        : "bg-purple-900/40 border-purple-700 text-purple-200"
-                      : "bg-black border-gray-800 text-gray-400"
-                  }`}
-                >
+                <button key={m.key} type="button" onClick={() => update("mode", m.key)} className={`text-left px-3 py-2 rounded-lg border text-xs transition ${form.mode === m.key ? (m.key === "live" ? "bg-cyan-900/40 border-cyan-700 text-cyan-200" : "bg-purple-900/40 border-purple-700 text-purple-200") : "bg-black border-gray-800 text-gray-400"}`}>
                   <p className="font-bold">{m.label}</p>
                   <p className="text-[10px] mt-0.5 text-gray-400">{m.hint}</p>
                 </button>
@@ -317,9 +334,21 @@ function FwtPageContent() {
         </div>
 
         <div className="p-4 rounded-lg bg-gray-900 border border-blue-800/60 space-y-3">
-          <h2 className="text-sm font-semibold text-blue-300">🌍 Stage 1 — Context & 4H Candle</h2>
+          <h2 className="text-sm font-semibold text-blue-300">🌍 Stage 1 — Context & Container</h2>
+          
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">Container Mode</label>
+            <div className="grid grid-cols-2 gap-2">
+              {CONTAINER_MODES.map(m => (
+                <button key={m.key} type="button" onClick={() => update("containerMode", m.key)} className={`text-left px-3 py-2 rounded-lg border text-xs transition ${form.containerMode === m.key ? (m.key === "single" ? "bg-blue-900/40 border-blue-700 text-blue-200" : "bg-violet-900/40 border-violet-700 text-violet-200") : "bg-black border-gray-800 text-gray-400"}`}>
+                  <p className="font-bold">{m.label}</p>
+                  <p className="text-[10px] mt-0.5 opacity-80">{m.hint}</p>
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-blue-800/40">
             <div>
               <label className="block text-xs mb-1 text-gray-400">Daily Bias</label>
               <select value={form.dailyBias} onChange={(e) => update("dailyBias", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm">
@@ -339,9 +368,7 @@ function FwtPageContent() {
               <input type="number" step="any" value={form.candleOpen} onChange={(e) => update("candleOpen", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
             </div>
             <div>
-              <label className="block text-xs mb-1 text-gray-400">
-                Candle Close {form.mode === "live" && <span className="text-gray-500">(optional in live)</span>}
-              </label>
+              <label className="block text-xs mb-1 text-gray-400">Candle Close {form.mode === "live" && <span className="text-gray-500">(optional)</span>}</label>
               <input type="number" step="any" value={form.candleClose} onChange={(e) => update("candleClose", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
             </div>
           </div>
@@ -357,50 +384,63 @@ function FwtPageContent() {
             </div>
           </div>
 
+          {form.containerMode === "multi" && (
+            <div className="pt-2 border-t border-violet-800/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-violet-300">Linked Candles (Combined Range)</p>
+                <button type="button" onClick={addLinkedCandle} className="text-xs px-2 py-1 rounded bg-violet-900/40 text-violet-300 hover:bg-violet-800/40">+ Add Candle</button>
+              </div>
+              
+              {form.linkedCandles.length === 0 && (
+                <p className="text-xs text-gray-500 italic">No linked candles. The container will use only the current candle.</p>
+              )}
+
+              {form.linkedCandles.map((lc, i) => (
+                <div key={lc.id} className="grid grid-cols-12 gap-2 items-end p-2 rounded border border-violet-800/30 bg-black">
+                  <div className="col-span-2 text-xs text-gray-400">#{i + 1}</div>
+                  <div className="col-span-4">
+                    <label className="block text-[10px] mb-0.5 text-gray-500">High</label>
+                    <input type="number" step="any" value={lc.high} onChange={(e) => updateLinkedCandle(lc.id, "high", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-[10px] mb-0.5 text-gray-500">Low</label>
+                    <input type="number" step="any" value={lc.low} onChange={(e) => updateLinkedCandle(lc.id, "low", e.target.value)} className="w-full px-2 py-1 rounded bg-black border border-gray-700 text-xs" />
+                  </div>
+                  <div className="col-span-2 text-right">
+                    <button type="button" onClick={() => removeLinkedCandle(lc.id)} className="text-red-400 text-xs">✕</button>
+                  </div>
+                </div>
+              ))}
+
+              {form.linkedCandles.length > 0 && evaluation.effectiveHigh && evaluation.effectiveLow && (
+                <div className="p-2 rounded bg-violet-950/20 border border-violet-800 text-xs">
+                  <p className="text-violet-200">
+                    Combined Container: {evaluation.effectiveLow.toFixed(5)} – {evaluation.effectiveHigh.toFixed(5)} (across {form.linkedCandles.length + 1} candles)
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="pt-2 border-t border-blue-800/40">
-            <label className="block text-xs mb-1 text-gray-400">
-              50 EMA Value <span className="text-blue-400">(trend filter)</span>
-            </label>
-            <input
-              type="number"
-              step="any"
-              value={form.ema50Value}
-              onChange={(e) => update("ema50Value", e.target.value)}
-              placeholder="e.g. 1.10250"
-              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
-            />
+            <label className="block text-xs mb-1 text-gray-400">50 EMA Value <span className="text-blue-400">(trend filter)</span></label>
+            <input type="number" step="any" value={form.ema50Value} onChange={(e) => update("ema50Value", e.target.value)} placeholder="e.g. 1.10250" className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
             {evaluation?.emaConflict && (
               <div className="mt-2 p-2 rounded bg-yellow-950/40 border border-yellow-800">
-                <p className="text-xs text-yellow-200">
-                  ⚠️ Price is on the wrong side of the 50 EMA. Your {form.dailyBias} bias is
-                  fighting the trend filter — treat this as a counter-trend setup.
-                </p>
+                <p className="text-xs text-yellow-200">⚠️ Price is on the wrong side of the 50 EMA. Trend conflict.</p>
               </div>
             )}
           </div>
         </div>
 
         <div className="p-4 rounded-lg bg-gray-900 border border-orange-800/60 space-y-3">
-          <h2 className="text-sm font-semibold text-orange-300">⚡ Stage 2 — The 4H Wick (Manipulation)</h2>
-
+          <h2 className="text-sm font-semibold text-orange-300">⚡ Stage 2 — The Wick (Manipulation)</h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">Wick Direction</label>
               <div className="grid grid-cols-2 gap-2">
                 {WICK_DIRECTIONS.map((w) => (
-                  <button
-                    key={w.key}
-                    type="button"
-                    onClick={() => {
-                      update("wickDirection", w.key);
-                      update("liquiditySweptType", w.key === "upper" ? "bsl" : "ssl");
-                    }}
-                    className={`text-left px-3 py-2 rounded-lg border text-xs transition ${
-                      form.wickDirection === w.key
-                        ? "bg-orange-900/40 border-orange-700 text-orange-200"
-                        : "bg-black border-gray-800 text-gray-400"
-                    }`}
-                  >
+                  <button key={w.key} type="button" onClick={() => { update("wickDirection", w.key); update("liquiditySweptType", w.key === "upper" ? "bsl" : "ssl"); }} className={`text-left px-3 py-2 rounded-lg border text-xs transition ${form.wickDirection === w.key ? "bg-orange-900/40 border-orange-700 text-orange-200" : "bg-black border-gray-800 text-gray-400"}`}>
                     <p className="font-bold">{w.emoji} {w.label}</p>
                   </button>
                 ))}
@@ -411,7 +451,6 @@ function FwtPageContent() {
               <input type="number" step="any" value={form.wickExtreme} onChange={(e) => update("wickExtreme", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
             </div>
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1 text-gray-400">Liquidity Swept</label>
@@ -420,31 +459,15 @@ function FwtPageContent() {
               </select>
             </div>
             <div>
-              <label className="block text-xs mb-1 text-gray-400">Swept Level (price)</label>
+              <label className="block text-xs mb-1 text-gray-400">Swept Level</label>
               <input type="number" step="any" value={form.liquiditySweptLevel} onChange={(e) => update("liquiditySweptLevel", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => update("wickConfirmed", !form.wickConfirmed)}
-            className={`w-full text-left p-3 rounded-lg border transition ${
-              form.wickConfirmed ? "bg-orange-900/40 border-orange-700" : "bg-black border-gray-800"
-            }`}
-          >
+          <button type="button" onClick={() => update("wickConfirmed", !form.wickConfirmed)} className={`w-full text-left p-3 rounded-lg border transition ${form.wickConfirmed ? "bg-orange-900/40 border-orange-700" : "bg-black border-gray-800"}`}>
             <div className="flex items-center gap-3">
-              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                form.wickConfirmed ? "bg-orange-500 border-orange-500" : "border-gray-600"
-              }`}>
-                {form.wickConfirmed && <span className="text-black text-xs font-bold">✓</span>}
-              </div>
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.wickConfirmed ? "bg-orange-500 border-orange-500" : "border-gray-600"}`}>{form.wickConfirmed && <span className="text-black text-xs font-bold">✓</span>}</div>
               <div className="flex-1">
-                <p className={`text-sm font-medium ${form.wickConfirmed ? "text-orange-200" : "text-white"}`}>
-                  Wick confirmed (price rejected)
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  The wick has sprung — price refused to continue beyond it
-                </p>
+                <p className={`text-sm font-medium ${form.wickConfirmed ? "text-orange-200" : "text-white"}`}>Wick confirmed (price rejected)</p>
               </div>
             </div>
           </button>
@@ -452,115 +475,47 @@ function FwtPageContent() {
 
         <div className="p-4 rounded-lg bg-gray-900 border border-purple-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-purple-300">🔍 Stage 3 — 15M Structure Shift</h2>
-
-          <button
-            type="button"
-            onClick={() => update("m15ChochConfirmed", !form.m15ChochConfirmed)}
-            className={`w-full text-left p-3 rounded-lg border transition ${
-              form.m15ChochConfirmed ? "bg-purple-900/40 border-purple-700" : "bg-black border-gray-800"
-            }`}
-          >
+          <button type="button" onClick={() => update("m15ChochConfirmed", !form.m15ChochConfirmed)} className={`w-full text-left p-3 rounded-lg border transition ${form.m15ChochConfirmed ? "bg-purple-900/40 border-purple-700" : "bg-black border-gray-800"}`}>
             <div className="flex items-center gap-3">
-              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                form.m15ChochConfirmed ? "bg-purple-500 border-purple-500" : "border-gray-600"
-              }`}>
-                {form.m15ChochConfirmed && <span className="text-black text-xs font-bold">✓</span>}
-              </div>
-              <p className={`text-sm font-medium ${form.m15ChochConfirmed ? "text-purple-200" : "text-white"}`}>
-                15M CHoCH Confirmed
-              </p>
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.m15ChochConfirmed ? "bg-purple-500 border-purple-500" : "border-gray-600"}`}>{form.m15ChochConfirmed && <span className="text-black text-xs font-bold">✓</span>}</div>
+              <p className={`text-sm font-medium ${form.m15ChochConfirmed ? "text-purple-200" : "text-white"}`}>15M CHoCH Confirmed</p>
             </div>
           </button>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">CHoCH Level</label>
-              <input type="number" step="any" value={form.m15ChochLevel} onChange={(e) => update("m15ChochLevel", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">15M FVG Low</label>
-              <input type="number" step="any" value={form.m15FvgLow} onChange={(e) => update("m15FvgLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">15M FVG High</label>
-              <input type="number" step="any" value={form.m15FvgHigh} onChange={(e) => update("m15FvgHigh", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
+            <div><label className="block text-xs mb-1 text-gray-400">CHoCH Level</label><input type="number" step="any" value={form.m15ChochLevel} onChange={(e) => update("m15ChochLevel", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
+            <div><label className="block text-xs mb-1 text-gray-400">15M FVG Low</label><input type="number" step="any" value={form.m15FvgLow} onChange={(e) => update("m15FvgLow", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
+            <div><label className="block text-xs mb-1 text-gray-400">15M FVG High</label><input type="number" step="any" value={form.m15FvgHigh} onChange={(e) => update("m15FvgHigh", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
           </div>
         </div>
 
         <div className="p-4 rounded-lg bg-gray-900 border border-emerald-800/60 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-300">🎯 Stage 4 — 1M Entry Trigger</h2>
-
           <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => update("m1ChochConfirmed", !form.m1ChochConfirmed)}
-              className={`text-left p-3 rounded-lg border transition ${
-                form.m1ChochConfirmed ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"
-              }`}
-            >
+            <button type="button" onClick={() => update("m1ChochConfirmed", !form.m1ChochConfirmed)} className={`text-left p-3 rounded-lg border transition ${form.m1ChochConfirmed ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                  form.m1ChochConfirmed ? "bg-emerald-500 border-emerald-500" : "border-gray-600"
-                }`}>
-                  {form.m1ChochConfirmed && <span className="text-black text-xs font-bold">✓</span>}
-                </div>
-                <p className={`text-sm font-medium ${form.m1ChochConfirmed ? "text-emerald-200" : "text-white"}`}>
-                  1M CHoCH
-                </p>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.m1ChochConfirmed ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>{form.m1ChochConfirmed && <span className="text-black text-xs font-bold">✓</span>}</div>
+                <p className={`text-sm font-medium ${form.m1ChochConfirmed ? "text-emerald-200" : "text-white"}`}>1M CHoCH</p>
               </div>
             </button>
-            <button
-              type="button"
-              onClick={() => update("m1RejectionPresent", !form.m1RejectionPresent)}
-              className={`text-left p-3 rounded-lg border transition ${
-                form.m1RejectionPresent ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"
-              }`}
-            >
+            <button type="button" onClick={() => update("m1RejectionPresent", !form.m1RejectionPresent)} className={`text-left p-3 rounded-lg border transition ${form.m1RejectionPresent ? "bg-emerald-900/40 border-emerald-700" : "bg-black border-gray-800"}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                  form.m1RejectionPresent ? "bg-emerald-500 border-emerald-500" : "border-gray-600"
-                }`}>
-                  {form.m1RejectionPresent && <span className="text-black text-xs font-bold">✓</span>}
-                </div>
-                <p className={`text-sm font-medium ${form.m1RejectionPresent ? "text-emerald-200" : "text-white"}`}>
-                  1M Rejection Block
-                </p>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${form.m1RejectionPresent ? "bg-emerald-500 border-emerald-500" : "border-gray-600"}`}>{form.m1RejectionPresent && <span className="text-black text-xs font-bold">✓</span>}</div>
+                <p className={`text-sm font-medium ${form.m1RejectionPresent ? "text-emerald-200" : "text-white"}`}>1M Rejection Block</p>
               </div>
             </button>
           </div>
-
           <div className="grid grid-cols-3 gap-3 pt-2 border-t border-emerald-800/40">
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Entry Price</label>
-              <input type="number" step="any" value={form.entryPrice} onChange={(e) => update("entryPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Stop Loss</label>
-              <input type="number" step="any" value={form.stopLoss} onChange={(e) => update("stopLoss", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Target Price</label>
-              <input type="number" step="any" value={form.targetPrice} onChange={(e) => update("targetPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" />
-            </div>
+            <div><label className="block text-xs mb-1 text-gray-400">Entry Price</label><input type="number" step="any" value={form.entryPrice} onChange={(e) => update("entryPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
+            <div><label className="block text-xs mb-1 text-gray-400">Stop Loss</label><input type="number" step="any" value={form.stopLoss} onChange={(e) => update("stopLoss", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
+            <div><label className="block text-xs mb-1 text-gray-400">Target Price</label><input type="number" step="any" value={form.targetPrice} onChange={(e) => update("targetPrice", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm" /></div>
           </div>
         </div>
 
         {evaluation && <FwtCard data={cardData} />}
 
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <ScreenshotUploader
-            setupId={existingSetupId}
-            userId={userId}
-            screenshots={screenshots}
-            onChange={setScreenshots}
-            table="fwt_screenshots"
-            onEnsureSetup={ensureSetupSaved}
-          />
-          <ScreenshotGallery
-            screenshots={screenshots}
-            onDelete={(id) => setScreenshots((prev) => prev.filter((s) => s.id !== id))}
-          />
+          <ScreenshotUploader setupId={existingSetupId} userId={userId} screenshots={screenshots} onChange={setScreenshots} table="fwt_screenshots" onEnsureSetup={ensureSetupSaved} />
+          <ScreenshotGallery screenshots={screenshots} onDelete={(id) => setScreenshots(prev => prev.filter(s => s.id !== id))} table="fwt_screenshots" />
         </div>
 
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
@@ -576,14 +531,7 @@ function FwtPageContent() {
           <button type="button" onClick={handleSaveDraft} disabled={savingDraft || saving} className="w-full py-4 rounded-lg font-bold disabled:opacity-50 bg-yellow-800 hover:bg-yellow-700 text-white">
             {savingDraft ? "Saving..." : "📝 Save Draft"}
           </button>
-          <button
-            type="button"
-            onClick={handleSaveFinal}
-            disabled={saving || savingDraft || !canSaveFinal}
-            className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
-              canSaveFinal ? "bg-teal-700 hover:bg-teal-600" : "bg-gray-800"
-            }`}
-          >
+          <button type="button" onClick={handleSaveFinal} disabled={saving || savingDraft || !canSaveFinal} className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${canSaveFinal ? "bg-teal-700 hover:bg-teal-600" : "bg-gray-800"}`}>
             {saving ? "Saving..." : canSaveFinal ? "✅ Save as Final" : "💾 Sequence incomplete"}
           </button>
         </div>

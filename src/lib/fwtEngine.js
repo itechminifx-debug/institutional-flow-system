@@ -1,7 +1,8 @@
 // ============================================================
-// FWT — 4-HOUR WICK TRAP ENGINE (FULL + 50 EMA)
+// FWT — 4-HOUR WICK TRAP ENGINE (MULTI-CANDLE EDITION)
 // ============================================================
 // Sequence: Bias → Wick → Wick Confirmed → 15M CHoCH → 15M FVG → 1M Entry → SL/TP
+// Supports Single Candle and Multi-Candle containers.
 // ============================================================
 
 export const FWT_SESSIONS = [
@@ -14,6 +15,11 @@ export const FWT_SESSIONS = [
 export const FWT_MODES = [
   { key: "live",   label: "Live (intra-candle)",  hint: "Trade the wick while the 4H candle is still forming." },
   { key: "closed", label: "Closed (post-candle)", hint: "The 4H candle has closed with a confirmed rejection wick." },
+];
+
+export const CONTAINER_MODES = [
+  { key: "single", label: "Single Candle",    hint: "Use only the current 4H candle." },
+  { key: "multi",  label: "Multi-Candle",     hint: "Combine 2+ candles into a larger container." },
 ];
 
 export const WICK_DIRECTIONS = [
@@ -83,16 +89,18 @@ export function evaluateEmaBias({ ema50Value, currentPrice, dailyBias }) {
 }
 
 // ============================================================
-// STEP 1: CONTEXT — DAILY BIAS + 4H CANDLE DATA + 50 EMA
+// STEP 1: CONTEXT — DAILY BIAS + CONTAINER + 50 EMA
 // ============================================================
 export function evaluateFwtContext({
   mode,
+  containerMode = "single",
   dailyBias,
   currentPrice,
   candleOpen,
   candleHigh,
   candleLow,
   candleClose,
+  linkedCandles = [],
   ema50Value,
 }) {
   const gates = [];
@@ -106,44 +114,60 @@ export function evaluateFwtContext({
     detail: hasBias ? `Bias: ${dailyBias}` : "No daily bias. Cannot trade without HTF context.",
   });
 
-  // 50 EMA bias filter
+  // 50 EMA
   const emaResult = evaluateEmaBias({ ema50Value, currentPrice, dailyBias });
   gates.push(...emaResult.gates);
 
-  // Candle data
+  // Candle / Container bounds
   const o = num(candleOpen);
   const h = num(candleHigh);
   const l = num(candleLow);
   const c = num(candleClose);
   const cur = num(currentPrice);
 
-  const hasCandleBody = o !== null && h !== null && l !== null && h > l;
+  let effectiveHigh = h;
+  let effectiveLow = l;
+
+  if (containerMode === "multi" && linkedCandles.length > 0) {
+    const validHighs = linkedCandles.map(lc => num(lc.high)).filter(v => v !== null);
+    const validLows = linkedCandles.map(lc => num(lc.low)).filter(v => v !== null);
+    
+    // Combine current candle + linked candles
+    if (h !== null) validHighs.push(h);
+    if (l !== null) validLows.push(l);
+
+    if (validHighs.length > 0) effectiveHigh = Math.max(...validHighs);
+    if (validLows.length > 0) effectiveLow = Math.min(...validLows);
+  }
+
+  const hasContainer = effectiveHigh !== null && effectiveLow !== null && effectiveHigh > effectiveLow;
+  
   gates.push({
-    key: "candle_bounds",
-    label: "4H candle bounds set",
-    pass: hasCandleBody,
-    detail: hasCandleBody
-      ? `O:${fmt(o)} · H:${fmt(h)} · L:${fmt(l)}${c !== null ? ` · C:${fmt(c)}` : ""}`
-      : "Missing candle open / high / low.",
+    key: "container",
+    label: containerMode === "multi" ? `Multi-Candle Container (${linkedCandles.length + 1} candles incl. current)` : "4H Candle bounds set",
+    pass: hasContainer,
+    detail: hasContainer
+      ? `${containerMode === "multi" ? "Combined" : "Candle"} Range: ${fmt(effectiveLow)} – ${fmt(effectiveHigh)}`
+      : "Missing bounds.",
   });
 
-  // Current price must be inside the candle range
-  const priceInRange = hasCandleBody && cur !== null && cur >= l && cur <= h;
+  // Price inside container
+  const priceInRange = hasContainer && cur !== null && cur >= effectiveLow && cur <= effectiveHigh;
   gates.push({
     key: "price_in_candle",
-    label: "Current price is inside the 4H candle",
+    label: "Current price inside the container",
     pass: priceInRange,
     detail:
       cur === null
         ? "No current price set."
-        : !hasCandleBody
-        ? "Need candle bounds to check price position."
+        : !hasContainer
+        ? "Need container bounds to check price position."
         : priceInRange
-        ? `Price ${fmt(cur)} is inside the candle (${fmt(l)} – ${fmt(h)}).`
-        : `⚠️ Price ${fmt(cur)} is outside the candle range. Check the data.`,
+        ? `Price ${fmt(cur)} is inside (${fmt(effectiveLow)} – ${fmt(effectiveHigh)}).`
+        : `⚠️ Price ${fmt(cur)} is outside the container range.`,
   });
 
-  // Closed mode: candle_close must be set
+  // Closed mode
   if (mode === "closed") {
     gates.push({
       key: "candle_close",
@@ -155,7 +179,6 @@ export function evaluateFwtContext({
     });
   }
 
-  // Only non-warning gates count toward readiness
   const blocking = gates.filter(g => !g.warning);
   const passed = blocking.filter(g => g.pass).length;
 
@@ -165,6 +188,8 @@ export function evaluateFwtContext({
     score: Math.round((passed / blocking.length) * 100),
     emaBias: emaResult.bias,
     emaConflict: emaResult.conflict,
+    effectiveHigh,
+    effectiveLow,
   };
 }
 
@@ -173,8 +198,8 @@ export function evaluateFwtContext({
 // ============================================================
 export function evaluateFwtWick({
   dailyBias,
-  candleHigh,
-  candleLow,
+  effectiveHigh,
+  effectiveLow,
   wickDirection,
   wickExtreme,
   liquiditySweptType,
@@ -184,11 +209,11 @@ export function evaluateFwtWick({
   const gates = [];
 
   const wExt = num(wickExtreme);
-  const h = num(candleHigh);
-  const l = num(candleLow);
+  const h = num(effectiveHigh);
+  const l = num(effectiveLow);
   const sweepLvl = num(liquiditySweptLevel);
 
-  // Wick direction set
+  // Direction set
   gates.push({
     key: "direction",
     label: "Wick direction set",
@@ -196,7 +221,7 @@ export function evaluateFwtWick({
     detail: wickDirection ? `Direction: ${wickDirection}` : "No wick direction selected.",
   });
 
-  // Wick direction must match bias (upper wick + bearish, lower wick + bullish)
+  // Direction aligns
   const directionAligned =
     (dailyBias === "bearish" && wickDirection === "upper") ||
     (dailyBias === "bullish" && wickDirection === "lower");
@@ -209,7 +234,7 @@ export function evaluateFwtWick({
       : `❌ ${wickDirection} wick conflicts with ${dailyBias} bias.`,
   });
 
-  // Wick extreme must be at or beyond candle high/low
+  // Wick extreme beyond container
   let extremeValid = false;
   if (wExt !== null && h !== null && l !== null) {
     if (wickDirection === "upper") extremeValid = wExt >= h;
@@ -217,27 +242,27 @@ export function evaluateFwtWick({
   }
   gates.push({
     key: "extreme",
-    label: "Wick extreme recorded (SL reference)",
+    label: "Wick extreme beyond container (SL reference)",
     pass: extremeValid,
     detail: extremeValid
-      ? `Wick extreme ${fmt(wExt)} — will be used as SL reference.`
-      : "Wick extreme must be at or beyond the candle high/low.",
+      ? `Wick extreme ${fmt(wExt)} extends beyond container edge.`
+      : `❌ Wick extreme ${fmt(wExt)} must extend beyond the container (${fmt(h)} / ${fmt(l)}).`,
   });
 
-  // Liquidity sweep type must match direction
+  // Sweep type
   const sweepAligned =
     (wickDirection === "upper" && liquiditySweptType === "bsl") ||
     (wickDirection === "lower" && liquiditySweptType === "ssl");
   gates.push({
     key: "sweep_type",
-    label: "Liquidity swept correctly (BSL for upper, SSL for lower)",
+    label: "Liquidity swept correctly",
     pass: sweepAligned,
     detail: sweepAligned
       ? `${liquiditySweptType?.toUpperCase()} swept by ${wickDirection} wick.`
       : "❌ Swept liquidity type doesn't match wick direction.",
   });
 
-  // Sweep level recorded
+  // Sweep level
   gates.push({
     key: "sweep_level",
     label: "Swept liquidity level recorded",
@@ -245,14 +270,14 @@ export function evaluateFwtWick({
     detail: sweepLvl !== null ? `Swept at ${fmt(sweepLvl)}.` : "No swept price level entered.",
   });
 
-  // Wick confirmed
+  // Confirmed
   gates.push({
     key: "confirmed",
     label: "Wick confirmed (price rejected)",
     pass: !!wickConfirmed,
     detail: wickConfirmed
       ? "Price rejected the wick extreme. Trap sprung."
-      : "⏳ Waiting for rejection confirmation. The wick is still forming or hasn't been rejected.",
+      : "⏳ Waiting for rejection confirmation.",
   });
 
   const passed = gates.filter((g) => g.pass).length;
@@ -264,7 +289,7 @@ export function evaluateFwtWick({
 }
 
 // ============================================================
-// STEP 3: 15M STRUCTURE — CHoCH + FVG
+// STEP 3: 15M STRUCTURE
 // ============================================================
 export function evaluateFwtStructure({
   mode,
@@ -278,17 +303,15 @@ export function evaluateFwtStructure({
 }) {
   const gates = [];
 
-  // 15M CHoCH confirmed
   gates.push({
     key: "choch",
     label: "15M CHoCH confirmed",
     pass: !!m15ChochConfirmed,
     detail: m15ChochConfirmed
-      ? "Structure shifted on 15M. Shift confirmed."
-      : "⏳ Waiting for 15M CHoCH. Cannot enter without it.",
+      ? "Structure shifted on 15M."
+      : "⏳ Waiting for 15M CHoCH.",
   });
 
-  // CHoCH level recorded
   const chochLvl = num(m15ChochLevel);
   gates.push({
     key: "choch_level",
@@ -297,7 +320,6 @@ export function evaluateFwtStructure({
     detail: chochLvl !== null ? `CHoCH at ${fmt(chochLvl)}.` : "No CHoCH price level entered.",
   });
 
-  // 15M FVG bounds
   const fvgH = num(m15FvgHigh);
   const fvgL = num(m15FvgLow);
   const hasFvg = fvgH !== null && fvgL !== null && fvgH > fvgL;
@@ -310,7 +332,6 @@ export function evaluateFwtStructure({
       : "15M FVG is required as the entry zone.",
   });
 
-  // FVG must be inside the wick zone (between wick extreme and candle body)
   const wExt = num(wickExtreme);
   let fvgInWick = null;
   if (hasFvg && wExt !== null && chochLvl !== null) {
@@ -319,14 +340,14 @@ export function evaluateFwtStructure({
   }
   gates.push({
     key: "fvg_in_wick",
-    label: "15M FVG is inside the wick zone",
+    label: "15M FVG inside the wick zone",
     pass: fvgInWick === true,
     detail:
       fvgInWick === null
-        ? "Need FVG bounds, CHoCH level, and wick extreme to validate."
+        ? "Need FVG bounds, CHoCH level, and wick extreme."
         : fvgInWick
         ? "FVG sits inside the wick — valid entry zone."
-        : "⚠️ FVG is outside the wick zone. Check the levels.",
+        : "⚠️ FVG is outside the wick zone.",
   });
 
   const passed = gates.filter((g) => g.pass).length;
@@ -338,7 +359,7 @@ export function evaluateFwtStructure({
 }
 
 // ============================================================
-// STEP 4: 1M ENTRY — CHoCH OR REJECTION
+// STEP 4: 1M ENTRY
 // ============================================================
 export function evaluateFwtEntry({
   m1ChochConfirmed,
@@ -352,15 +373,14 @@ export function evaluateFwtEntry({
 }) {
   const gates = [];
 
-  // Trigger: either 1M CHoCH or 1M rejection
   const hasTrigger = !!m1ChochConfirmed || !!m1RejectionPresent;
   gates.push({
     key: "trigger",
-    label: "1M trigger (CHoCH or rejection block)",
+    label: "1M trigger (CHoCH or rejection)",
     pass: hasTrigger,
     detail: hasTrigger
       ? `Trigger: ${[m1ChochConfirmed && "CHoCH", m1RejectionPresent && "Rejection"].filter(Boolean).join(" + ")}.`
-      : "Need a 1M CHoCH or a 1M rejection block to trigger the entry.",
+      : "Need a 1M CHoCH or Rejection Block.",
   });
 
   const entry = num(entryPrice);
@@ -368,7 +388,6 @@ export function evaluateFwtEntry({
   const tp = num(targetPrice);
   const wExt = num(wickExtreme);
 
-  // Entry price set
   gates.push({
     key: "entry",
     label: "Entry price set",
@@ -376,7 +395,6 @@ export function evaluateFwtEntry({
     detail: entry !== null ? `Entry: ${fmt(entry)}.` : "No entry price entered.",
   });
 
-  // SL must be beyond the wick extreme
   let slValid = false;
   if (entry !== null && sl !== null && wExt !== null) {
     if (dailyBias === "bearish") {
@@ -393,11 +411,10 @@ export function evaluateFwtEntry({
       sl === null
         ? "No stop loss entered."
         : slValid
-        ? `SL ${fmt(sl)} is beyond wick extreme ${fmt(wExt)}. Tight and correct.`
-        : `❌ SL must be beyond the wick extreme (${fmt(wExt)}) — not inside the trap.`,
+        ? `SL ${fmt(sl)} is beyond wick extreme ${fmt(wExt)}.`
+        : `❌ SL must be beyond the wick extreme (${fmt(wExt)}).`,
   });
 
-  // TP direction check
   let tpValid = false;
   if (entry !== null && tp !== null) {
     if (dailyBias === "bearish") tpValid = tp < entry;
@@ -405,7 +422,7 @@ export function evaluateFwtEntry({
   }
   gates.push({
     key: "tp",
-    label: "Target in the correct direction",
+    label: "Target in correct direction",
     pass: tpValid,
     detail: tp === null
       ? "No target price entered."
@@ -473,12 +490,14 @@ export function computeFwtTrade({
 // ============================================================
 export function evaluateFwt({
   mode = "live",
+  containerMode = "single",
   dailyBias,
   currentPrice,
   candleOpen,
   candleHigh,
   candleLow,
   candleClose,
+  linkedCandles = [],
   ema50Value,
   wickDirection,
   wickExtreme,
@@ -499,19 +518,21 @@ export function evaluateFwt({
 }) {
   const context = evaluateFwtContext({
     mode,
+    containerMode,
     dailyBias,
     currentPrice,
     candleOpen,
     candleHigh,
     candleLow,
     candleClose,
+    linkedCandles,
     ema50Value,
   });
 
   const wick = evaluateFwtWick({
     dailyBias,
-    candleHigh,
-    candleLow,
+    effectiveHigh: context.effectiveHigh,
+    effectiveLow: context.effectiveLow,
     wickDirection,
     wickExtreme,
     liquiditySweptType,
@@ -564,6 +585,9 @@ export function evaluateFwt({
 
   return {
     mode,
+    containerMode,
+    effectiveHigh: context.effectiveHigh,
+    effectiveLow: context.effectiveLow,
     context,
     wick,
     structure,

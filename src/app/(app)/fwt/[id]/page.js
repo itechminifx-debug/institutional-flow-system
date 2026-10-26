@@ -8,7 +8,6 @@ import { evaluateFwt } from "@/lib/fwtEngine";
 import FwtCard from "@/components/FwtCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
-import LinkedDecksPanel from "@/components/LinkedDecksPanel";
 
 export default function FwtDetailPage() {
   const params = useParams();
@@ -55,6 +54,7 @@ export default function FwtDetailPage() {
         .select("*")
         .eq("id", id)
         .maybeSingle();
+        
       if (setupErr || !setupData) {
         setError(setupErr?.message || "FWT setup not found.");
         setLoading(false);
@@ -81,12 +81,15 @@ export default function FwtDetailPage() {
 
     const result = evaluateFwt({
       mode: row.mode || "live",
+      containerMode: row.container_mode || "single",
+      linkedCandles: row.linked_candles || [],
       dailyBias: row.daily_bias,
       currentPrice: row.current_price,
       candleOpen: row.candle_open,
       candleHigh: row.candle_high,
       candleLow: row.candle_low,
       candleClose: row.candle_close,
+      ema50Value: row.ema50_value,
       wickDirection: row.wick_direction,
       wickExtreme: row.wick_extreme,
       liquiditySweptType: row.liquidity_swept_type,
@@ -105,9 +108,10 @@ export default function FwtDetailPage() {
       riskPercent,
     });
 
-    // Enrich with candle visual data
+    // Enrich with the raw row data so the card's visual can draw the candle
     return {
       ...result,
+      linkedCandles: row.linked_candles || [],
       candle: {
         open: row.candle_open,
         high: row.candle_high,
@@ -175,7 +179,6 @@ export default function FwtDetailPage() {
     );
   }
 
-  // Trade result badge config
   const resultBadges = {
     active: { label: "🎯 Active", cls: "bg-blue-900/40 border-blue-700 text-blue-200" },
     won:    { label: "✅ Won",    cls: "bg-green-900/40 border-green-700 text-green-200" },
@@ -210,21 +213,25 @@ export default function FwtDetailPage() {
           <div>
             <h1 className="text-2xl font-bold">🕯️ FWT Setup</h1>
             <p className="text-gray-400 text-sm">
-              {row.pair} · {row.session || "—"} ·{" "}
-              <span className={row.mode === "live" ? "text-cyan-400" : "text-purple-400"}>
+              {row.pair} · {row.session} · <span className={row.mode === "live" ? "text-cyan-400" : "text-purple-400"}>
                 {row.mode === "live" ? "LIVE" : "CLOSED"}
               </span>
             </p>
             <p className="text-xs text-gray-500 mt-1">
               Saved {new Date(row.created_at).toLocaleString()}
             </p>
-            {currentResultBadge && (
-              <div className="flex items-center gap-1.5 flex-wrap mt-2">
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              {row.container_mode === "multi" && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-violet-700 bg-violet-900/40 text-violet-200 font-bold">
+                  MULTI-CANDLE ({row.linked_candles?.length || 0})
+                </span>
+              )}
+              {currentResultBadge && (
                 <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${currentResultBadge.cls}`}>
                   {currentResultBadge.label}
                 </span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
@@ -245,34 +252,36 @@ export default function FwtDetailPage() {
           </div>
         </div>
 
-        {/* Trade Result selector (only for completed setups) */}
+        {/* Trade Management */}
         {!isDraft && (
-          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
-            <p className="text-xs font-bold text-gray-300">Trade Result</p>
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { key: "", label: "— None", cls: "bg-black border-gray-800 text-gray-400" },
-                { key: "active", label: "🎯 Active", cls: "bg-blue-900/40 border-blue-700 text-blue-200" },
-                { key: "won", label: "✅ Won", cls: "bg-green-900/40 border-green-700 text-green-200" },
-                { key: "lost", label: "🔴 Lost", cls: "bg-red-900/40 border-red-700 text-red-200" },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => handleSaveResult(opt.key)}
-                  disabled={savingResult || tradeResult === opt.key}
-                  className={`px-2 py-2 rounded-lg border text-xs font-bold transition disabled:opacity-50 ${opt.cls} ${
-                    tradeResult === opt.key ? "ring-2 ring-white" : ""
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <div>
+              <p className="text-xs font-bold text-gray-300 mb-2">Trade Result</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { key: "", label: "— None", cls: "bg-black border-gray-800 text-gray-400" },
+                  { key: "active", label: "🎯 Active", cls: "bg-blue-900/40 border-blue-700 text-blue-200" },
+                  { key: "won", label: "✅ Won", cls: "bg-green-900/40 border-green-700 text-green-200" },
+                  { key: "lost", label: "🔴 Lost", cls: "bg-red-900/40 border-red-700 text-red-200" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => handleSaveResult(opt.key)}
+                    disabled={savingResult || tradeResult === opt.key}
+                    className={`px-2 py-2 rounded-lg border text-xs font-bold transition disabled:opacity-50 ${opt.cls} ${
+                      tradeResult === opt.key ? "ring-2 ring-white" : ""
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Card */}
+        {/* The Card */}
         {evaluation && <FwtCard data={evaluation} />}
 
         {/* Screenshots */}
@@ -284,6 +293,7 @@ export default function FwtDetailPage() {
           <ScreenshotGallery
             screenshots={screenshots}
             onDelete={(deletedId) => setScreenshots((prev) => prev.filter((s) => s.id !== deletedId))}
+            table="fwt_screenshots"
           />
           <div className="pt-3 border-t border-gray-800">
             <p className="text-xs font-semibold text-gray-400 mb-2">Add more</p>
@@ -323,11 +333,6 @@ export default function FwtDetailPage() {
             {savingNotes ? "Saving..." : "💾 Save Notes"}
           </button>
         </div>
-<LinkedDecksPanel
-  setupTable="fwt_setups"
-  setupId={row.id}
-  setupLabel={`${row.pair} — ${row.session || ""}`}
-/>
 
         <button
           type="button"

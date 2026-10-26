@@ -63,6 +63,10 @@ function StagePanel({ title, emoji, stage, accent = "teal", children }) {
 
 function CandleVisual({
   mode,
+  containerMode,
+  linkedCandles = [],
+  effectiveHigh,
+  effectiveLow,
   candleOpen,
   candleHigh,
   candleLow,
@@ -85,7 +89,10 @@ function CandleVisual({
   const sl = parseFloat(stopLoss);
   const tp = parseFloat(targetPrice);
 
-  if (isNaN(h) || isNaN(l) || h <= l) {
+  const effH = containerMode === "multi" ? parseFloat(effectiveHigh) : h;
+  const effL = containerMode === "multi" ? parseFloat(effectiveLow) : l;
+
+  if (isNaN(effH) || isNaN(effL) || effH <= effL) {
     return (
       <div className="p-3 rounded-lg bg-black/40 border border-gray-800 text-center">
         <p className="text-xs text-gray-500">Enter candle bounds to see the visual.</p>
@@ -93,10 +100,10 @@ function CandleVisual({
     );
   }
 
-  const priceRange = h - l;
+  const priceRange = effH - effL;
   const padding = priceRange * 0.15;
-  const topPrice = h + padding;
-  const bottomPrice = l - padding;
+  const topPrice = effH + padding;
+  const bottomPrice = effL - padding;
   const totalRange = topPrice - bottomPrice;
   const height = 260;
   const chartTop = 20;
@@ -112,6 +119,8 @@ function CandleVisual({
   const cY = !isNaN(c) ? priceToY(c) : null;
   const hY = priceToY(h);
   const lY = priceToY(l);
+  const effHY = priceToY(effH);
+  const effLY = priceToY(effL);
   const curY = !isNaN(cur) ? priceToY(cur) : null;
   const wExtY = !isNaN(wExt) ? priceToY(wExt) : null;
   const entryY = !isNaN(entry) ? priceToY(entry) : null;
@@ -131,12 +140,10 @@ function CandleVisual({
     <div className="p-3 rounded-lg bg-black/60 border border-teal-800/60 space-y-2">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-xs font-bold text-teal-300">
-          🕯️ 4H Candle {mode === "live" ? "(Live)" : "(Closed)"}
+          🕯️ {containerMode === "multi" ? `Container (${linkedCandles.length + 1} candles)` : "4H Candle"} {mode === "live" ? "(Live)" : "(Closed)"}
         </p>
         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-          isShort
-            ? "bg-red-900/40 border border-red-700 text-red-200"
-            : "bg-green-900/40 border border-green-700 text-green-200"
+          isShort ? "bg-red-900/40 border border-red-700 text-red-200" : "bg-green-900/40 border border-green-700 text-green-200"
         }`}>
           {isShort ? "SHORT BIAS" : "LONG BIAS"}
         </span>
@@ -145,29 +152,30 @@ function CandleVisual({
       <div className="relative" style={{ height: `${height}px` }}>
         <div className="absolute inset-0 bg-black/30 rounded border border-gray-800" />
 
-        <div
-          className="absolute left-1/2 w-px bg-white/40"
-          style={{
-            top: `${hY}px`,
-            height: `${lY - hY}px`,
-            transform: "translateX(-50%)",
-          }}
-        />
+        {containerMode === "multi" && (
+          <>
+            <div className="absolute left-0 right-0 flex items-center" style={{ top: `${effHY}px` }}>
+              <div className="flex-1 border-t-2 border-violet-500" />
+              <span className="text-[9px] text-violet-200 font-bold px-1 bg-violet-900/80 rounded">
+                CONTAINER HIGH {formatPrice(effH)}
+              </span>
+              <div className="flex-1 border-t-2 border-violet-500" />
+            </div>
+            <div className="absolute left-0 right-0 flex items-center" style={{ top: `${effLY}px` }}>
+              <div className="flex-1 border-t-2 border-violet-500" />
+              <span className="text-[9px] text-violet-200 font-bold px-1 bg-violet-900/80 rounded">
+                CONTAINER LOW {formatPrice(effL)}
+              </span>
+              <div className="flex-1 border-t-2 border-violet-500" />
+            </div>
+          </>
+        )}
 
-        <div
-          className={`absolute left-1/2 w-8 rounded-sm ${bodyColor}`}
-          style={{
-            top: `${bodyTop}px`,
-            height: `${bodyHeight}px`,
-            transform: "translateX(-50%)",
-          }}
-        />
+        <div className="absolute left-1/2 w-px bg-white/40" style={{ top: `${hY}px`, height: `${lY - hY}px`, transform: "translateX(-50%)" }} />
+        <div className={`absolute left-1/2 w-8 rounded-sm ${bodyColor}`} style={{ top: `${bodyTop}px`, height: `${bodyHeight}px`, transform: "translateX(-50%)" }} />
 
         {wExtY !== null && (
-          <div
-            className="absolute left-0 right-0 flex items-center"
-            style={{ top: `${wExtY}px` }}
-          >
+          <div className="absolute left-0 right-0 flex items-center" style={{ top: `${wExtY}px` }}>
             <div className="flex-1 border-t border-dashed border-orange-500" />
             <span className="text-[10px] text-orange-300 font-bold px-1 bg-black/80 rounded">
               WICK {isUpperWick ? "HIGH" : "LOW"} {formatPrice(wExt)}
@@ -177,53 +185,33 @@ function CandleVisual({
         )}
 
         {curY !== null && (
-          <div
-            className="absolute left-0 right-0 flex items-center"
-            style={{ top: `${curY}px` }}
-          >
+          <div className="absolute left-0 right-0 flex items-center" style={{ top: `${curY}px` }}>
             <div className="flex-1 border-t border-cyan-400" />
-            <span className="text-[10px] text-cyan-200 font-bold px-1 bg-cyan-900/80 rounded">
-              PRICE {formatPrice(cur)}
-            </span>
+            <span className="text-[10px] text-cyan-200 font-bold px-1 bg-cyan-900/80 rounded">PRICE {formatPrice(cur)}</span>
             <div className="flex-1 border-t border-cyan-400" />
           </div>
         )}
 
         {entryY !== null && (
-          <div
-            className="absolute left-0 right-0 flex items-center"
-            style={{ top: `${entryY}px` }}
-          >
+          <div className="absolute left-0 right-0 flex items-center" style={{ top: `${entryY}px` }}>
             <div className="flex-1 border-t border-yellow-400" />
-            <span className="text-[10px] text-yellow-200 font-bold px-1 bg-yellow-900/80 rounded">
-              ENTRY {formatPrice(entry)}
-            </span>
+            <span className="text-[10px] text-yellow-200 font-bold px-1 bg-yellow-900/80 rounded">ENTRY {formatPrice(entry)}</span>
             <div className="flex-1 border-t border-yellow-400" />
           </div>
         )}
 
         {slY !== null && (
-          <div
-            className="absolute left-0 right-0 flex items-center"
-            style={{ top: `${slY}px` }}
-          >
+          <div className="absolute left-0 right-0 flex items-center" style={{ top: `${slY}px` }}>
             <div className="flex-1 border-t border-red-500" />
-            <span className="text-[10px] text-red-200 font-bold px-1 bg-red-900/80 rounded">
-              SL {formatPrice(sl)}
-            </span>
+            <span className="text-[10px] text-red-200 font-bold px-1 bg-red-900/80 rounded">SL {formatPrice(sl)}</span>
             <div className="flex-1 border-t border-red-500" />
           </div>
         )}
 
         {tpY !== null && (
-          <div
-            className="absolute left-0 right-0 flex items-center"
-            style={{ top: `${tpY}px` }}
-          >
+          <div className="absolute left-0 right-0 flex items-center" style={{ top: `${tpY}px` }}>
             <div className="flex-1 border-t border-green-500" />
-            <span className="text-[10px] text-green-200 font-bold px-1 bg-green-900/80 rounded">
-              TP {formatPrice(tp)}
-            </span>
+            <span className="text-[10px] text-green-200 font-bold px-1 bg-green-900/80 rounded">TP {formatPrice(tp)}</span>
             <div className="flex-1 border-t border-green-500" />
           </div>
         )}
@@ -242,7 +230,7 @@ function CandleVisual({
 export default function FwtCard({ data }) {
   if (!data) return null;
 
-  const { mode, context, wick, structure, entry, trade, preEntryReady, reasons, emaBias, emaConflict } = data;
+  const { mode, containerMode, effectiveHigh, effectiveLow, context, wick, structure, entry, trade, preEntryReady, reasons, emaBias, emaConflict, candle = {} } = data;
 
   const verdict = preEntryReady && trade ? trade.direction : "WAIT";
   const verdictColor =
@@ -251,7 +239,6 @@ export default function FwtCard({ data }) {
     : "bg-yellow-950/40 border-yellow-700 text-yellow-200";
   const verdictEmoji = verdict === "BUY" ? "🟢" : verdict === "SELL" ? "🔴" : "⏳";
 
-  const candle = data.candle || {};
   const emaDetail = context?.gates?.find(g => g.key === "ema50")?.detail;
 
   return (
@@ -268,9 +255,7 @@ export default function FwtCard({ data }) {
         <div className="flex items-center gap-1.5 flex-wrap">
           {emaBias && emaBias !== "unknown" && (
             <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
-              emaConflict
-                ? "bg-red-900/40 border-red-700 text-red-200"
-                : "bg-green-900/40 border-green-700 text-green-200"
+              emaConflict ? "bg-red-900/40 border-red-700 text-red-200" : "bg-green-900/40 border-green-700 text-green-200"
             }`}>
               {emaConflict ? "📉 EMA ✗" : "📈 EMA ✓"}
             </span>
@@ -283,6 +268,10 @@ export default function FwtCard({ data }) {
 
       <CandleVisual
         mode={mode}
+        containerMode={containerMode}
+        linkedCandles={data.linkedCandles || []}
+        effectiveHigh={effectiveHigh}
+        effectiveLow={effectiveLow}
         candleOpen={candle.open}
         candleHigh={candle.high}
         candleLow={candle.low}
@@ -300,13 +289,12 @@ export default function FwtCard({ data }) {
         <div className="p-3 rounded-lg bg-red-950/40 border-2 border-red-700 space-y-1">
           <p className="text-xs font-bold text-red-200">🚫 50 EMA Veto</p>
           <p className="text-[11px] text-red-100/90">
-            {emaDetail || "Your bias conflicts with the 50 EMA."}{" "}
-            The setup is counter-trend — reduce risk or wait for the EMA to flip.
+            {emaDetail || "Your bias conflicts with the 50 EMA."} Reduce risk or wait for the EMA to flip.
           </p>
         </div>
       )}
 
-      <StagePanel title="Stage 1 — Context & Candle" emoji="🌍" stage={context} accent="blue" />
+      <StagePanel title="Stage 1 — Context & Container" emoji="🌍" stage={context} accent="blue" />
       <StagePanel title="Stage 2 — 4H Wick (Manipulation)" emoji="⚡" stage={wick} accent="orange" />
       <StagePanel title="Stage 3 — 15M Structure Shift" emoji="🔍" stage={structure} accent="purple" />
       <StagePanel title="Stage 4 — 1M Entry Trigger" emoji="🎯" stage={entry} accent="emerald" />
@@ -323,35 +311,17 @@ export default function FwtCard({ data }) {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-            <div>
-              <p className="text-xs text-gray-500">Entry</p>
-              <p className="font-bold tabular-nums text-yellow-400">{formatPrice(trade.entry)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Stop Loss</p>
-              <p className="font-bold tabular-nums text-red-400">{formatPrice(trade.sl)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Target (Body)</p>
-              <p className="font-bold tabular-nums text-green-400">{formatPrice(trade.tp)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">RR</p>
-              <p className={`font-bold tabular-nums ${trade.rr >= 3 ? "text-green-300" : trade.rr >= 2 ? "text-yellow-300" : "text-red-300"}`}>
-                1:{trade.rr?.toFixed(2) ?? "—"}
-              </p>
-            </div>
+            <div><p className="text-xs text-gray-500">Entry</p><p className="font-bold tabular-nums text-yellow-400">{formatPrice(trade.entry)}</p></div>
+            <div><p className="text-xs text-gray-500">Stop Loss</p><p className="font-bold tabular-nums text-red-400">{formatPrice(trade.sl)}</p></div>
+            <div><p className="text-xs text-gray-500">Target</p><p className="font-bold tabular-nums text-green-400">{formatPrice(trade.tp)}</p></div>
+            <div><p className="text-xs text-gray-500">RR</p><p className={`font-bold tabular-nums ${trade.rr >= 3 ? "text-green-300" : trade.rr >= 2 ? "text-yellow-300" : "text-red-300"}`}>1:{trade.rr?.toFixed(2) ?? "—"}</p></div>
             {trade.riskAmount !== undefined && (
-              <div>
-                <p className="text-xs text-gray-500">Risk</p>
-                <p className="font-bold tabular-nums text-white">${trade.riskAmount}</p>
-              </div>
+              <div><p className="text-xs text-gray-500">Risk</p><p className="font-bold tabular-nums text-white">${trade.riskAmount}</p></div>
             )}
           </div>
-
           {trade.rr !== undefined && trade.rr < 2 && (
             <p className="text-xs text-red-300 pt-2 border-t border-teal-800/50">
-              ⚠️ FWT requires RR ≥ 2:1. This is a quick-profit system — if the RR isn't there, the target is too close or the SL too wide.
+              ⚠️ FWT requires RR ≥ 2:1. The target is too close or the SL too wide.
             </p>
           )}
         </div>
