@@ -629,7 +629,14 @@ function OraclePageContent() {
 
         {/* SCREENSHOTS */}
         <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
-          <ScreenshotUploader setupId={existingId} userId={userId} screenshots={screenshots} onChange={setScreenshots} table="oracle_screenshots" onEnsureSetup={ensureSetupSaved} />
+          <ScreenshotUploader
+  setupId={row.id}
+  userId={userId}
+  screenshots={screenshots}
+  onChange={setScreenshots}
+  table="oracle_screenshots"
+  setupIdField="reading_id"
+/>
           <ScreenshotGallery screenshots={screenshots} onDelete={(id) => setScreenshots(prev => prev.filter(s => s.id !== id))} table="oracle_screenshots" />
         </div>
 

@@ -292,13 +292,13 @@ export default function OracleDetailPage() {
           <div className="pt-3 border-t border-gray-800">
             <p className="text-xs font-semibold text-gray-400 mb-2">Add more</p>
             <ScreenshotUploader
-              setupId={row.id}
-              userId={userId}
-              screenshots={screenshots}
-              onChange={setScreenshots}
-              table="oracle_screenshots"
-              setupIdField="reading_id"
-            />
+  setupId={row.id}
+  userId={userId}
+  screenshots={screenshots}
+  onChange={setScreenshots}
+  table="oracle_screenshots"
+  setupIdField="reading_id"
+/>
           </div>
         </div>
 
