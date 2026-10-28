@@ -6,6 +6,15 @@ import { usePathname } from "next/navigation";
 
 const GROUPS = [
   {
+    title: "Oracle",
+    links: [
+      { href: "/oracle", label: "Oracle Reading" },
+      { href: "/oracle/journal", label: "Oracle Journal" },
+      { href: "/oracle/history", label: "Oracle History" },
+      { href: "/oracle/manual", label: "Oracle Manual" },
+    ],
+  },
+  {
     title: "Research",
     links: [
       { href: "/decks", label: "Research Decks" },
@@ -216,6 +225,7 @@ export default function Sidebar() {
 
         <nav className="px-2 py-3 space-y-4">
           {GROUPS.map((group) => {
+            const isOracle = group.title === "Oracle";
             const isResearch = group.title === "Research";
             const isIct = group.title === "ICT Core";
             const isTs = group.title === "TS System";
@@ -228,14 +238,16 @@ export default function Sidebar() {
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
             const isSystemGroup =
-              isResearch || isIct || isTs || isSldGroup || isSmcGroup || isLqeGroup || isFwtGroup ||
-              isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
+              isOracle || isResearch || isIct || isTs || isSldGroup || isSmcGroup || isLqeGroup ||
+              isFwtGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
                 <p
                   className={`px-3 mb-1 text-[10px] uppercase tracking-wider font-semibold ${
-                    isResearch
+                    isOracle
+                      ? "text-fuchsia-400"
+                      : isResearch
                       ? "text-indigo-400"
                       : isIct
                       ? "text-cyan-400"
@@ -265,7 +277,9 @@ export default function Sidebar() {
                 <div
                   className={`space-y-0.5 ${
                     isSystemGroup
-                      ? isResearch
+                      ? isOracle
+                        ? "pl-2 border-l-2 border-fuchsia-800/60 ml-2"
+                        : isResearch
                         ? "pl-2 border-l-2 border-indigo-800/60 ml-2"
                         : isIct
                         ? "pl-2 border-l-2 border-cyan-800/60 ml-2"
@@ -297,7 +311,9 @@ export default function Sidebar() {
                         href={link.href}
                         className={`block px-3 py-1.5 rounded-md text-xs transition ${
                           active
-                            ? "bg-blue-600 text-white font-medium"
+                            ? isOracle
+                              ? "bg-fuchsia-600 text-white font-medium"
+                              : "bg-blue-600 text-white font-medium"
                             : "text-gray-400 hover:text-white hover:bg-gray-900"
                         }`}
                       >
