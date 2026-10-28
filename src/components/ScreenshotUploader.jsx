@@ -16,6 +16,7 @@ export default function ScreenshotUploader({
   disabled = false,
   table = "amd_screenshots",
   onEnsureSetup, // Optional: callback to save parent before uploading
+  setupIdField,
 }) {
   const supabase = createClient();
   const inputRef = useRef(null);
@@ -59,7 +60,7 @@ export default function ScreenshotUploader({
     const newRows = [];
 
     // Determine the correct foreign key column based on the table
-    const idColumn = table === "deck_screenshots" ? "deck_id" : "setup_id";
+   const idColumn = setupIdField || (table === "deck_screenshots" ? "deck_id" : "setup_id");
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
