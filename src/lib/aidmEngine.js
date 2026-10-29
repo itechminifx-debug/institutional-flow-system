@@ -1,51 +1,50 @@
-// lib/aidmEngine.js
-// AIDM (APEX-IDM) — evaluation engine
-// Auto-calculates CE, 62%, 79%, OTE zone, POI side, and trade math.
+// ============================================================
+// AIDM — APEX-IDM ENGINE
+// ============================================================
+// Sequence: Map → Time & Trap → Structure Shift → Sniper Entry → Risk & Targets
+// Direction-aware: Bullish → Discount OTE. Bearish → Premium OTE.
+// ============================================================
 
 export const AIDM_DIRECTIONS = [
-  { value: 'bullish', label: 'Bullish (Buy)' },
-  { value: 'bearish', label: 'Bearish (Sell)' },
+  { key: "bullish", label: "🟢 Bullish", hint: "Buy in Discount" },
+  { key: "bearish", label: "🔴 Bearish", hint: "Sell in Premium" },
 ];
-
-export const AIDM_TIMEFRAMES = ['Daily', '4H', '1H', '15M', '5M', '1M'];
 
 export const AIDM_SESSIONS = [
-  { value: 'london', label: 'London (02:00–05:00 EST)' },
-  { value: 'ny_am', label: 'New York AM (07:00–10:00 EST)' },
+  { key: "london", label: "London (02:00–05:00 EST)", hint: "Judas swing window" },
+  { key: "ny_am",  label: "New York AM (07:00–10:00 EST)", hint: "Heaviest volume" },
 ];
+
+export const AIDM_TIMEFRAMES = ["Daily", "4H", "1H", "15M", "5M", "1M"];
 
 export const AIDM_EVENT_TYPES = [
-  'sweep',
-  'mss',
-  'poi_tap',
-  'entry',
-  'partial',
-  'be',
-  'trail',
-  'exit',
-  'invalidation',
+  "sweep", "mss", "poi_tap", "entry", "partial", "be", "trail", "exit", "invalidation",
 ];
 
-// ---------------------------------------------------------
-// 1. AUTO LEVELS  (CE / 62 / 79 / OTE zone / POI side)
-// ---------------------------------------------------------
-export function computeApexLevels({ rangeHigh, rangeLow, direction }) {
-  const H = Number(rangeHigh);
-  const L = Number(rangeLow);
+function num(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
 
-  const valid =
-    Number.isFinite(H) &&
-    Number.isFinite(L) &&
-    H > 0 &&
-    L > 0 &&
-    H > L;
+function fmt(v) {
+  return v === null || v === undefined ? "—" : v.toString();
+}
+
+// ============================================================
+// LEVELS — CE / 62 / 79 / OTE zone / POI side
+// ============================================================
+export function computeApexLevels({ rangeHigh, rangeLow, direction }) {
+  const H = num(rangeHigh);
+  const L = num(rangeLow);
+
+  const valid = H !== null && L !== null && H > 0 && L > 0 && H > L;
 
   if (!valid) {
     return {
       valid: false,
       direction,
-      rangeHigh: H || null,
-      rangeLow: L || null,
+      rangeHigh: H,
+      rangeLow: L,
       rangeSize: null,
       ce: null,
       ote62: null,
@@ -53,9 +52,6 @@ export function computeApexLevels({ rangeHigh, rangeLow, direction }) {
       oteZoneLow: null,
       oteZoneHigh: null,
       poiZone: null,
-      premiumBoundary: null,
-      discountBoundary: null,
-      distances: null,
     };
   }
 
@@ -63,21 +59,15 @@ export function computeApexLevels({ rangeHigh, rangeLow, direction }) {
   const ce = (H + L) / 2;
 
   let ote62, ote79, poiZone;
-
-  if (direction === 'bullish') {
-    // bullish → retrace from LOW, POI in DISCOUNT
+  if (direction === "bullish") {
     ote62 = L + size * 0.62;
     ote79 = L + size * 0.79;
-    poiZone = 'discount';
+    poiZone = "discount";
   } else {
-    // bearish → retrace from HIGH, POI in PREMIUM
     ote62 = H - size * 0.62;
     ote79 = H - size * 0.79;
-    poiZone = 'premium';
+    poiZone = "premium";
   }
-
-  const oteZoneLow  = Math.min(ote62, ote79);
-  const oteZoneHigh = Math.max(ote62, ote79);
 
   return {
     valid: true,
@@ -88,217 +78,436 @@ export function computeApexLevels({ rangeHigh, rangeLow, direction }) {
     ce,
     ote62,
     ote79,
-    oteZoneLow,
-    oteZoneHigh,
-    poiZone,                       // 'discount' | 'premium'
-    premiumBoundary: ce,
-    discountBoundary: ce,
-    distances: {
-      ceTo62: size * 0.12,
-      between62And79: size * 0.17,
-    },
+    oteZoneLow: Math.min(ote62, ote79),
+    oteZoneHigh: Math.max(ote62, ote79),
+    poiZone,
   };
 }
 
-// ---------------------------------------------------------
-// 2. TRADE MATH  (SL side validation + lot size)
-// ---------------------------------------------------------
+// ============================================================
+// PART 1 — MAP
+// ============================================================
+export function evaluateAidmMap({
+  direction,
+  rangeHigh,
+  rangeLow,
+  currentPrice,
+}) {
+  const gates = [];
+
+  const dirOk = direction === "bullish" || direction === "bearish";
+  gates.push({
+    key: "direction",
+    label: "Direction set",
+    pass: dirOk,
+    detail: dirOk ? `Direction: ${direction}` : "No direction selected.",
+  });
+
+  const levels = computeApexLevels({ rangeHigh, rangeLow, direction });
+
+  gates.push({
+    key: "range",
+    label: "Range High / Low valid",
+    pass: levels.valid,
+    detail: levels.valid
+      ? `Range ${fmt(levels.rangeLow)} – ${fmt(levels.rangeHigh)}`
+      : "Enter a valid High > Low range.",
+  });
+
+  gates.push({
+    key: "ce",
+    label: "50% CE computed",
+    pass: levels.ce !== null,
+    detail: levels.ce !== null ? `CE ${fmt(levels.ce)}` : "CE cannot be computed.",
+  });
+
+  gates.push({
+    key: "ote",
+    label: "62% / 79% OTE computed",
+    pass: levels.ote62 !== null && levels.ote79 !== null,
+    detail: levels.ote62 !== null
+      ? `OTE ${fmt(levels.oteZoneLow)} – ${fmt(levels.oteZoneHigh)}`
+      : "OTE cannot be computed.",
+  });
+
+  gates.push({
+    key: "poi_zone",
+    label: "POI in correct zone",
+    pass: levels.poiZone !== null,
+    detail: levels.poiZone
+      ? `POI in ${levels.poiZone.toUpperCase()} (${direction === "bullish" ? "below" : "above"} CE)`
+      : "POI zone unknown.",
+  });
+
+  const cur = num(currentPrice);
+  const priceInRange = levels.valid && cur !== null && cur >= levels.rangeLow && cur <= levels.rangeHigh;
+  gates.push({
+    key: "price_in_range",
+    label: "Current price inside range",
+    pass: priceInRange,
+    warning: cur === null,
+    detail:
+      cur === null
+        ? "⚠️ No current price entered."
+        : !levels.valid
+        ? "Need valid range to check price position."
+        : priceInRange
+        ? `Price ${fmt(cur)} is inside the range.`
+        : `⚠️ Price ${fmt(cur)} is outside the range.`,
+  });
+
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
+
+  return {
+    ready: passed === blocking.length,
+    score: Math.round((passed / blocking.length) * 100),
+    gates,
+    levels,
+  };
+}
+
+// ============================================================
+// PART 2 — TIME & TRAP
+// ============================================================
+export function evaluateAidmTrap({
+  session,
+  sweptErl,
+  liquiditySweptType,
+  direction,
+}) {
+  const gates = [];
+
+  const sessionOk = session === "london" || session === "ny_am";
+  gates.push({
+    key: "session",
+    label: "Inside kill zone",
+    pass: sessionOk,
+    detail: sessionOk
+      ? `Session: ${session === "london" ? "London" : "New York AM"}`
+      : "Outside London / NY AM kill zone.",
+  });
+
+  gates.push({
+    key: "sweep",
+    label: "ERL swept (BSL or SSL)",
+    pass: !!sweptErl,
+    detail: sweptErl ? "Liquidity taken." : "⏳ Waiting for ERL sweep.",
+  });
+
+  const expectedSweep = direction === "bearish" ? "bsl" : "ssl";
+  const sweepMatch = sweptErl && liquiditySweptType === expectedSweep;
+  gates.push({
+    key: "sweep_side",
+    label: `Swept side matches direction`,
+    pass: sweepMatch,
+    warning: !sweptErl,
+    detail: !sweptErl
+      ? "⚠️ Sweep not confirmed yet."
+      : sweepMatch
+      ? `${expectedSweep.toUpperCase()} swept — correct for ${direction}.`
+      : `❌ ${direction} setup expects ${expectedSweep.toUpperCase()}, but ${liquiditySweptType?.toUpperCase() || "?"} was swept.`,
+  });
+
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
+
+  return {
+    ready: passed === blocking.length,
+    score: Math.round((passed / blocking.length) * 100),
+    gates,
+  };
+}
+
+// ============================================================
+// PART 3 — STRUCTURE SHIFT
+// ============================================================
+export function evaluateAidmStructure({
+  mssConfirmed,
+  mssLevel,
+  fvgHigh,
+  fvgLow,
+  structureFlipped,
+}) {
+  const gates = [];
+
+  gates.push({
+    key: "mss",
+    label: "MSS confirmed (displacement CHoCH)",
+    pass: !!mssConfirmed,
+    detail: mssConfirmed ? "Displacement MSS confirmed." : "⏳ Waiting for MSS with displacement.",
+  });
+
+  const level = num(mssLevel);
+  gates.push({
+    key: "mss_level",
+    label: "MSS level recorded",
+    pass: level !== null,
+    detail: level !== null ? `MSS at ${fmt(level)}.` : "No MSS price level entered.",
+  });
+
+  const fvgH = num(fvgHigh);
+  const fvgL = num(fvgLow);
+  const hasFvg = fvgH !== null && fvgL !== null && fvgH > fvgL;
+  gates.push({
+    key: "fvg",
+    label: "FVG bounds marked",
+    pass: hasFvg,
+    detail: hasFvg ? `FVG ${fmt(fvgL)} – ${fmt(fvgH)}` : "No FVG recorded.",
+  });
+
+  gates.push({
+    key: "htf",
+    label: "No HTF veto (structure not flipped)",
+    pass: !structureFlipped,
+    warning: !!structureFlipped,
+    detail: structureFlipped
+      ? "⚠️ HTF veto active — structure flipped against HTF bias."
+      : "HTF structure intact.",
+  });
+
+  const blocking = gates.filter(g => !g.warning);
+  const passed = blocking.filter(g => g.pass).length;
+
+  return {
+    ready: passed === blocking.length,
+    score: Math.round((passed / blocking.length) * 100),
+    gates,
+  };
+}
+
+// ============================================================
+// PART 4 — SNIPER ENTRY
+// ============================================================
+export function evaluateAidmEntry({
+  direction,
+  entryPrice,
+  stopLoss,
+}) {
+  const gates = [];
+
+  const entry = num(entryPrice);
+  const sl = num(stopLoss);
+
+  gates.push({
+    key: "entry",
+    label: "Entry price set",
+    pass: entry !== null,
+    detail: entry !== null ? `Entry ${fmt(entry)}.` : "No entry price.",
+  });
+
+  gates.push({
+    key: "sl",
+    label: "Stop loss set",
+    pass: sl !== null,
+    detail: sl !== null ? `SL ${fmt(sl)}.` : "No stop loss.",
+  });
+
+  let sideOk = false;
+  if (entry !== null && sl !== null) {
+    if (direction === "bullish") sideOk = sl < entry;
+    else if (direction === "bearish") sideOk = sl > entry;
+  }
+  gates.push({
+    key: "sl_side",
+    label: "SL on correct side of entry",
+    pass: sideOk,
+    detail:
+      entry === null || sl === null
+        ? "Need entry and SL."
+        : sideOk
+        ? `SL ${fmt(sl)} is on the correct side for a ${direction} trade.`
+        : `❌ SL ${fmt(sl)} is on the wrong side for ${direction}.`,
+  });
+
+  const passed = gates.filter(g => g.pass).length;
+  return {
+    ready: passed === gates.length,
+    score: Math.round((passed / gates.length) * 100),
+    gates,
+  };
+}
+
+// ============================================================
+// TRADE MATH
+// ============================================================
 export function computeAidmTrade({
   direction,
-  entry,
+  entryPrice,
   stopLoss,
   takeProfit1,
   takeProfit2,
-  accountSize,
-  riskPercent,
+  accountSize = 0,
+  riskPercent = 1,
   pipSize = 0.0001,
   contractSize = 100000,
 }) {
-  const e  = Number(entry);
-  const sl = Number(stopLoss);
-  const tp1 = Number(takeProfit1);
-  const tp2 = Number(takeProfit2);
+  const entry = num(entryPrice);
+  const sl = num(stopLoss);
+  const tp1 = num(takeProfit1);
+  const tp2 = num(takeProfit2);
 
-  const result = {
-    valid: false,
-    errors: [],
-    entry: e || null,
-    sl: sl || null,
-    tp1: tp1 || null,
-    tp2: tp2 || null,
-    riskPips: null,
-    rewardPipsTp1: null,
-    rewardPipsTp2: null,
-    rrTp1: null,
-    rrTp2: null,
-    riskAmount: null,
-    lotSize: null,
+  if (entry === null || sl === null) {
+    return { invalid: true, invalidReason: "Entry and SL required." };
+  }
+
+  const slValid =
+    (direction === "bullish" && sl < entry) ||
+    (direction === "bearish" && sl > entry);
+
+  if (!slValid) {
+    return { invalid: true, invalidReason: "Stop loss is on the wrong side of entry." };
+  }
+
+  const risk = Math.abs(entry - sl);
+  const riskPips = risk / pipSize;
+
+  const trade = {
+    invalid: false,
+    direction: direction === "bullish" ? "BUY" : "SELL",
+    entry,
+    sl,
+    tp1: tp1,
+    tp2: tp2,
+    riskPips: Math.round(riskPips * 10) / 10,
   };
 
-  if (!Number.isFinite(e) || !Number.isFinite(sl) || e <= 0 || sl <= 0) {
-    result.errors.push('Entry and Stop Loss must be positive numbers.');
-    return result;
+  if (tp1 !== null) {
+    const reward1 = Math.abs(tp1 - entry);
+    trade.rrTp1 = risk > 0 ? reward1 / risk : 0;
+  }
+  if (tp2 !== null) {
+    const reward2 = Math.abs(tp2 - entry);
+    trade.rrTp2 = risk > 0 ? reward2 / risk : 0;
   }
 
-  // ---- SL side validation ----
-  if (direction === 'bullish' && sl >= e) {
-    result.errors.push('Bullish setup: stop loss must be BELOW entry.');
-  }
-  if (direction === 'bearish' && sl <= e) {
-    result.errors.push('Bearish setup: stop loss must be ABOVE entry.');
-  }
-
-  // ---- TP side validation (soft) ----
-  if (Number.isFinite(tp1)) {
-    if (direction === 'bullish' && tp1 <= e) {
-      result.errors.push('Bullish setup: TP1 must be above entry.');
-    }
-    if (direction === 'bearish' && tp1 >= e) {
-      result.errors.push('Bearish setup: TP1 must be below entry.');
-    }
-  }
-
-  if (result.errors.length) return result;
-
-  const riskPrice = Math.abs(e - sl);
-  const riskPips  = riskPrice / pipSize;
-
-  result.riskPips = riskPips;
-
-  if (Number.isFinite(tp1)) {
-    const rewardPriceTp1 = Math.abs(tp1 - e);
-    result.rewardPipsTp1 = rewardPriceTp1 / pipSize;
-    result.rrTp1 = rewardPriceTp1 / riskPrice;
-  }
-
-  if (Number.isFinite(tp2)) {
-    const rewardPriceTp2 = Math.abs(tp2 - e);
-    result.rewardPipsTp2 = rewardPriceTp2 / pipSize;
-    result.rrTp2 = rewardPriceTp2 / riskPrice;
-  }
-
-  // ---- Lot size (forex default) ----
-  const acc = Number(accountSize);
-  const rp  = Number(riskPercent);
-
-  if (Number.isFinite(acc) && acc > 0 && Number.isFinite(rp) && rp > 0) {
+  const acc = num(accountSize);
+  const rp = num(riskPercent);
+  if (acc !== null && acc > 0 && rp !== null && rp > 0 && risk > 0) {
     const riskAmount = acc * (rp / 100);
+    trade.riskAmount = Math.round(riskAmount * 100) / 100;
     const pipValuePerLot = contractSize * pipSize;
     const lots = riskAmount / (riskPips * pipValuePerLot);
-    result.riskAmount = riskAmount;
-    result.lotSize = Math.round(lots * 100) / 100;
+    trade.lotSize = Math.round(lots * 100) / 100;
   }
 
-  result.valid = true;
-  return result;
+  return trade;
 }
 
-// ---------------------------------------------------------
-// 3. APEX 6-PART CHECKLIST EVALUATION
-// ---------------------------------------------------------
-export function evaluateAidm(setup = {}) {
-  const layers = [];
-
-  // PART 1 — Map
-  const levels = computeApexLevels({
-    rangeHigh: setup.range_high,
-    rangeLow:  setup.range_low,
-    direction: setup.direction,
+// ============================================================
+// FULL EVALUATION
+// ============================================================
+export function evaluateAidm({
+  direction = "bullish",
+  rangeHigh,
+  rangeLow,
+  currentPrice,
+  session,
+  sweptErl = false,
+  liquiditySweptType,
+  mssConfirmed = false,
+  mssLevel,
+  fvgHigh,
+  fvgLow,
+  structureFlipped = false,
+  entryPrice,
+  stopLoss,
+  takeProfit1,
+  takeProfit2,
+  accountSize = 0,
+  riskPercent = 1,
+  pipSize = 0.0001,
+  contractSize = 100000,
+}) {
+  const map = evaluateAidmMap({
+    direction,
+    rangeHigh,
+    rangeLow,
+    currentPrice,
   });
 
-  layers.push({
-    part: 1,
-    title: 'Map (Dealing Range + CE + OTE)',
-    ready: levels.valid,
-    gates: [
-      { key: 'range',  label: 'Range High / Low valid', passed: levels.valid },
-      { key: 'ce',     label: '50% CE computed',         passed: !!levels.ce },
-      { key: 'ote',    label: '62–79% OTE computed',     passed: !!levels.ote62 && !!levels.ote79 },
-      { key: 'zone',   label: `POI in ${levels.poiZone || '—'}`, passed: !!levels.poiZone },
-    ],
+  const trap = evaluateAidmTrap({
+    session,
+    sweptErl,
+    liquiditySweptType,
+    direction,
   });
 
-  // PART 2 — Time & Trap
-  const inSession = ['london','ny_am'].includes(setup.session);
-  layers.push({
-    part: 2,
-    title: 'Time & Trap (Kill Zone + Sweep)',
-    ready: inSession && setup.swept_erl === true,
-    gates: [
-      { key: 'session', label: 'Inside kill zone', passed: inSession },
-      { key: 'sweep',   label: 'ERL swept (BSL/SSL)', passed: setup.swept_erl === true },
-    ],
+  const structure = evaluateAidmStructure({
+    mssConfirmed,
+    mssLevel,
+    fvgHigh,
+    fvgLow,
+    structureFlipped,
   });
 
-  // PART 3 — Structure Shift
-  layers.push({
-    part: 3,
-    title: 'Structure Shift (MSS + FVG)',
-    ready: setup.mss_confirmed === true,
-    gates: [
-      { key: 'mss', label: 'Displacement MSS confirmed', passed: setup.mss_confirmed === true },
-    ],
+  const entry = evaluateAidmEntry({
+    direction,
+    entryPrice,
+    stopLoss,
   });
 
-  // PART 4 — Sniper Entry
-  const trade = computeAidmTrade({
-    direction: setup.direction,
-    entry: setup.entry_price,
-    stopLoss: setup.stop_loss,
-    takeProfit1: setup.take_profit_1,
-    takeProfit2: setup.take_profit_2,
-    accountSize: setup.account_size,
-    riskPercent: setup.risk_percent,
-    pipSize: setup.pip_size || 0.0001,
-    contractSize: setup.contract_size || 100000,
-  });
+  const allReady = map.ready && trap.ready && structure.ready && entry.ready;
 
-  layers.push({
-    part: 4,
-    title: 'Sniper Entry (Entry + SL valid)',
-    ready: trade.valid,
-    errors: trade.errors,
-    gates: [
-      { key: 'entry', label: 'Entry set',         passed: Number(setup.entry_price) > 0 },
-      { key: 'sl',    label: 'SL set',            passed: Number(setup.stop_loss) > 0 },
-      { key: 'side',  label: 'SL on correct side', passed: trade.valid },
-    ],
-  });
+  let trade = null;
+  if (allReady) {
+    trade = computeAidmTrade({
+      direction,
+      entryPrice,
+      stopLoss,
+      takeProfit1,
+      takeProfit2,
+      accountSize,
+      riskPercent,
+      pipSize,
+      contractSize,
+    });
+  } else {
+    trade = computeAidmTrade({
+      direction,
+      entryPrice,
+      stopLoss,
+      takeProfit1,
+      takeProfit2,
+      accountSize,
+      riskPercent,
+      pipSize,
+      contractSize,
+    });
+  }
 
-  // PART 5 — Risk & Targets
-  const hasTp1 = Number(setup.take_profit_1) > 0;
-  const hasTp2 = Number(setup.take_profit_2) > 0;
-  const riskOk = Number(setup.risk_percent) > 0 && Number(setup.risk_percent) <= 1;
+  const reasons = [];
+  if (!map.ready)      map.gates.filter(g => !g.pass && !g.warning).forEach(g => reasons.push(`Map: ${g.label}`));
+  if (!trap.ready)     trap.gates.filter(g => !g.pass && !g.warning).forEach(g => reasons.push(`Time & Trap: ${g.label}`));
+  if (!structure.ready) structure.gates.filter(g => !g.pass && !g.warning).forEach(g => reasons.push(`Structure: ${g.label}`));
+  if (!entry.ready)    entry.gates.filter(g => !g.pass).forEach(g => reasons.push(`Entry: ${g.label}`));
 
-  layers.push({
-    part: 5,
-    title: 'Risk & Targets (CE + Opposite ERL)',
-    ready: hasTp1 && hasTp2 && riskOk,
-    gates: [
-      { key: 'tp1',  label: 'TP1 = 50% CE',        passed: hasTp1 },
-      { key: 'tp2',  label: 'TP2 = Opposite ERL',  passed: hasTp2 },
-      { key: 'risk', label: 'Risk ≤ 1% of account', passed: riskOk },
-    ],
-  });
-
-  // PART 6 — Golden Rules (pre-entry summary)
-  const rules = [
-    { key: 'r1',  label: 'Not trading a raw BOS breakout',     passed: setup.swept_erl === true },
-    { key: 'r2',  label: 'CHoCH has displacement (MSS)',       passed: setup.mss_confirmed === true },
-    { key: 'r3',  label: 'Sweep happened before MSS',          passed: setup.swept_erl === true && setup.mss_confirmed === true },
-    { key: 'r4',  label: 'Structure not HTF-flipped',          passed: setup.structure_flipped !== true },
-    { key: 'r5',  label: 'POI in correct zone',                passed: !!levels.poiZone },
-    { key: 'r6',  label: 'Risk ≤ 1%',                          passed: riskOk },
-    { key: 'r7',  label: 'DOL defined (TP2 present)',          passed: hasTp2 },
-  ];
-
-  const allReady = layers.every(l => l.ready) && rules.every(r => r.passed);
+  const levels = map.levels;
 
   return {
-    levels,
+    // Card-friendly top-level fields
+    direction,
+    rangeHigh: levels.rangeHigh,
+    rangeLow:  levels.rangeLow,
+    ce:        levels.ce,
+    ote62:     levels.ote62,
+    ote79:     levels.ote79,
+    poiZone:   levels.poiZone,
+    currentPrice,
+    entryPrice,
+    stopLoss,
+    targetPrice: takeProfit2 ?? takeProfit1,
+
+    structureFlipped,
+
+    // Per-stage
+    context:   { ready: map.ready,       score: map.score,       gates: map.gates },
+    wick:      { ready: trap.ready,      score: trap.score,      gates: trap.gates },
+    structure: { ready: structure.ready, score: structure.score, gates: structure.gates },
+    entry:     { ready: entry.ready,     score: entry.score,     gates: entry.gates },
+
     trade,
-    layers,
-    rules,
-    preEntryReady: allReady,
+    preEntryReady: allReady && trade && !trade.invalid,
+    reasons,
   };
 }

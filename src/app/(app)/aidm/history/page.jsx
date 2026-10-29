@@ -1,130 +1,168 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabaseClient';
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabaseClient";
+import { formatPrice } from "@/lib/formatNumbers";
 
-export default function AidmHistoryPage() {
-  const supabase = createClient();
-  const router = useRouter();
+function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 
-  const [setups, setSetups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setError('Not signed in'); setLoading(false); return; }
-
-      const { data, error } = await supabase
-        .from('aidm_setups')
-        .select('id, pair, direction, status, session, timeframe, created_at, poi_zone')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) { setError(error.message); setLoading(false); return; }
-      setSetups(data || []);
-      setLoading(false);
-    })();
-  }, []);
-
-  // group by date (YYYY-MM-DD)
-  const grouped = setups.reduce((acc, s) => {
-    const day = new Date(s.created_at).toISOString().slice(0, 10);
-    (acc[day] = acc[day] || []).push(s);
-    return acc;
-  }, {});
-
-  const days = Object.keys(grouped).sort((a, b) => (a < b ? 1 : -1));
-
-  if (loading) return <div className="p-8 text-slate-400">Loading…</div>;
-  if (error)   return <div className="p-8 text-red-400">{error}</div>;
-
-  return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">AIDM History</h1>
-          <p className="text-sm text-slate-400">Timeline grouped by day</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => router.push('/aidm/journal')}
-            className="px-3 py-1.5 text-sm rounded border border-slate-600 text-slate-300 hover:bg-slate-800"
-          >
-            Journal
-          </button>
-          <button
-            onClick={() => router.push('/aidm')}
-            className="px-3 py-1.5 text-sm rounded bg-emerald-600 hover:bg-emerald-500 text-white"
-          >
-            + New Setup
-          </button>
-        </div>
-      </header>
-
-      {days.length === 0 && (
-        <div className="rounded border border-slate-700 bg-slate-900/50 p-8 text-center text-slate-500">
-          No setups yet. Create your first AIDM setup.
-        </div>
-      )}
-
-      {days.map(day => (
-        <section key={day} className="space-y-2">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide sticky top-0 bg-slate-950 py-2">
-            {formatDay(day)} · {grouped[day].length} setup{grouped[day].length !== 1 ? 's' : ''}
-          </h2>
-          <div className="space-y-2">
-            {grouped[day].map(s => (
-              <button
-                key={s.id}
-                onClick={() => router.push(`/aidm/${s.id}`)}
-                className="w-full text-left rounded border border-slate-700 bg-slate-900/50 hover:bg-slate-800 p-3 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                    s.direction === 'bullish'
-                      ? 'bg-emerald-950 text-emerald-400'
-                      : 'bg-red-950 text-red-400'
-                  }`}>
-                    {s.direction === 'bullish' ? 'LONG' : 'SHORT'}
-                  </span>
-                  <span className="text-slate-100 font-medium">{s.pair || '—'}</span>
-                  <span className="text-xs text-slate-500">
-                    {s.timeframe || '—'} · {s.session || '—'}
-                  </span>
-                  {s.poi_zone && (
-                    <span className="text-[10px] uppercase text-slate-500">
-                      {s.poi_zone}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${
-                    s.status === 'complete'
-                      ? 'bg-emerald-950 text-emerald-400'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}>
-                    {s.status}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
+function groupLabel(isoDate) {
+  const d = startOfDay(isoDate);
+  const now = startOfDay(new Date());
+  const diffDays = Math.round((now - d) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return d.toLocaleDateString(undefined, {
+    weekday: "long", day: "numeric", month: "short",
+    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
 }
 
-function formatDay(iso) {
-  const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString(undefined, {
-    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+function rowDate(r) {
+  return r.status === "draft" ? r.updated_at || r.created_at : r.created_at;
+}
+
+function groupRowsByDay(rows) {
+  const groups = {};
+  rows.forEach((r) => {
+    const key = startOfDay(rowDate(r)).toISOString();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
   });
+  return Object.entries(groups)
+    .sort((a, b) => new Date(b[0]) - new Date(a[0]))
+    .map(([key, items]) => ({
+      key,
+      label: groupLabel(key),
+      items: items.sort((a, b) => new Date(rowDate(b)) - new Date(rowDate(a))),
+    }));
+}
+
+function resultBadge(result) {
+  const map = {
+    active: { label: "🎯", cls: "bg-blue-900/40 border-blue-700 text-blue-200" },
+    won:    { label: "✅", cls: "bg-green-900/40 border-green-700 text-green-200" },
+    lost:   { label: "🔴", cls: "bg-red-900/40 border-red-700 text-red-200" },
+  };
+  return map[result] || null;
+}
+
+export default function AidmHistoryPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    const { data, error: loadErr } = await supabase
+      .from("aidm_setups")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    if (loadErr) { setError(loadErr.message); setLoading(false); return; }
+    setRows(data || []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { loadRows(); }, [loadRows]);
+
+  useEffect(() => {
+    const handleFocus = () => { loadRows(); };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadRows]);
+
+  const groups = useMemo(() => groupRowsByDay(rows), [rows]);
+
+  return (
+    <main className="min-h-screen p-4 md:p-6 bg-black text-white">
+      <div className="max-w-3xl mx-auto space-y-5">
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">📜 AIDM History</h1>
+            <p className="text-gray-400 text-sm">Every APEX-IDM setup, grouped by day.</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={loadRows} className="text-xs px-3 py-2 rounded-lg bg-gray-800 text-gray-300 font-semibold">🔄 Refresh</button>
+            <button type="button" onClick={() => router.push("/aidm/journal")} className="text-xs px-3 py-2 rounded-lg bg-purple-900/40 text-purple-300 font-semibold">📓 Journal</button>
+            <button type="button" onClick={() => router.push("/aidm")} className="text-xs px-3 py-2 rounded-lg bg-sky-900/40 text-sky-300 font-semibold">+ New</button>
+          </div>
+        </div>
+
+        {error && <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">{error}</div>}
+        {loading && <div className="p-6 text-center text-gray-400 text-sm">Loading...</div>}
+
+        {!loading && rows.length === 0 && (
+          <div className="p-6 rounded-lg bg-sky-950/30 border border-sky-900/50 text-center space-y-3">
+            <p className="text-sm text-sky-200">No AIDM history yet.</p>
+            <button type="button" onClick={() => router.push("/aidm")} className="px-4 py-2 rounded-lg bg-sky-800 font-bold text-sm">Start</button>
+          </div>
+        )}
+
+        {!loading && groups.length > 0 && (
+          <div className="space-y-5">
+            {groups.map((g) => (
+              <div key={g.key} className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-gray-800" />
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{g.label}</p>
+                  <div className="flex-1 h-px bg-gray-800" />
+                </div>
+                {g.items.map((r) => {
+                  const isDraft = r.status === "draft";
+                  const time = new Date(rowDate(r)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+                  const badge = resultBadge(r.trade_result);
+                  const isBull = r.direction === "bullish";
+
+                  return (
+                    <div
+                      key={r.id}
+                      onClick={() => router.push(`/aidm/${r.id}`)}
+                      className={`p-3 rounded-lg border cursor-pointer ${
+                        isDraft
+                          ? "bg-yellow-950/20 border-yellow-800/60 hover:border-yellow-600"
+                          : "bg-gray-900 border-gray-800 hover:border-sky-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-gray-500 tabular-nums">{time}</span>
+                        {isDraft && <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 border border-yellow-700 text-yellow-200 font-bold">📝</span>}
+                        <span className="text-sm font-bold">{r.pair || "—"}</span>
+                        <span className="text-xs text-gray-500">· {r.timeframe?.toUpperCase() || "—"}</span>
+                        <span className="text-xs text-gray-500">· {r.session?.toUpperCase() || "—"}</span>
+                        <span className="text-xs text-gray-400">· {isBull ? "🟢" : "🔴"}</span>
+                        {r.poi_zone && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-sky-800 bg-sky-950/40 text-sky-300 font-bold uppercase">
+                            {r.poi_zone}
+                          </span>
+                        )}
+                        {r.structure_flipped && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-red-700 bg-red-900/40 text-red-200 font-bold">
+                            VETO
+                          </span>
+                        )}
+                        {!isDraft && badge && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${badge.cls}`}>{badge.label}</span>
+                        )}
+                      </div>
+                      {!isDraft && (
+                        <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
+                          <div><p className="text-gray-500">Entry</p><p className="font-bold tabular-nums text-yellow-400">{r.entry_price ? formatPrice(r.entry_price) : "—"}</p></div>
+                          <div><p className="text-gray-500">SL</p><p className="font-bold tabular-nums text-red-400">{r.stop_loss ? formatPrice(r.stop_loss) : "—"}</p></div>
+                          <div><p className="text-gray-500">TP2</p><p className="font-bold tabular-nums text-green-400">{r.take_profit_2 ? formatPrice(r.take_profit_2) : (r.take_profit_1 ? formatPrice(r.take_profit_1) : "—")}</p></div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </main>
+  );
 }

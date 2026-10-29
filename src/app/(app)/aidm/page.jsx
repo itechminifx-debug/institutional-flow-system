@@ -1,472 +1,626 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabaseClient';
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabaseClient";
 import {
-  computeApexLevels,
-  computeAidmTrade,
-  evaluateAidm,
   AIDM_DIRECTIONS,
-  AIDM_TIMEFRAMES,
   AIDM_SESSIONS,
-} from '@/lib/aidmEngine';
-import PairPicker from '@/components/PairPicker';
+  AIDM_TIMEFRAMES,
+  evaluateAidm,
+} from "@/lib/aidmEngine";
+import PairPicker from "@/components/PairPicker";
+import AidmCard from "@/components/AidmCard";
+import ScreenshotUploader from "@/components/ScreenshotUploader";
+import ScreenshotGallery from "@/components/ScreenshotGallery";
 
-const EMPTY = {
-  direction: 'bullish',
-  pair: '',
-  timeframe: '4H',
-  session: 'london',
-  range_high: '',
-  range_low: '',
-  swept_erl: false,
-  mss_confirmed: false,
-  entry_price: '',
-  stop_loss: '',
-  take_profit_1: '',
-  take_profit_2: '',
-  risk_percent: 1,
-  account_size: '',
-  structure_flipped: false,
-  notes: '',
-};
-
-export default function AidmPage() {
-  const supabase = createClient();
+function AidmPageContent() {
   const router = useRouter();
-  const params = useSearchParams();
-  const editId = params.get('id');
+  const searchParams = useSearchParams();
+  const supabase = createClient();
 
-  const [form, setForm] = useState(EMPTY);
+  const editId = searchParams?.get("edit") || null;
+  const isEdit = !!editId;
+
+  const [form, setForm] = useState({
+    pair: "",
+    timeframe: "4H",
+    session: "london",
+    direction: "bullish",
+    rangeHigh: "",
+    rangeLow: "",
+    currentPrice: "",
+    sweptErl: false,
+    liquiditySweptType: "ssl",
+    mssConfirmed: false,
+    mssLevel: "",
+    fvgHigh: "",
+    fvgLow: "",
+    structureFlipped: false,
+    entryPrice: "",
+    stopLoss: "",
+    takeProfit1: "",
+    takeProfit2: "",
+    notes: "",
+  });
+
+  const [accountSize, setAccountSize] = useState(0);
+  const [riskPercent, setRiskPercent] = useState(1);
+  const [userId, setUserId] = useState(null);
+  const [screenshots, setScreenshots] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(!!editId);
-  const [error, setError] = useState(null);
-  const [isEdit, setIsEdit] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState(null);
+  const [error, setError] = useState("");
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [existingSetupId, setExistingSetupId] = useState(null);
 
-  // -------- load for edit --------
   useEffect(() => {
-    if (!editId) return;
-    (async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('aidm_setups')
-        .select('*')
-        .eq('id', editId)
-        .single();
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserId(user.id);
 
-      if (error) { setError(error.message); setLoading(false); return; }
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("account_size, risk_percent")
+        .eq("id", user.id)
+        .single();
+      if (prof) {
+        setAccountSize(prof.account_size || 0);
+        setRiskPercent(prof.risk_percent || 1);
+      }
+
+      if (!isEdit) return;
+
+      setLoadingEdit(true);
+      const { data: setupData, error: setupErr } = await supabase
+        .from("aidm_setups")
+        .select("*")
+        .eq("id", editId)
+        .maybeSingle();
+
+      if (setupErr || !setupData) {
+        setError(setupErr?.message || "AIDM setup not found.");
+        setLoadingEdit(false);
+        return;
+      }
+
+      const { data: shotsData } = await supabase
+        .from("aidm_screenshots")
+        .select("*")
+        .eq("setup_id", setupData.id)
+        .order("created_at");
+      setScreenshots(shotsData || []);
 
       setForm({
-        ...EMPTY,
-        ...data,
-        range_high: data.range_high ?? '',
-        range_low: data.range_low ?? '',
-        entry_price: data.entry_price ?? '',
-        stop_loss: data.stop_loss ?? '',
-        take_profit_1: data.take_profit_1 ?? '',
-        take_profit_2: data.take_profit_2 ?? '',
-        account_size: data.account_size ?? '',
-        notes: data.notes ?? '',
+        pair: setupData.pair || "",
+        timeframe: setupData.timeframe || "4H",
+        session: setupData.session || "london",
+        direction: setupData.direction || "bullish",
+        rangeHigh: setupData.range_high?.toString() || "",
+        rangeLow: setupData.range_low?.toString() || "",
+        currentPrice: setupData.current_price?.toString() || "",
+        sweptErl: setupData.swept_erl || false,
+        liquiditySweptType: setupData.liquidity_swept_type || "ssl",
+        mssConfirmed: setupData.mss_confirmed || false,
+        mssLevel: setupData.mss_level?.toString() || "",
+        fvgHigh: setupData.fvg_high?.toString() || "",
+        fvgLow: setupData.fvg_low?.toString() || "",
+        structureFlipped: setupData.structure_flipped || false,
+        entryPrice: setupData.entry_price?.toString() || "",
+        stopLoss: setupData.stop_loss?.toString() || "",
+        takeProfit1: setupData.take_profit_1?.toString() || "",
+        takeProfit2: setupData.take_profit_2?.toString() || "",
+        notes: setupData.notes || "",
       });
-      setIsEdit(true);
-      setLoading(false);
-    })();
-  }, [editId]);
 
-  // -------- live calc --------
-  const levels = useMemo(
-    () => computeApexLevels({
-      rangeHigh: form.range_high,
-      rangeLow: form.range_low,
+      setExistingSetupId(setupData.id);
+      setLoadingEdit(false);
+    }
+    load();
+  }, [editId, isEdit, supabase]);
+
+  function update(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  const evaluation = useMemo(() => {
+    return evaluateAidm({
       direction: form.direction,
-    }),
-    [form.range_high, form.range_low, form.direction]
-  );
+      rangeHigh: form.rangeHigh,
+      rangeLow: form.rangeLow,
+      currentPrice: form.currentPrice,
+      session: form.session,
+      sweptErl: form.sweptErl,
+      liquiditySweptType: form.liquiditySweptType,
+      mssConfirmed: form.mssConfirmed,
+      mssLevel: form.mssLevel,
+      fvgHigh: form.fvgHigh,
+      fvgLow: form.fvgLow,
+      structureFlipped: form.structureFlipped,
+      entryPrice: form.entryPrice,
+      stopLoss: form.stopLoss,
+      takeProfit1: form.takeProfit1,
+      takeProfit2: form.takeProfit2,
+      accountSize,
+      riskPercent,
+    });
+  }, [form, accountSize, riskPercent]);
 
-  const trade = useMemo(
-    () => computeAidmTrade({
-      direction: form.direction,
-      entry: form.entry_price,
-      stopLoss: form.stop_loss,
-      takeProfit1: form.take_profit_1,
-      takeProfit2: form.take_profit_2,
-      accountSize: form.account_size,
-      riskPercent: form.risk_percent,
-    }),
-    [form]
-  );
-
-  const evalResult = useMemo(() => evaluateAidm({
-    ...form,
-    range_high: Number(form.range_high),
-    range_low: Number(form.range_low),
-    entry_price: Number(form.entry_price),
-    stop_loss: Number(form.stop_loss),
-    take_profit_1: Number(form.take_profit_1),
-    take_profit_2: Number(form.take_profit_2),
-    account_size: Number(form.account_size),
-    risk_percent: Number(form.risk_percent),
-  }), [form]);
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  // -------- save --------
-  async function handleSave(status) {
-    setSaving(true);
-    setError(null);
-
+  async function saveAidm({ isDraft }) {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError('Not signed in'); setSaving(false); return; }
+    if (!user) { setError("Not authenticated."); return null; }
+
+    const trade = evaluation.trade;
+    const levels = evaluation.context?.gates && {
+      ce: evaluation.ce,
+      ote62: evaluation.ote62,
+      ote79: evaluation.ote79,
+      poiZone: evaluation.poiZone,
+      size: evaluation.rangeHigh && evaluation.rangeLow
+        ? parseFloat(evaluation.rangeHigh) - parseFloat(evaluation.rangeLow)
+        : null,
+    };
 
     const payload = {
       user_id: user.id,
-      status,
-      direction: form.direction,
       pair: form.pair || null,
-      timeframe: form.timeframe || null,
-      session: form.session || null,
+      timeframe: form.timeframe,
+      session: form.session,
+      direction: form.direction,
+      status: isDraft ? "draft" : "complete",
 
-      range_high: Number(form.range_high),
-      range_low:  Number(form.range_low),
-      range_size: levels.rangeSize,
-      ce_50:      levels.ce,
-      ote_62:     levels.ote62,
-      ote_79:     levels.ote79,
-      ote_zone_low:  levels.oteZoneLow,
-      ote_zone_high: levels.oteZoneHigh,
-      poi_zone: levels.poiZone,
+      range_high: form.rangeHigh ? parseFloat(form.rangeHigh) : null,
+      range_low: form.rangeLow ? parseFloat(form.rangeLow) : null,
+      range_size: levels?.size ?? null,
+      ce_50: evaluation.ce ?? null,
+      ote_62: evaluation.ote62 ?? null,
+      ote_79: evaluation.ote79 ?? null,
+      ote_zone_low: evaluation.ote62 && evaluation.ote79
+        ? Math.min(evaluation.ote62, evaluation.ote79)
+        : null,
+      ote_zone_high: evaluation.ote62 && evaluation.ote79
+        ? Math.max(evaluation.ote62, evaluation.ote79)
+        : null,
+      poi_zone: evaluation.poiZone ?? null,
 
-      swept_erl: !!form.swept_erl,
-      mss_confirmed: !!form.mss_confirmed,
+      current_price: form.currentPrice ? parseFloat(form.currentPrice) : null,
+      swept_erl: form.sweptErl,
+      liquidity_swept_type: form.liquiditySweptType,
+      mss_confirmed: form.mssConfirmed,
+      mss_level: form.mssLevel ? parseFloat(form.mssLevel) : null,
+      fvg_high: form.fvgHigh ? parseFloat(form.fvgHigh) : null,
+      fvg_low: form.fvgLow ? parseFloat(form.fvgLow) : null,
+      structure_flipped: form.structureFlipped,
 
-      entry_price: form.entry_price !== '' ? Number(form.entry_price) : null,
-      stop_loss:   form.stop_loss   !== '' ? Number(form.stop_loss)   : null,
-      take_profit_1: form.take_profit_1 !== '' ? Number(form.take_profit_1) : null,
-      take_profit_2: form.take_profit_2 !== '' ? Number(form.take_profit_2) : null,
+      entry_price: trade && !trade.invalid ? trade.entry : null,
+      stop_loss: trade && !trade.invalid ? trade.sl : null,
+      take_profit_1: trade && !trade.invalid ? trade.tp1 : null,
+      take_profit_2: trade && !trade.invalid ? trade.tp2 : null,
 
-      risk_percent: Number(form.risk_percent) || 1,
-      account_size: form.account_size !== '' ? Number(form.account_size) : null,
-      lot_size: trade.lotSize,
+      account_size: accountSize || null,
+      risk_percent: riskPercent || 1,
+      lot_size: trade && !trade.invalid ? trade.lotSize : null,
 
-      structure_flipped: !!form.structure_flipped,
       notes: form.notes || null,
     };
 
-    let res;
-    if (isEdit) {
-      res = await supabase.from('aidm_setups').update(payload).eq('id', editId).select().single();
+    let setupRow;
+    if (isEdit && existingSetupId) {
+      const { data, error: updErr } = await supabase
+        .from("aidm_setups")
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq("id", existingSetupId)
+        .select()
+        .single();
+      if (updErr) { setError(updErr.message); return null; }
+      setupRow = data;
     } else {
-      res = await supabase.from('aidm_setups').insert(payload).select().single();
+      const { data, error: insErr } = await supabase
+        .from("aidm_setups")
+        .insert(payload)
+        .select()
+        .single();
+      if (insErr) { setError(insErr.message); return null; }
+      setupRow = data;
+      setExistingSetupId(data.id);
     }
 
-    setSaving(false);
-
-    if (res.error) { setError(res.error.message); return; }
-    router.push(`/aidm/${res.data.id}`);
+    return setupRow;
   }
 
-  if (loading) return <div className="p-8 text-slate-400">Loading…</div>;
+  async function handleSaveDraft() {
+    setSavingDraft(true); setError("");
+    const row = await saveAidm({ isDraft: true });
+    setSavingDraft(false);
+    if (!row) return;
+    setDraftSavedAt(new Date());
+    setSaved(false);
+  }
+
+  async function handleSaveFinal() {
+    if (!evaluation.preEntryReady) {
+      setError("The full sequence must be complete before saving as final.");
+      return;
+    }
+    if (!evaluation.trade || evaluation.trade.invalid) {
+      setError(evaluation.trade?.invalidReason || "Trade could not be computed.");
+      return;
+    }
+    setSaving(true); setError("");
+    const row = await saveAidm({ isDraft: false });
+    setSaving(false);
+    if (!row) return;
+    setDraftSavedAt(null);
+    setSaved(true);
+    setTimeout(() => router.push(`/aidm/${row.id}`), 800);
+  }
+
+  async function ensureSetupSaved() {
+    if (existingSetupId) return existingSetupId;
+    const row = await saveAidm({ isDraft: true });
+    if (!row) throw new Error("Failed to save draft.");
+    setDraftSavedAt(new Date());
+    return row.id;
+  }
+
+  if (loadingEdit && isEdit) {
+    return <div className="p-6 text-gray-400">Loading AIDM setup...</div>;
+  }
+
+  const canSaveFinal = evaluation.preEntryReady && evaluation.trade && !evaluation.trade.invalid;
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <header className="flex items-center justify-between">
+    <main className="min-h-screen p-4 md:p-6 bg-black text-white">
+      <div className="max-w-3xl mx-auto space-y-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">
-            AIDM Setup {isEdit && <span className="text-sm text-slate-400">(editing)</span>}
+          <h1 className="text-2xl font-bold">
+            {isEdit ? "Edit AIDM Setup" : "📐 AIDM — APEX-IDM"}
           </h1>
-          <p className="text-sm text-slate-400">APEX-IDM institutional flow model</p>
-        </div>
-        <button
-          onClick={() => router.push('/aidm/journal')}
-          className="text-sm text-slate-400 hover:text-slate-200"
-        >
-          → Journal
-        </button>
-      </header>
-
-      {error && (
-        <div className="rounded border border-red-700 bg-red-950/40 text-red-300 px-4 py-2 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* PART 1 — MAP */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-          Part 1 · Map
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="Pair">
-            <PairPicker value={form.pair} onChange={(v) => set('pair', v)} />
-          </Field>
-
-          <Field label="Timeframe">
-            <select
-              value={form.timeframe}
-              onChange={e => set('timeframe', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            >
-              {AIDM_TIMEFRAMES.map(tf => <option key={tf} value={tf}>{tf}</option>)}
-            </select>
-          </Field>
-
-          <Field label="Direction">
-            <select
-              value={form.direction}
-              onChange={e => set('direction', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            >
-              {AIDM_DIRECTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-            </select>
-          </Field>
-
-          <Field label="Range High">
-            <input
-              type="number"
-              step="any"
-              value={form.range_high}
-              onChange={e => set('range_high', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-
-          <Field label="Range Low">
-            <input
-              type="number"
-              step="any"
-              value={form.range_low}
-              onChange={e => set('range_low', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
+          <p className="text-gray-400 text-sm">
+            Map → Time &amp; Trap → Structure Shift → Sniper Entry → Risk &amp; Targets.
+          </p>
         </div>
 
-        {/* Auto-calc panel */}
-        <div className="rounded bg-slate-950/60 border border-slate-700 p-4">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">
-            Auto-Calculated Levels
-          </h3>
-          {levels.valid ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <Stat label="Range Size" value={fmt(levels.rangeSize)} />
-              <Stat label="50% CE" value={fmt(levels.ce)} highlight />
-              <Stat label="62%" value={fmt(levels.ote62)} />
-              <Stat label="79%" value={fmt(levels.ote79)} />
-              <Stat label="OTE Zone" value={`${fmt(levels.oteZoneLow)} – ${fmt(levels.oteZoneHigh)}`} />
-              <Stat label="POI Zone" value={levels.poiZone.toUpperCase()} highlight />
+        {/* Header basics */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <PairPicker value={form.pair} onChange={(p) => update("pair", p)} label="Pair" />
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Timeframe</label>
+              <select
+                value={form.timeframe}
+                onChange={(e) => update("timeframe", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              >
+                {AIDM_TIMEFRAMES.map((tf) => (
+                  <option key={tf} value={tf}>{tf}</option>
+                ))}
+              </select>
             </div>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Enter a valid Range High / Low (High must be &gt; Low).
-            </p>
+          </div>
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">Direction</label>
+            <div className="grid grid-cols-2 gap-2">
+              {AIDM_DIRECTIONS.map((d) => (
+                <button
+                  key={d.key}
+                  type="button"
+                  onClick={() => update("direction", d.key)}
+                  className={`text-left px-3 py-2 rounded-lg border text-xs transition ${
+                    form.direction === d.key
+                      ? d.key === "bullish"
+                        ? "bg-green-900/40 border-green-700 text-green-200"
+                        : "bg-red-900/40 border-red-700 text-red-200"
+                      : "bg-black border-gray-800 text-gray-400"
+                  }`}
+                >
+                  <p className="font-bold">{d.label}</p>
+                  <p className="text-[10px] mt-0.5 text-gray-400">{d.hint}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* PART 1 — MAP */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-blue-800/60 space-y-3">
+          <h2 className="text-sm font-semibold text-blue-300">🗺️ Part 1 — Map (Range + CE + OTE)</h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Range High</label>
+              <input
+                type="number" step="any"
+                value={form.rangeHigh}
+                onChange={(e) => update("rangeHigh", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Range Low</label>
+              <input
+                type="number" step="any"
+                value={form.rangeLow}
+                onChange={(e) => update("rangeLow", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">Current Price</label>
+            <input
+              type="number" step="any"
+              value={form.currentPrice}
+              onChange={(e) => update("currentPrice", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+            />
+          </div>
+
+          {/* Auto-calc display */}
+          {evaluation.ce !== null && (
+            <div className="p-3 rounded-lg bg-black border border-blue-800/40 grid grid-cols-2 gap-2 text-xs">
+              <p className="text-gray-400">Size: <span className="text-white font-mono">{evaluation.rangeHigh - evaluation.rangeLow}</span></p>
+              <p className="text-gray-400">50% CE: <span className="text-yellow-300 font-mono font-bold">{evaluation.ce}</span></p>
+              <p className="text-gray-400">62%: <span className="text-sky-300 font-mono">{evaluation.ote62}</span></p>
+              <p className="text-gray-400">79%: <span className="text-sky-300 font-mono">{evaluation.ote79}</span></p>
+              <p className="text-gray-400 col-span-2">POI: <span className="text-sky-200 font-bold uppercase">{evaluation.poiZone}</span></p>
+            </div>
           )}
         </div>
-      </section>
 
-      {/* PART 2 — TIME & TRAP */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-          Part 2 · Time & Trap
-        </h2>
-        <Field label="Kill Zone">
-          <select
-            value={form.session}
-            onChange={e => set('session', e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-          >
-            {AIDM_SESSIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-        </Field>
-        <Check
-          label="ERL swept (BSL/SSL taken)"
-          checked={form.swept_erl}
-          onChange={v => set('swept_erl', v)}
-        />
-      </section>
+        {/* PART 2 — TIME & TRAP */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-orange-800/60 space-y-3">
+          <h2 className="text-sm font-semibold text-orange-300">⚡ Part 2 — Time &amp; Trap</h2>
 
-      {/* PART 3 — STRUCTURE SHIFT */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-          Part 3 · Structure Shift
-        </h2>
-        <Check
-          label="Displacement MSS confirmed (with FVG)"
-          checked={form.mss_confirmed}
-          onChange={v => set('mss_confirmed', v)}
-        />
-        <Check
-          label="Structure flipped against HTF (veto flag)"
-          checked={form.structure_flipped}
-          onChange={v => set('structure_flipped', v)}
-        />
-      </section>
-
-      {/* PART 4 — SNIPER ENTRY */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-          Part 4 · Sniper Entry
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="Entry Price">
-            <input type="number" step="any"
-              value={form.entry_price}
-              onChange={e => set('entry_price', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-          <Field label="Stop Loss">
-            <input type="number" step="any"
-              value={form.stop_loss}
-              onChange={e => set('stop_loss', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-          <Field label="Risk %">
-            <input type="number" step="0.1" min="0" max="1"
-              value={form.risk_percent}
-              onChange={e => set('risk_percent', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-          <Field label="Account Size ($)">
-            <input type="number" step="any"
-              value={form.account_size}
-              onChange={e => set('account_size', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-        </div>
-
-        {trade.errors.length > 0 && (
-          <ul className="text-xs text-red-400 space-y-1">
-            {trade.errors.map((er, i) => <li key={i}>• {er}</li>)}
-          </ul>
-        )}
-
-        {trade.valid && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <Stat label="Risk (pips)" value={fmt(trade.riskPips, 1)} />
-            <Stat label="Lot Size" value={trade.lotSize ?? '—'} highlight />
-            <Stat label="RR (TP1)" value={trade.rrTp1 ? trade.rrTp1.toFixed(2) : '—'} />
-            <Stat label="RR (TP2)" value={trade.rrTp2 ? trade.rrTp2.toFixed(2) : '—'} />
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">Kill Zone</label>
+            <select
+              value={form.session}
+              onChange={(e) => update("session", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+            >
+              {AIDM_SESSIONS.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
+              ))}
+            </select>
           </div>
-        )}
-      </section>
 
-      {/* PART 5 — RISK & TARGETS */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-          Part 5 · Risk & Targets
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="TP1 — 50% CE">
-            <input type="number" step="any"
-              value={form.take_profit_1}
-              onChange={e => set('take_profit_1', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-          <Field label="TP2 — Opposite ERL">
-            <input type="number" step="any"
-              value={form.take_profit_2}
-              onChange={e => set('take_profit_2', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-            />
-          </Field>
-        </div>
-      </section>
-
-      {/* NOTES */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Notes</h2>
-        <textarea
-          value={form.notes}
-          onChange={e => set('notes', e.target.value)}
-          rows={4}
-          className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100"
-          placeholder="Chart context, narrative, what you're seeing…"
-        />
-      </section>
-
-      {/* CHECKLIST SUMMARY */}
-      <section className="rounded border border-slate-700 bg-slate-900/50 p-5">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
-          Pre-Entry Checklist
-        </h2>
-        <div className="space-y-1 text-sm">
-          {evalResult.layers.map(l => (
-            <div key={l.part} className="flex items-center gap-2">
-              <span className={l.ready ? 'text-emerald-400' : 'text-slate-500'}>
-                {l.ready ? '✓' : '○'}
-              </span>
-              <span className="text-slate-300">Part {l.part} — {l.title}</span>
+          <button
+            type="button"
+            onClick={() => update("sweptErl", !form.sweptErl)}
+            className={`w-full text-left p-3 rounded-lg border transition ${
+              form.sweptErl ? "bg-orange-900/40 border-orange-700" : "bg-black border-gray-800"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                form.sweptErl ? "bg-orange-500 border-orange-500" : "border-gray-600"
+              }`}>
+                {form.sweptErl && <span className="text-black text-xs font-bold">✓</span>}
+              </div>
+              <p className={`text-sm font-medium ${form.sweptErl ? "text-orange-200" : "text-white"}`}>
+                ERL Swept (liquidity taken)
+              </p>
             </div>
-          ))}
+          </button>
+
+          <div>
+            <label className="block text-xs mb-1 text-gray-400">Swept Side</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "bsl", label: "🔵 BSL (Buyside)", hint: "Above — trap for buyers" },
+                { key: "ssl", label: "🟠 SSL (Sellside)", hint: "Below — trap for sellers" },
+              ].map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => update("liquiditySweptType", o.key)}
+                  className={`text-left px-3 py-2 rounded-lg border text-xs transition ${
+                    form.liquiditySweptType === o.key
+                      ? "bg-orange-900/40 border-orange-700 text-orange-200"
+                      : "bg-black border-gray-800 text-gray-400"
+                  }`}
+                >
+                  <p className="font-bold">{o.label}</p>
+                  <p className="text-[10px] mt-0.5">{o.hint}</p>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <p className={`mt-3 text-sm font-medium ${evalResult.preEntryReady ? 'text-emerald-400' : 'text-amber-400'}`}>
-          {evalResult.preEntryReady ? 'READY — all gates passed' : 'Not ready — finish checklist'}
-        </p>
-      </section>
 
-      {/* ACTIONS */}
-      <div className="flex justify-end gap-3">
-        <button
-          onClick={() => handleSave('draft')}
-          disabled={saving}
-          className="px-4 py-2 rounded border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
-        >
-          Save Draft
-        </button>
-        <button
-          onClick={() => handleSave('complete')}
-          disabled={saving}
-          className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save Complete'}
-        </button>
+        {/* PART 3 — STRUCTURE SHIFT */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-purple-800/60 space-y-3">
+          <h2 className="text-sm font-semibold text-purple-300">🔍 Part 3 — Structure Shift</h2>
+
+          <button
+            type="button"
+            onClick={() => update("mssConfirmed", !form.mssConfirmed)}
+            className={`w-full text-left p-3 rounded-lg border transition ${
+              form.mssConfirmed ? "bg-purple-900/40 border-purple-700" : "bg-black border-gray-800"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                form.mssConfirmed ? "bg-purple-500 border-purple-500" : "border-gray-600"
+              }`}>
+                {form.mssConfirmed && <span className="text-black text-xs font-bold">✓</span>}
+              </div>
+              <p className={`text-sm font-medium ${form.mssConfirmed ? "text-purple-200" : "text-white"}`}>
+                MSS Confirmed (displacement CHoCH + FVG)
+              </p>
+            </div>
+          </button>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">MSS Level</label>
+              <input type="number" step="any"
+                value={form.mssLevel}
+                onChange={(e) => update("mssLevel", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">FVG Low</label>
+              <input type="number" step="any"
+                value={form.fvgLow}
+                onChange={(e) => update("fvgLow", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">FVG High</label>
+              <input type="number" step="any"
+                value={form.fvgHigh}
+                onChange={(e) => update("fvgHigh", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => update("structureFlipped", !form.structureFlipped)}
+            className={`w-full text-left p-3 rounded-lg border transition ${
+              form.structureFlipped ? "bg-red-900/40 border-red-700" : "bg-black border-gray-800"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                form.structureFlipped ? "bg-red-500 border-red-500" : "border-gray-600"
+              }`}>
+                {form.structureFlipped && <span className="text-black text-xs font-bold">✓</span>}
+              </div>
+              <p className={`text-sm font-medium ${form.structureFlipped ? "text-red-200" : "text-white"}`}>
+                HTF Veto — structure flipped against HTF bias
+              </p>
+            </div>
+          </button>
+        </div>
+
+        {/* PART 4 — SNIPER ENTRY */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-emerald-800/60 space-y-3">
+          <h2 className="text-sm font-semibold text-emerald-300">🎯 Part 4 — Sniper Entry</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Entry Price</label>
+              <input type="number" step="any"
+                value={form.entryPrice}
+                onChange={(e) => update("entryPrice", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Stop Loss</label>
+              <input type="number" step="any"
+                value={form.stopLoss}
+                onChange={(e) => update("stopLoss", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* PART 5 — RISK & TARGETS */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-teal-800/60 space-y-3">
+          <h2 className="text-sm font-semibold text-teal-300">💰 Part 5 — Risk &amp; Targets</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">TP1 — 50% CE</label>
+              <input type="number" step="any"
+                value={form.takeProfit1}
+                onChange={(e) => update("takeProfit1", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">TP2 — Opposite ERL</label>
+              <input type="number" step="any"
+                value={form.takeProfit2}
+                onChange={(e) => update("takeProfit2", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {evaluation && (
+          <AidmCard
+            data={{
+              ...evaluation,
+              currentPrice: form.currentPrice,
+              entryPrice: form.entryPrice,
+              stopLoss: form.stopLoss,
+              targetPrice: form.takeProfit2 || form.takeProfit1,
+            }}
+          />
+        )}
+
+        {/* Screenshots */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+          <ScreenshotUploader
+            setupId={existingSetupId}
+            userId={userId}
+            screenshots={screenshots}
+            onChange={setScreenshots}
+            table="aidm_screenshots"
+            onEnsureSetup={ensureSetupSaved}
+          />
+          <ScreenshotGallery
+            screenshots={screenshots}
+            onDelete={(id) => setScreenshots(prev => prev.filter(s => s.id !== id))}
+            table="aidm_screenshots"
+          />
+        </div>
+
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+          <label className="block text-xs mb-1 text-gray-400">Notes</label>
+          <textarea
+            value={form.notes}
+            onChange={(e) => update("notes", e.target.value)}
+            rows={3}
+            className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 resize-none text-sm"
+          />
+        </div>
+
+        {error && <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">{error}</div>}
+        {draftSavedAt && <div className="p-3 rounded-lg bg-yellow-900/40 border border-yellow-700 text-yellow-100 text-sm">📝 Draft saved · {draftSavedAt.toLocaleTimeString()}</div>}
+        {saved && <div className="p-3 rounded-lg bg-green-900/40 border border-green-700 text-green-200 text-sm">✅ Saved — redirecting...</div>}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || saving}
+            className="w-full py-4 rounded-lg font-bold disabled:opacity-50 bg-yellow-800 hover:bg-yellow-700 text-white"
+          >
+            {savingDraft ? "Saving..." : "📝 Save Draft"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveFinal}
+            disabled={saving || savingDraft || !canSaveFinal}
+            className={`w-full py-4 rounded-lg font-bold disabled:opacity-50 ${
+              canSaveFinal ? "bg-sky-700 hover:bg-sky-600" : "bg-gray-800"
+            }`}
+          >
+            {saving ? "Saving..." : canSaveFinal ? "✅ Save as Final" : "💾 Sequence incomplete"}
+          </button>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
 
-// ---------- helpers ----------
-function Field({ label, children }) {
+export default function AidmPage() {
   return (
-    <label className="block">
-      <span className="block text-xs text-slate-400 mb-1">{label}</span>
-      {children}
-    </label>
+    <Suspense fallback={<main className="min-h-screen p-6 bg-black text-white"><div className="max-w-3xl mx-auto text-gray-400">Loading AIDM...</div></main>}>
+      <AidmPageContent />
+    </Suspense>
   );
-}
-
-function Check({ label, checked, onChange }) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        className="accent-emerald-500"
-      />
-      {label}
-    </label>
-  );
-}
-
-function Stat({ label, value, highlight }) {
-  return (
-    <div className={`rounded p-2 ${highlight ? 'bg-emerald-950/40 border border-emerald-800' : 'bg-slate-900'}`}>
-      <div className="text-[10px] uppercase text-slate-500">{label}</div>
-      <div className={`text-sm font-mono ${highlight ? 'text-emerald-300' : 'text-slate-200'}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function fmt(v, dp = 5) {
-  if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
-  return Number(v).toFixed(dp).replace(/\.?0+$/, '');
 }
