@@ -60,6 +60,16 @@ const GROUPS = [
       { href: "/sld/manual", label: "SLD Manual" },
     ],
   },
+  // AIDM — new group
+  {
+    title: "AIDM System",
+    links: [
+      { href: "/aidm", label: "AIDM Setup" },
+      { href: "/aidm/journal", label: "AIDM Journal" },
+      { href: "/aidm/history", label: "AIDM History" },
+      { href: "/aidm/manual", label: "AIDM Manual" },
+    ],
+  },
   {
     title: "SMC System",
     links: [
@@ -230,6 +240,7 @@ export default function Sidebar() {
             const isIct = group.title === "ICT Core";
             const isTs = group.title === "TS System";
             const isSldGroup = group.title === "SLD System";
+            const isAidmGroup = group.title === "AIDM System"; // AIDM
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
             const isFwtGroup = group.title === "FWT System";
@@ -238,7 +249,7 @@ export default function Sidebar() {
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
             const isSystemGroup =
-              isOracle || isResearch || isIct || isTs || isSldGroup || isSmcGroup || isLqeGroup ||
+              isOracle || isResearch || isIct || isTs || isSldGroup || isAidmGroup || isSmcGroup || isLqeGroup ||
               isFwtGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
@@ -255,6 +266,8 @@ export default function Sidebar() {
                       ? "text-violet-400"
                       : isSldGroup
                       ? "text-emerald-400"
+                      : isAidmGroup
+                      ? "text-sky-400"
                       : isSmcGroup
                       ? "text-orange-400"
                       : isLqeGroup
@@ -287,6 +300,8 @@ export default function Sidebar() {
                         ? "pl-2 border-l-2 border-violet-800/60 ml-2"
                         : isSldGroup
                         ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
+                        : isAidmGroup
+                        ? "pl-2 border-l-2 border-sky-800/60 ml-2"
                         : isSmcGroup
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"
                         : isLqeGroup
@@ -313,6 +328,8 @@ export default function Sidebar() {
                           active
                             ? isOracle
                               ? "bg-fuchsia-600 text-white font-medium"
+                              : isAidmGroup
+                              ? "bg-sky-600 text-white font-medium"
                               : "bg-blue-600 text-white font-medium"
                             : "text-gray-400 hover:text-white hover:bg-gray-900"
                         }`}
