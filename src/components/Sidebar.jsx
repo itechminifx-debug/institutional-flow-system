@@ -60,7 +60,6 @@ const GROUPS = [
       { href: "/sld/manual", label: "SLD Manual" },
     ],
   },
-  // AIDM — new group
   {
     title: "AIDM System",
     links: [
@@ -68,6 +67,16 @@ const GROUPS = [
       { href: "/aidm/journal", label: "AIDM Journal" },
       { href: "/aidm/history", label: "AIDM History" },
       { href: "/aidm/manual", label: "AIDM Manual" },
+    ],
+  },
+  // CRIM — New Group
+  {
+    title: "CRIM System",
+    links: [
+      { href: "/crim", label: "CRIM Setup" },
+      { href: "/crim/journal", label: "CRIM Journal" },
+      { href: "/crim/history", label: "CRIM History" },
+      { href: "/crim/manual", label: "CRIM Manual" },
     ],
   },
   {
@@ -240,7 +249,8 @@ export default function Sidebar() {
             const isIct = group.title === "ICT Core";
             const isTs = group.title === "TS System";
             const isSldGroup = group.title === "SLD System";
-            const isAidmGroup = group.title === "AIDM System"; // AIDM
+            const isAidmGroup = group.title === "AIDM System";
+            const isCrimGroup = group.title === "CRIM System"; // CRIM
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
             const isFwtGroup = group.title === "FWT System";
@@ -248,8 +258,9 @@ export default function Sidebar() {
             const isAmsGroup = group.title === "AMS System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
+            
             const isSystemGroup =
-              isOracle || isResearch || isIct || isTs || isSldGroup || isAidmGroup || isSmcGroup || isLqeGroup ||
+              isOracle || isResearch || isIct || isTs || isSldGroup || isAidmGroup || isCrimGroup || isSmcGroup || isLqeGroup ||
               isFwtGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
@@ -268,6 +279,8 @@ export default function Sidebar() {
                       ? "text-emerald-400"
                       : isAidmGroup
                       ? "text-sky-400"
+                      : isCrimGroup
+                      ? "text-amber-400"
                       : isSmcGroup
                       ? "text-orange-400"
                       : isLqeGroup
@@ -302,6 +315,8 @@ export default function Sidebar() {
                         ? "pl-2 border-l-2 border-emerald-800/60 ml-2"
                         : isAidmGroup
                         ? "pl-2 border-l-2 border-sky-800/60 ml-2"
+                        : isCrimGroup
+                        ? "pl-2 border-l-2 border-amber-800/60 ml-2"
                         : isSmcGroup
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"
                         : isLqeGroup
@@ -330,6 +345,8 @@ export default function Sidebar() {
                               ? "bg-fuchsia-600 text-white font-medium"
                               : isAidmGroup
                               ? "bg-sky-600 text-white font-medium"
+                              : isCrimGroup
+                              ? "bg-amber-600 text-white font-medium"
                               : "bg-blue-600 text-white font-medium"
                             : "text-gray-400 hover:text-white hover:bg-gray-900"
                         }`}
