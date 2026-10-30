@@ -3,11 +3,13 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
+import { formatPrice } from "@/lib/formatNumbers";
 import { evaluateCrim, computeCrimLevels, CRIM_SESSIONS, CRIM_TIMEFRAMES } from "@/lib/crimEngine";
 import PairPicker from "@/components/PairPicker";
 import CrimCard from "@/components/CrimCard";
 import ScreenshotUploader from "@/components/ScreenshotUploader";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+
 
 function CrimPageContent() {
   const router = useRouter();
