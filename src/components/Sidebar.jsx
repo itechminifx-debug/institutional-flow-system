@@ -106,6 +106,16 @@ const GROUPS = [
       { href: "/fwt/manual", label: "FWT Manual" },
     ],
   },
+  // APX — New Group
+  {
+    title: "APX System",
+    links: [
+      { href: "/apx", label: "APX Setup" },
+      { href: "/apx/journal", label: "APX Journal" },
+      { href: "/apx/history", label: "APX History" },
+      { href: "/apx/manual", label: "APX Manual" },
+    ],
+  },
   {
     title: "ADS System",
     links: [
@@ -254,14 +264,15 @@ export default function Sidebar() {
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
             const isFwtGroup = group.title === "FWT System";
+            const isApxGroup = group.title === "APX System"; // APX
             const isAdsGroup = group.title === "ADS System";
             const isAmsGroup = group.title === "AMS System";
             const isLayersGroup = group.title === "Layers System";
             const isAmdGroup = group.title === "AMD System";
-            
+
             const isSystemGroup =
               isOracle || isResearch || isIct || isTs || isSldGroup || isAidmGroup || isCrimGroup || isSmcGroup || isLqeGroup ||
-              isFwtGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
+              isFwtGroup || isApxGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
@@ -287,6 +298,8 @@ export default function Sidebar() {
                       ? "text-orange-400"
                       : isFwtGroup
                       ? "text-teal-400"
+                      : isApxGroup
+                      ? "text-yellow-400"
                       : isAdsGroup
                       ? "text-amber-400"
                       : isAmsGroup
@@ -323,6 +336,8 @@ export default function Sidebar() {
                         ? "pl-2 border-l-2 border-orange-800/60 ml-2"
                         : isFwtGroup
                         ? "pl-2 border-l-2 border-teal-800/60 ml-2"
+                        : isApxGroup
+                        ? "pl-2 border-l-2 border-yellow-800/60 ml-2"
                         : isAdsGroup
                         ? "pl-2 border-l-2 border-amber-800/60 ml-2"
                         : isAmsGroup
@@ -347,6 +362,8 @@ export default function Sidebar() {
                               ? "bg-sky-600 text-white font-medium"
                               : isCrimGroup
                               ? "bg-amber-600 text-white font-medium"
+                              : isApxGroup
+                              ? "bg-yellow-600 text-white font-medium"
                               : "bg-blue-600 text-white font-medium"
                             : "text-gray-400 hover:text-white hover:bg-gray-900"
                         }`}
