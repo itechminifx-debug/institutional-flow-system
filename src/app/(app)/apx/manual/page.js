@@ -1,631 +1,303 @@
 // app/apx/manual/page.jsx
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabaseClient';
-import ApxCard from '@/components/ApxCard';
-import {
-  SETUP_TYPES,
-  DIRECTIONS,
-  BIASES,
-  computeZones,
-  runGates,
-  suggestSetup,
-  buildApxRecord,
-} from '@/lib/apxEngine';
-
-const AMBER = '#f59e0b';
+import { useState, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabaseClient";
+import { evaluateApx, APX_SETUP_TYPES, APX_BIASES, APX_DIRECTIONS } from "@/lib/apxEngine";
+import ApxCard from "@/components/ApxCard";
 
 const initialForm = {
-  pair: '',
-  timeframeStack: 'Daily → 4H → 15M',
-  setupType: 'standard',
-  bias: 'bullish',
-  direction: 'long',
-
-  rangeHigh: '',
-  rangeLow: '',
-
-  impulseHigh: '',
-  impulseLow: '',
-
-  sweepLevel: '',
-  sweepClosedBackInside: false,
-  displacementRange: '',
-  atrValue: '',
-
-  inducementLevel: '',
-  inducementBroken: false,
-  mssLevel: '',
-  mssConfirmed: false,
-  fvgHigh: '',
-  fvgLow: '',
-
-  ema50Value: '',
-  ema50Tapped: false,
-
-  entryPrice: '',
-  stopLoss: '',
-  targetPrice: '',
-  riskPercent: '',
-  notes: '',
+  pair: "", timeframe_stack: "Daily → 4H → 15M",
+  setup_type: "standard", bias: "bullish", direction: "long",
+  range_high: "", range_low: "",
+  impulse_high: "", impulse_low: "",
+  sweep_level: "", sweep_closed_back_inside: false,
+  displacement_range: "", atr_value: "",
+  inducement_level: "", inducement_broken: false,
+  mss_level: "", mss_confirmed: false,
+  fvg_high: "", fvg_low: "",
+  ema50_value: "", ema50_tapped: false,
+  entry_price: "", stop_loss: "", target_price: "", risk_percent: "",
+  notes: "",
 };
 
-// ---- map a DB row to the form shape (for ?edit=) ----
 function rowToForm(row) {
   if (!row) return initialForm;
-  const n = (v) => (typeof v === 'number' ? String(v) : v ?? '');
+  const s = (v) => (typeof v === "number" ? String(v) : v ?? "");
   return {
-    pair: row.pair ?? '',
-    timeframeStack: row.timeframe_stack ?? 'Daily → 4H → 15M',
-    setupType: row.setup_type ?? 'standard',
-    bias: row.bias ?? 'bullish',
-    direction: row.direction ?? 'long',
-
-    rangeHigh: n(row.range_high),
-    rangeLow: n(row.range_low),
-
-    impulseHigh: n(row.impulse_high),
-    impulseLow: n(row.impulse_low),
-
-    sweepLevel: n(row.sweep_level),
-    sweepClosedBackInside: !!row.sweep_closed_back_inside,
-    displacementRange: n(row.displacement_range),
-    atrValue: n(row.atr_value),
-
-    inducementLevel: n(row.inducement_level),
-    inducementBroken: !!row.inducement_broken,
-    mssLevel: n(row.mss_level),
-    mssConfirmed: !!row.mss_confirmed,
-    fvgHigh: n(row.fvg_high),
-    fvgLow: n(row.fvg_low),
-
-    ema50Value: n(row.ema50_value),
-    ema50Tapped: !!row.ema50_tapped,
-
-    entryPrice: n(row.entry_price),
-    stopLoss: n(row.stop_loss),
-    targetPrice: n(row.target_price),
-    riskPercent: n(row.risk_percent),
-    notes: row.notes ?? '',
+    pair: row.pair ?? "", timeframe_stack: row.timeframe_stack ?? "",
+    setup_type: row.setup_type ?? "standard", bias: row.bias ?? "bullish", direction: row.direction ?? "long",
+    range_high: s(row.range_high), range_low: s(row.range_low),
+    impulse_high: s(row.impulse_high), impulse_low: s(row.impulse_low),
+    sweep_level: s(row.sweep_level), sweep_closed_back_inside: !!row.sweep_closed_back_inside,
+    displacement_range: s(row.displacement_range), atr_value: s(row.atr_value),
+    inducement_level: s(row.inducement_level), inducement_broken: !!row.inducement_broken,
+    mss_level: s(row.mss_level), mss_confirmed: !!row.mss_confirmed,
+    fvg_high: s(row.fvg_high), fvg_low: s(row.fvg_low),
+    ema50_value: s(row.ema50_value), ema50_tapped: !!row.ema50_tapped,
+    entry_price: s(row.entry_price), stop_loss: s(row.stop_loss), target_price: s(row.target_price),
+    risk_percent: s(row.risk_percent), notes: row.notes ?? "",
   };
 }
 
 export default function ApxManualPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const editId = searchParams?.get('edit') || null;
+  const editId = searchParams?.get("edit") || null;
   const isEdit = !!editId;
-
   const supabase = createClient();
 
-  const [user, setUser] = useState(null);
   const [form, setForm] = useState(initialForm);
-  const [preview, setPreview] = useState(null); // { result, record }
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [savedId, setSavedId] = useState(null);
-  const [loadingEdit, setLoadingEdit] = useState(false);
-  const [loadEditError, setLoadEditError] = useState(null);
   const [originalRow, setOriginalRow] = useState(null);
+  const [loading, setLoading] = useState(!!editId);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [savedId, setSavedId] = useState(null);
 
-  // ---- auth ----
   useEffect(() => {
-    let mounted = true;
+    if (!editId) return;
     (async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (!mounted) return;
-      if (error || !data?.user) {
-        router.replace('/login');
-        return;
-      }
-      setUser(data.user);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [router, supabase]);
-
-  // ---- load existing row when ?edit= ----
-  useEffect(() => {
-    if (!editId || !user) return;
-    let mounted = true;
-    (async () => {
-      setLoadingEdit(true);
-      setLoadEditError(null);
-      const { data, error } = await supabase
-        .from('apx_setups')
-        .select('*')
-        .eq('id', editId)
-        .maybeSingle();
-      if (!mounted) return;
-      if (error || !data) {
-        setLoadEditError(error?.message || 'Setup not found.');
-        setLoadingEdit(false);
-        return;
-      }
+      const { data, error: err } = await supabase.from("apx_setups").select("*").eq("id", editId).maybeSingle();
+      if (err || !data) { setError(err?.message || "Setup not found."); setLoading(false); return; }
       setOriginalRow(data);
       setForm(rowToForm(data));
       setSavedId(data.id);
-      setLoadingEdit(false);
+      setLoading(false);
     })();
-    return () => {
-      mounted = false;
-    };
-  }, [editId, user, supabase]);
+  }, [editId, supabase]);
 
-  // ---- helpers ----
   const set = (key) => (e) => {
-    const value =
-      e?.target?.type === 'checkbox'
-        ? e.target.checked
-        : e?.target?.value ?? e;
-    setForm((f) => ({ ...f, [key]: value }));
-    setPreview(null);
-    setSaveError(null);
+    const v = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? e;
+    setForm((f) => ({ ...f, [key]: v }));
   };
 
   const num = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) && v !== '' ? n : undefined;
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
   };
 
-  const input = useMemo(
-    () => ({
-      userId: user?.id,
-      pair: form.pair.trim() || undefined,
-      timeframeStack: form.timeframeStack.trim() || undefined,
-      setupType: form.setupType,
+  const input = useMemo(() => ({
+    setupType: form.setup_type, bias: form.bias, direction: form.direction,
+    pair: form.pair, timeframeStack: form.timeframe_stack,
+    rangeHigh: num(form.range_high), rangeLow: num(form.range_low),
+    impulseHigh: num(form.impulse_high), impulseLow: num(form.impulse_low),
+    sweepLevel: num(form.sweep_level), sweepClosedBackInside: form.sweep_closed_back_inside,
+    displacementRange: num(form.displacement_range), atrValue: num(form.atr_value),
+    inducementLevel: num(form.inducement_level), inducementBroken: form.inducement_broken,
+    mssLevel: num(form.mss_level), mssConfirmed: form.mss_confirmed,
+    fvgHigh: num(form.fvg_high), fvgLow: num(form.fvg_low),
+    ema50Value: num(form.ema50_value), ema50Tapped: form.ema50_tapped,
+    entryPrice: num(form.entry_price), stopLoss: num(form.stop_loss), targetPrice: num(form.target_price),
+    riskPercent: num(form.risk_percent),
+  }), [form]);
+
+  const evaluation = useMemo(() => evaluateApx(input), [input]);
+
+  const onSave = useCallback(async () => {
+    setSaving(true);
+    setError("");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.replace("/login"); return; }
+
+    const payload = {
+      user_id: user.id,
+      pair: form.pair || null,
+      timeframe_stack: form.timeframe_stack || null,
+      setup_type: form.setup_type,
       bias: form.bias,
       direction: form.direction,
+      range_high: num(form.range_high),
+      range_low: num(form.range_low),
+      ce: evaluation.zones.ce,
+      impulse_high: num(form.impulse_high),
+      impulse_low: num(form.impulse_low),
+      ote_low: evaluation.zones.oteLow,
+      ote_high: evaluation.zones.oteHigh,
+      sweep_level: num(form.sweep_level),
+      sweep_closed_back_inside: !!form.sweep_closed_back_inside,
+      displacement_range: num(form.displacement_range),
+      atr_value: num(form.atr_value),
+      inducement_level: num(form.inducement_level),
+      inducement_broken: !!form.inducement_broken,
+      mss_level: num(form.mss_level),
+      mss_confirmed: !!form.mss_confirmed,
+      fvg_high: num(form.fvg_high),
+      fvg_low: num(form.fvg_low),
+      ema50_value: num(form.ema50_value),
+      ema50_tapped: !!form.ema50_tapped,
+      entry_price: num(form.entry_price),
+      stop_loss: num(form.stop_loss),
+      target_price: num(form.target_price),
+      rr: evaluation.trade?.rr ?? null,
+      risk_percent: num(form.risk_percent),
+      status: evaluation.preEntryReady ? "complete" : "draft",
+      trade_result: isEdit ? (originalRow?.trade_result ?? null) : (evaluation.preEntryReady ? "active" : null),
+      r_result: isEdit ? (originalRow?.r_result ?? null) : null,
+      notes: form.notes || null,
+    };
 
-      rangeHigh: num(form.rangeHigh),
-      rangeLow: num(form.rangeLow),
-      impulseHigh: num(form.impulseHigh),
-      impulseLow: num(form.impulseLow),
-
-      sweepLevel: num(form.sweepLevel),
-      sweepClosedBackInside: !!form.sweepClosedBackInside,
-      displacementRange: num(form.displacementRange),
-      atrValue: num(form.atrValue),
-
-      inducementLevel: num(form.inducementLevel),
-      inducementBroken: !!form.inducementBroken,
-      mssLevel: num(form.mssLevel),
-      mssConfirmed: !!form.mssConfirmed,
-      fvgHigh: num(form.fvgHigh),
-      fvgLow: num(form.fvgLow),
-
-      ema50Value: num(form.ema50Value),
-      ema50Tapped: !!form.ema50Tapped,
-
-      entryPrice: num(form.entryPrice),
-      stopLoss: num(form.stopLoss),
-      targetPrice: num(form.targetPrice),
-      riskPercent: num(form.riskPercent),
-      notes: form.notes.trim() || undefined,
-    }),
-    [form, user]
-  );
-
-  const liveZones = useMemo(
-    () =>
-      computeZones({
-        rangeHigh: input.rangeHigh,
-        rangeLow: input.rangeLow,
-        impulseHigh: input.impulseHigh,
-        impulseLow: input.impulseLow,
-        direction: input.direction,
-      }),
-    [input.rangeHigh, input.rangeLow, input.impulseHigh, input.impulseLow, input.direction]
-  );
-
-  // ---- run preview ----
-  const onPreview = useCallback(() => {
-    setSaveError(null);
-    const result = runGates(input);
-    const record = buildApxRecord(input, result);
-    setPreview({ result, record });
-  }, [input]);
-
-  // ---- save (insert or update) ----
-  const onSave = useCallback(async () => {
-    if (!user) return;
-    if (!preview) {
-      onPreview();
-      return;
-    }
-    setSaving(true);
-    setSaveError(null);
-
-    // Don't overwrite journal fields on edit — preserve trade_result / r_result
-    const record = { ...preview.record };
-    if (isEdit && originalRow) {
-      record.trade_result = originalRow.trade_result ?? null;
-      record.r_result = originalRow.r_result ?? null;
-    }
-
-    let response;
+    let res;
     if (isEdit) {
-      response = await supabase
-        .from('apx_setups')
-        .update(record)
-        .eq('id', editId)
-        .select('id')
-        .single();
+      res = await supabase.from("apx_setups").update(payload).eq("id", editId).select("id").single();
     } else {
-      response = await supabase
-        .from('apx_setups')
-        .insert(record)
-        .select('id')
-        .single();
+      res = await supabase.from("apx_setups").insert(payload).select("id").single();
     }
 
     setSaving(false);
-    if (response.error) {
-      setSaveError(response.error.message);
-      return;
-    }
-    setSavedId(response.data.id);
-    setOriginalRow((prev) => (prev ? { ...prev, ...record } : prev));
-  }, [preview, user, onPreview, isEdit, originalRow, editId, supabase]);
+    if (res.error) { setError(res.error.message); return; }
+    setSavedId(res.data.id);
+    router.push(`/apx/${res.data.id}`);
+  }, [form, evaluation, isEdit, editId, originalRow, supabase, router]);
 
-  const resetForm = () => {
-    if (isEdit && originalRow) {
-      setForm(rowToForm(originalRow));
-    } else {
-      setForm(initialForm);
-    }
-    setPreview(null);
-    setSaveError(null);
-  };
+  if (loading) {
+    return <main className="min-h-screen p-6 bg-black text-white"><p className="text-gray-400 text-sm">Loading…</p></main>;
+  }
 
-  const suggestion = useMemo(() => {
-    const result = runGates(input);
-    const sweepBeyondRange =
-      Number.isFinite(input.sweepLevel) &&
-      Number.isFinite(input.rangeHigh) &&
-      Number.isFinite(input.rangeLow) &&
-      (input.sweepLevel > input.rangeHigh || input.sweepLevel < input.rangeLow);
-    return suggestSetup({
-      pullbackPct: result.pullbackPct,
-      sweepClosedBackInside: input.sweepClosedBackInside,
-      sweepBeyondRange,
-    });
-  }, [input]);
-
-  // ---- render ----
   return (
-    <div style={{ padding: 24, maxWidth: 1180, margin: '0 auto', color: '#e5e7eb' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#f9fafb' }}>
-            <span style={{ color: AMBER }}>APX</span> · {isEdit ? 'Edit Setup' : 'New Setup'}
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#9ca3af' }}>
-            {isEdit
-              ? 'Update the fields, preview the gates, then save changes.'
-              : 'Fill the fields, preview the gates, then save.'}
-          </p>
+    <main className="min-h-screen p-4 md:p-6 bg-black text-white">
+      <div className="max-w-5xl mx-auto space-y-5">
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-amber-400">🎯 APX · {isEdit ? "Edit Setup" : "New Setup"}</h1>
+            <p className="text-gray-400 text-xs">{isEdit ? "Update and save changes." : "Fill the fields — live preview updates as you type."}</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Link href={isEdit ? `/apx/${editId}` : "/apx"} className="text-xs px-3 py-2 rounded-lg bg-gray-800 font-semibold">
+              ← Back
+            </Link>
+          </div>
         </div>
-        <div style={{ flex: 1 }} />
-        {isEdit ? (
-          <Link
-            href={`/apx/${editId}`}
-            style={{
-              padding: '8px 12px',
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.14)',
-              color: '#e5e7eb',
-              fontSize: 12,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            ← Detail
-          </Link>
-        ) : null}
-        <Link
-          href="/apx"
-          style={{
-            padding: '8px 12px',
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.14)',
-            color: '#e5e7eb',
-            fontSize: 12,
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          ← Dashboard
-        </Link>
-      </div>
 
-      {loadingEdit ? (
-        <div style={{ marginTop: 24, color: '#9ca3af', fontSize: 13 }}>
-          Loading setup…
-        </div>
-      ) : loadEditError ? (
-        <div
-          style={{
-            marginTop: 24,
-            padding: 14,
-            borderRadius: 10,
-            border: '1px solid rgba(239,68,68,0.4)',
-            background: 'rgba(239,68,68,0.08)',
-            color: '#fca5a5',
-            fontSize: 13,
-          }}
-        >
-          Could not load setup: {loadEditError}
-        </div>
-      ) : (
-        <div
-          style={{
-            marginTop: 18,
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 1fr)',
-            gap: 16,
-          }}
-        >
-          {/* FORM */}
-          <div style={{ display: 'grid', gap: 14 }}>
+        {error && <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">{error}</div>}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-3">
             <Section title="Header">
               <Row>
-                <Field label="Pair">
-                  <input value={form.pair} onChange={set('pair')} placeholder="EURUSD" style={inputStyle} />
-                </Field>
-                <Field label="Timeframe stack">
-                  <input value={form.timeframeStack} onChange={set('timeframeStack')} placeholder="Daily → 4H → 15M" style={inputStyle} />
-                </Field>
+                <Field label="Pair"><input value={form.pair} onChange={set("pair")} placeholder="EURUSD" className={inputCls} /></Field>
+                <Field label="Timeframe stack"><input value={form.timeframe_stack} onChange={set("timeframe_stack")} className={inputCls} /></Field>
               </Row>
               <Row>
                 <Field label="Setup type">
-                  <select value={form.setupType} onChange={set('setupType')} style={inputStyle}>
-                    {SETUP_TYPES.map((s) => (
-                      <option key={s} value={s}>{s.replace('_', ' ')}</option>
-                    ))}
+                  <select value={form.setup_type} onChange={set("setup_type")} className={inputCls}>
+                    {APX_SETUP_TYPES.map((s) => <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>)}
                   </select>
                 </Field>
                 <Field label="Bias">
-                  <select value={form.bias} onChange={set('bias')} style={inputStyle}>
-                    {BIASES.map((b) => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
+                  <select value={form.bias} onChange={set("bias")} className={inputCls}>
+                    {APX_BIASES.map((b) => <option key={b.key} value={b.key}>{b.emoji} {b.label}</option>)}
                   </select>
                 </Field>
                 <Field label="Direction">
-                  <select value={form.direction} onChange={set('direction')} style={inputStyle}>
-                    {DIRECTIONS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
+                  <select value={form.direction} onChange={set("direction")} className={inputCls}>
+                    {APX_DIRECTIONS.map((d) => <option key={d.key} value={d.key}>{d.emoji} {d.label}</option>)}
                   </select>
                 </Field>
               </Row>
-              {suggestion && suggestion !== form.setupType ? (
-                <div style={{ fontSize: 12, color: AMBER, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', padding: '8px 10px', borderRadius: 10 }}>
-                  Suggestion: this looks like a <b>{suggestion.replace('_', ' ')}</b> setup.
-                </div>
-              ) : null}
             </Section>
 
-            <Section title="Dealing range">
+            <Section title="Dealing Range">
               <Row>
-                <Field label="Range high">
-                  <input value={form.rangeHigh} onChange={set('rangeHigh')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="Range low">
-                  <input value={form.rangeLow} onChange={set('rangeLow')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="CE (auto)">
-                  <input value={liveZones.ce ?? ''} readOnly style={{ ...inputStyle, opacity: 0.7 }} />
-                </Field>
+                <Field label="Range high"><input type="number" step="any" value={form.range_high} onChange={set("range_high")} className={inputCls} /></Field>
+                <Field label="Range low"><input type="number" step="any" value={form.range_low} onChange={set("range_low")} className={inputCls} /></Field>
+                <Field label="CE (auto)"><input readOnly value={evaluation.zones.ce ?? ""} className={inputCls + " opacity-60"} /></Field>
               </Row>
             </Section>
 
-            <Section title="Impulse leg (for OTE)">
+            <Section title="Impulse Leg (for OTE)">
               <Row>
-                <Field label="Impulse high">
-                  <input value={form.impulseHigh} onChange={set('impulseHigh')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="Impulse low">
-                  <input value={form.impulseLow} onChange={set('impulseLow')} type="number" step="any" style={inputStyle} />
-                </Field>
+                <Field label="Impulse high"><input type="number" step="any" value={form.impulse_high} onChange={set("impulse_high")} className={inputCls} /></Field>
+                <Field label="Impulse low"><input type="number" step="any" value={form.impulse_low} onChange={set("impulse_low")} className={inputCls} /></Field>
               </Row>
               <Row>
-                <Field label="OTE low (auto)">
-                  <input value={liveZones.oteLow ?? ''} readOnly style={{ ...inputStyle, opacity: 0.7 }} />
-                </Field>
-                <Field label="OTE high (auto)">
-                  <input value={liveZones.oteHigh ?? ''} readOnly style={{ ...inputStyle, opacity: 0.7 }} />
-                </Field>
+                <Field label="OTE low (auto)"><input readOnly value={evaluation.zones.oteLow ?? ""} className={inputCls + " opacity-60"} /></Field>
+                <Field label="OTE high (auto)"><input readOnly value={evaluation.zones.oteHigh ?? ""} className={inputCls + " opacity-60"} /></Field>
               </Row>
             </Section>
 
-            <Section title="Liquidity / sweep">
+            <Section title="Liquidity / Sweep">
               <Row>
-                <Field label="Sweep level">
-                  <input value={form.sweepLevel} onChange={set('sweepLevel')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="Displacement range">
-                  <input value={form.displacementRange} onChange={set('displacementRange')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="ATR (optional)">
-                  <input value={form.atrValue} onChange={set('atrValue')} type="number" step="any" style={inputStyle} />
-                </Field>
+                <Field label="Sweep level"><input type="number" step="any" value={form.sweep_level} onChange={set("sweep_level")} className={inputCls} /></Field>
+                <Field label="Displacement"><input type="number" step="any" value={form.displacement_range} onChange={set("displacement_range")} className={inputCls} /></Field>
+                <Field label="ATR (opt)"><input type="number" step="any" value={form.atr_value} onChange={set("atr_value")} className={inputCls} /></Field>
               </Row>
-              <Checkbox label="Sweep candle closed back inside range" checked={form.sweepClosedBackInside} onChange={set('sweepClosedBackInside')} />
+              <Checkbox label="Sweep candle closed back inside range" checked={form.sweep_closed_back_inside} onChange={set("sweep_closed_back_inside")} />
             </Section>
 
             <Section title="Structure">
               <Row>
-                <Field label="Inducement level">
-                  <input value={form.inducementLevel} onChange={set('inducementLevel')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="MSS level">
-                  <input value={form.mssLevel} onChange={set('mssLevel')} type="number" step="any" style={inputStyle} />
-                </Field>
+                <Field label="Inducement level"><input type="number" step="any" value={form.inducement_level} onChange={set("inducement_level")} className={inputCls} /></Field>
+                <Field label="MSS level"><input type="number" step="any" value={form.mss_level} onChange={set("mss_level")} className={inputCls} /></Field>
               </Row>
               <Row>
-                <Field label="FVG high">
-                  <input value={form.fvgHigh} onChange={set('fvgHigh')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="FVG low">
-                  <input value={form.fvgLow} onChange={set('fvgLow')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="50 EMA (optional)">
-                  <input value={form.ema50Value} onChange={set('ema50Value')} type="number" step="any" style={inputStyle} />
-                </Field>
+                <Field label="FVG high"><input type="number" step="any" value={form.fvg_high} onChange={set("fvg_high")} className={inputCls} /></Field>
+                <Field label="FVG low"><input type="number" step="any" value={form.fvg_low} onChange={set("fvg_low")} className={inputCls} /></Field>
+                <Field label="50 EMA (opt)"><input type="number" step="any" value={form.ema50_value} onChange={set("ema50_value")} className={inputCls} /></Field>
               </Row>
-              <Row>
-                <Checkbox label="Inducement broken" checked={form.inducementBroken} onChange={set('inducementBroken')} />
-                <Checkbox label="MSS confirmed" checked={form.mssConfirmed} onChange={set('mssConfirmed')} />
-                <Checkbox label="50 EMA tapped" checked={form.ema50Tapped} onChange={set('ema50Tapped')} />
-              </Row>
+              <div className="flex flex-wrap gap-3">
+                <Checkbox label="Inducement broken" checked={form.inducement_broken} onChange={set("inducement_broken")} />
+                <Checkbox label="MSS confirmed" checked={form.mss_confirmed} onChange={set("mss_confirmed")} />
+                <Checkbox label="50 EMA tapped" checked={form.ema50_tapped} onChange={set("ema50_tapped")} />
+              </div>
             </Section>
 
             <Section title="Trade">
               <Row>
-                <Field label="Entry price">
-                  <input value={form.entryPrice} onChange={set('entryPrice')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="Stop loss">
-                  <input value={form.stopLoss} onChange={set('stopLoss')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="Target price">
-                  <input value={form.targetPrice} onChange={set('targetPrice')} type="number" step="any" style={inputStyle} />
-                </Field>
-                <Field label="Risk % (optional)">
-                  <input value={form.riskPercent} onChange={set('riskPercent')} type="number" step="any" style={inputStyle} />
-                </Field>
+                <Field label="Entry"><input type="number" step="any" value={form.entry_price} onChange={set("entry_price")} className={inputCls} /></Field>
+                <Field label="Stop loss"><input type="number" step="any" value={form.stop_loss} onChange={set("stop_loss")} className={inputCls} /></Field>
+                <Field label="Target"><input type="number" step="any" value={form.target_price} onChange={set("target_price")} className={inputCls} /></Field>
+                <Field label="Risk %"><input type="number" step="any" value={form.risk_percent} onChange={set("risk_percent")} className={inputCls} /></Field>
               </Row>
             </Section>
 
             <Section title="Notes">
-              <textarea
-                value={form.notes}
-                onChange={set('notes')}
-                rows={3}
-                placeholder="Context, narrative, tags…"
-                style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }}
-              />
+              <textarea value={form.notes} onChange={set("notes")} rows={3} className={inputCls} placeholder="Context, narrative, tags…" />
             </Section>
 
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button onClick={onPreview} style={primaryBtn}>
-                Preview gates
-              </button>
-              <button
-                onClick={onSave}
-                disabled={!preview || saving}
-                style={{
-                  ...primaryBtn,
-                  background: savedId && !saving ? 'rgba(16,185,129,0.9)' : AMBER,
-                  color: savedId && !saving ? '#0b1020' : '#111827',
-                  opacity: !preview || saving ? 0.6 : 1,
-                  cursor: !preview || saving ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Save setup'}
-              </button>
-              <button onClick={resetForm} style={ghostBtn}>
-                Reset
-              </button>
-              {savedId ? (
-                <Link href={`/apx/${savedId}`} style={{ ...ghostBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-                  Open detail →
-                </Link>
-              ) : null}
-            </div>
-
-            {saveError ? (
-              <div style={{ padding: 12, borderRadius: 10, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.06)', color: '#fca5a5', fontSize: 12 }}>
-                Save failed: {saveError}
-              </div>
-            ) : null}
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="w-full py-3 rounded-lg bg-amber-600 text-black font-bold disabled:opacity-50"
+            >
+              {saving ? "Saving…" : isEdit ? "💾 Save Changes" : "💾 Save Setup"}
+            </button>
           </div>
 
-          {/* PREVIEW */}
-          <div style={{ position: 'sticky', top: 16, alignSelf: 'start', display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: 12, color: '#9ca3af' }}>Live preview (engine output)</div>
-            {preview ? (
-              <ApxCard setup={preview.record} result={preview.result} />
-            ) : (
-              <div style={{ padding: 20, borderRadius: 14, border: '1px dashed rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.04)', fontSize: 12, color: '#d1d5db' }}>
-                Click <b>Preview gates</b> to run the engine and see the card with pass/fail per stage, vetoes, and score.
-              </div>
-            )}
+          <div className="lg:sticky lg:top-4 self-start">
+            <p className="text-xs text-gray-500 mb-2">Live preview</p>
+            <ApxCard data={evaluation} />
           </div>
         </div>
-      )}
-    </div>
+      </div>
+    </main>
   );
 }
 
-// ------------------------------------------------------------
-// primitives
-// ------------------------------------------------------------
-const inputStyle = {
-  width: '100%',
-  padding: '8px 10px',
-  borderRadius: 10,
-  border: '1px solid rgba(255,255,255,0.12)',
-  background: 'rgba(255,255,255,0.03)',
-  color: '#f3f4f6',
-  fontSize: 13,
-  outline: 'none',
-};
-
-const primaryBtn = {
-  padding: '10px 16px',
-  borderRadius: 10,
-  background: AMBER,
-  color: '#111827',
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const ghostBtn = {
-  padding: '10px 14px',
-  borderRadius: 10,
-  background: 'transparent',
-  color: '#e5e7eb',
-  border: '1px solid rgba(255,255,255,0.14)',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
+const inputCls = "w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm text-white focus:border-amber-600 outline-none";
 
 function Section({ title, children }) {
   return (
-    <div style={{ padding: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)', display: 'grid', gap: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: AMBER, letterSpacing: 0.3 }}>{title}</div>
+    <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
+      <p className="text-xs font-bold text-amber-400">{title}</p>
       {children}
     </div>
   );
 }
-
-function Row({ children }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>{children}</div>;
-}
-
+function Row({ children }) { return <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{children}</div>; }
 function Field({ label, children }) {
   return (
-    <label style={{ display: 'grid', gap: 4, fontSize: 11, color: '#9ca3af' }}>
-      <span>{label}</span>
-      {children}
+    <label className="block">
+      <span className="text-[10px] text-gray-500">{label}</span>
+      <div className="mt-0.5">{children}</div>
     </label>
   );
 }
-
 function Checkbox({ label, checked, onChange }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#d1d5db' }}>
+    <label className="flex items-center gap-2 text-xs text-gray-300">
       <input type="checkbox" checked={checked} onChange={onChange} />
       <span>{label}</span>
     </label>

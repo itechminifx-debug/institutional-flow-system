@@ -1,88 +1,86 @@
-// lib/apxEngine.js
-// APX (Apex) engine — pure functions, no React, no DB imports.
-// Mirrors FWT conventions: computeZones → runGates → scoreSetup → buildApxRecord.
+// ============================================================
+// APX (Apex) — INSTITUTIONAL FLOW ENGINE
+// ============================================================
+// Sequence: Bias → Dealing Range → Liquidity (Sweep/OTE) →
+//           Inducement / MSS / FVG → Entry → SL/TP
+//
+// Setup types:
+//   • standard    — deep pullback (>= 62% of impulse) into Premium/Discount
+//   • shallow     — pullback <= 50%, taps CE / 50 EMA, tight SL
+//   • turtle_soup — sweep beyond dealing range, close back inside,
+//                   displacement >= ATR (or 50% of impulse), reversal MSS
+//
+// OTE is measured from the IMPULSE LEG (not the dealing range).
+// Dealing range drives CE / Premium / Discount only.
+// ============================================================
 
-// ------------------------------------------------------------
-// Constants
-// ------------------------------------------------------------
+export const APX_SETUP_TYPES = [
+  { key: "standard",    label: "Standard",    emoji: "🎯", hint: "Deep pullback (≥ 62% of impulse) into Premium/Discount." },
+  { key: "shallow",     label: "Shallow",     emoji: "⚡", hint: "Pullback ≤ 50% of impulse. Taps CE or 50 EMA. Tight SL." },
+  { key: "turtle_soup", label: "Turtle Soup", emoji: "🐢", hint: "Sweep beyond dealing range, close back inside, reversal MSS." },
+];
 
-export const SETUP_TYPES = ['standard', 'shallow', 'turtle_soup'];
+export const APX_BIASES = [
+  { key: "bullish", label: "Bullish", emoji: "🟢" },
+  { key: "bearish", label: "Bearish", emoji: "🔴" },
+];
 
-export const TRADE_RESULTS = ['active', 'won', 'lost'];
+export const APX_DIRECTIONS = [
+  { key: "long",  label: "Long",  emoji: "⬆️", hint: "Bullish continuation." },
+  { key: "short", label: "Short", emoji: "⬇️", hint: "Bearish continuation." },
+];
 
-export const DIRECTIONS = ['long', 'short'];
-
-export const BIASES = ['bullish', 'bearish'];
-
-// Deep-zone thresholds (fraction of impulse leg retraced)
-const DEEP_ZONE_MIN = 0.62;   // standard must reach >= 62%
-const SHALLOW_MAX = 0.50;     // shallow must be <= 50%
-const SHALLOW_HARD_CAP = 0.62; // shallow invalid above 62%
-const STANDARD_HARD_FLOOR = 0.50; // standard invalid below 50%
-
-// Turtle Soup displacement proxy: >= 50% of prior impulse if ATR missing
+const DEEP_ZONE_MIN        = 0.62;
+const SHALLOW_MAX          = 0.50;
+const SHALLOW_HARD_CAP     = 0.62;
+const STANDARD_HARD_FLOOR  = 0.50;
 const TS_DISPLACEMENT_PROXY = 0.50;
-
-// RR hard floor
 const MIN_RR = 2;
 
 // ------------------------------------------------------------
-// Small helpers
+// Helpers
 // ------------------------------------------------------------
+function num(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+function fmt(v) {
+  return v === null || v === undefined ? "—" : v.toString();
+}
 
-const round = (v, dp = 8) =>
-  isNum(v) ? Math.round(v * 10 ** dp) / 10 ** dp : v;
-
-const rangeOf = (high, low) => {
-  if (!isNum(high) || !isNum(low)) return null;
-  const r = high - low;
-  return r > 0 ? r : null;
-};
-
-const pct = (part, whole) => {
-  if (!isNum(part) || !isNum(whole) || whole <= 0) return null;
-  return part / whole;
-};
+function round(v, dp = 4) {
+  if (v === null || !Number.isFinite(v)) return null;
+  return Math.round(v * 10 ** dp) / 10 ** dp;
+}
 
 // ------------------------------------------------------------
-// 1. computeZones
-//    Dealing range → CE, Premium, Discount.
-//    Impulse leg → OTE (retracement of the displacement leg).
-//    Direction-agnostic outputs; caller picks the band they need.
+// ZONE MATH
 // ------------------------------------------------------------
+export function computeApxZones({ rangeHigh, rangeLow, impulseHigh, impulseLow, direction }) {
+  const h  = num(rangeHigh);
+  const l  = num(rangeLow);
+  const iH = num(impulseHigh);
+  const iL = num(impulseLow);
 
-export function computeZones({
-  rangeHigh,
-  rangeLow,
-  impulseHigh,
-  impulseLow,
-  direction,
-} = {}) {
-  const dealingRange = rangeOf(rangeHigh, rangeLow);
-  const impulseRange = rangeOf(impulseHigh, impulseLow);
+  const dealingRange = h !== null && l !== null && h > l ? h - l : null;
+  const impulseRange = iH !== null && iL !== null && iH > iL ? iH - iL : null;
 
-  const ce = dealingRange != null ? (rangeHigh + rangeLow) / 2 : null;
-
-  const premiumLow = dealingRange != null ? rangeLow + 0.5 * dealingRange : null;
-  const premiumHigh = dealingRange != null ? rangeHigh : null;
-
-  const discountLow = dealingRange != null ? rangeLow : null;
-  const discountHigh = dealingRange != null ? rangeLow + 0.5 * dealingRange : null;
+  const ce = dealingRange !== null ? (h + l) / 2 : null;
+  const premiumLow  = dealingRange !== null ? l + 0.5 * dealingRange : null;
+  const premiumHigh = dealingRange !== null ? h : null;
+  const discountLow  = dealingRange !== null ? l : null;
+  const discountHigh = dealingRange !== null ? l + 0.5 * dealingRange : null;
 
   let oteLow = null;
   let oteHigh = null;
-
-  if (impulseRange != null) {
-    if (direction === 'long') {
-      // retracement of an up-impulse: 0.618–0.79 back from the high
-      oteHigh = impulseHigh - 0.618 * impulseRange;
-      oteLow = impulseHigh - 0.79 * impulseRange;
-    } else if (direction === 'short') {
-      // retracement of a down-impulse: 0.618–0.79 back from the low
-      oteLow = impulseLow + 0.618 * impulseRange;
-      oteHigh = impulseLow + 0.79 * impulseRange;
+  if (impulseRange !== null) {
+    if (direction === "long") {
+      oteHigh = iH - 0.618 * impulseRange;
+      oteLow  = iH - 0.79  * impulseRange;
+    } else if (direction === "short") {
+      oteLow  = iL + 0.618 * impulseRange;
+      oteHigh = iL + 0.79  * impulseRange;
     }
   }
 
@@ -100,467 +98,509 @@ export function computeZones({
 }
 
 // ------------------------------------------------------------
-// 2. Gate primitives
-//    Each gate returns { pass: boolean, reason: string }.
-//    runGates collects them into a named map + flat veto list.
+// STAGE 1 — CONTEXT
 // ------------------------------------------------------------
+export function evaluateApxContext({ setupType, bias, direction, rangeHigh, rangeLow, impulseHigh, impulseLow }) {
+  const gates = [];
 
-const gate = (pass, reason = '') => ({ pass: !!pass, reason });
-
-const sideOf = (price, entry, direction) => {
-  if (!isNum(price) || !isNum(entry) || !direction) return 'unknown';
-  if (price === entry) return 'equal';
-  if (direction === 'long') return price < entry ? 'below' : 'above';
-  if (direction === 'short') return price > entry ? 'above' : 'below';
-  return 'unknown';
-};
-
-// ------------------------------------------------------------
-// 3. runGates
-//    Shared base gates + setup-specific gates + hard vetoes.
-//    Returns { pass, vetoes, gates }.
-// ------------------------------------------------------------
-
-export function runGates(input = {}) {
-  const {
-    setupType,
-    direction,
-    bias,
-    rangeHigh,
-    rangeLow,
-    impulseHigh,
-    impulseLow,
-    sweepLevel,
-    sweepClosedBackInside,
-    displacementRange,
-    atrValue,
-    inducementLevel,
-    inducementBroken,
-    mssLevel,
-    mssConfirmed,
-    fvgHigh,
-    fvgLow,
-    ema50Value,
-    ema50Tapped,
-    entryPrice,
-    stopLoss,
-    targetPrice,
-  } = input;
-
-  const zones = computeZones({
-    rangeHigh,
-    rangeLow,
-    impulseHigh,
-    impulseLow,
-    direction,
+  gates.push({
+    key: "setup_type",
+    label: "Setup type selected",
+    pass: setupType === "standard" || setupType === "shallow" || setupType === "turtle_soup",
+    detail: setupType ? `Setup: ${setupType.replace("_", " ")}.` : "No setup type selected.",
   });
 
-  const gates = {};
-  const vetoes = [];
+  gates.push({
+    key: "bias",
+    label: "HTF bias set",
+    pass: bias === "bullish" || bias === "bearish",
+    detail: bias ? `Bias: ${bias}.` : "No bias. Cannot trade without HTF context.",
+  });
 
-  const push = (name, result, { veto = false } = {}) => {
-    gates[name] = result;
-    if (!result.pass && veto) vetoes.push(result.reason || name);
+  gates.push({
+    key: "direction",
+    label: "Direction set",
+    pass: direction === "long" || direction === "short",
+    detail: direction ? `Direction: ${direction}.` : "No direction selected.",
+  });
+
+  const zones = computeApxZones({ rangeHigh, rangeLow, impulseHigh, impulseLow, direction });
+  const hasRange = zones.dealingRange !== null;
+
+  gates.push({
+    key: "dealing_range",
+    label: "Dealing range defined",
+    pass: hasRange,
+    detail: hasRange
+      ? `Range: ${fmt(num(rangeLow))} – ${fmt(num(rangeHigh))} · CE ${fmt(zones.ce)}`
+      : "Dealing range needs high > low.",
+  });
+
+  const hasImpulse = zones.impulseRange !== null;
+  gates.push({
+    key: "impulse_leg",
+    label: "Impulse leg defined (for OTE)",
+    pass: hasImpulse,
+    detail: hasImpulse
+      ? `Impulse: ${fmt(num(impulseLow))} – ${fmt(num(impulseHigh))} · OTE ${fmt(zones.oteLow)} – ${fmt(zones.oteHigh)}`
+      : "Impulse leg needs high > low.",
+  });
+
+  const passed = gates.filter((g) => g.pass).length;
+  return {
+    ready: passed === gates.length,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+    zones,
   };
+}
 
-  // ---- Base gates (every setup) ----
-  push('bias', gate(bias === 'bullish' || bias === 'bearish', 'HTF bias not set'), { veto: true });
+// ------------------------------------------------------------
+// STAGE 2 — LIQUIDITY
+// ------------------------------------------------------------
+export function evaluateApxLiquidity({
+  setupType, direction, rangeHigh, rangeLow,
+  sweepLevel, sweepClosedBackInside, displacementRange, atrValue,
+  ema50Value, ema50Tapped, entryPrice,
+  impulseHigh, impulseLow,
+  zones,
+}) {
+  const gates = [];
 
-  push('dealingRange', gate(zones.dealingRange != null, 'Dealing range not defined (high must be > low)'), { veto: true });
+  const entry = num(entryPrice);
+  const h = num(rangeHigh);
+  const l = num(rangeLow);
+  const sweep = num(sweepLevel);
+  const disp = num(displacementRange);
+  const atr = num(atrValue);
+  const ema = num(ema50Value);
+  const iH = num(impulseHigh);
+  const iL = num(impulseLow);
+  const impulseRange = zones?.impulseRange ?? (iH !== null && iL !== null && iH > iL ? iH - iL : null);
 
-  push('mss', gate(!!mssConfirmed && isNum(mssLevel), 'MSS not confirmed / level missing'), { veto: true });
-
-  push('inducement', gate(!!inducementBroken && isNum(inducementLevel), 'Inducement not identified or not broken'), { veto: true });
-
-  // FVG on the correct side of MSS
-  let fvgSideOk = false;
-  if (isNum(fvgHigh) && isNum(fvgLow) && isNum(mssLevel)) {
-    if (direction === 'long') fvgSideOk = fvgLow > mssLevel || fvgHigh > mssLevel;
-    else if (direction === 'short') fvgSideOk = fvgHigh < mssLevel || fvgLow < mssLevel;
-  }
-  push('fvgSide', gate(fvgSideOk, 'FVG bounds missing or FVG on wrong side of MSS'), { veto: true });
-
-  push('direction', gate(DIRECTIONS.includes(direction), 'Direction (long/short) not set'), { veto: true });
-
-  // Entry / SL / TP present
-  push(
-    'levels',
-    gate(isNum(entryPrice) && isNum(stopLoss) && isNum(targetPrice), 'Entry / SL / TP not all set'),
-    { veto: true }
-  );
-
-  // SL beyond inducement/MSS extreme
-  let slBeyondOk = false;
-  if (isNum(stopLoss) && isNum(entryPrice)) {
-    if (direction === 'long') {
-      const extreme = Math.min(
-        ...[inducementLevel, mssLevel, zones.impulseLow].filter(isNum)
-      );
-      slBeyondOk = isNum(extreme) ? stopLoss < extreme : stopLoss < entryPrice;
-    } else if (direction === 'short') {
-      const extreme = Math.max(
-        ...[inducementLevel, mssLevel, zones.impulseHigh].filter(isNum)
-      );
-      slBeyondOk = isNum(extreme) ? stopLoss > extreme : stopLoss > entryPrice;
-    }
-  }
-  push('slBeyondExtreme', gate(slBeyondOk, 'SL is not beyond the inducement/MSS extreme'), { veto: true });
-
-  // SL on correct side of entry
-  const slSide = sideOf(stopLoss, entryPrice, direction);
-  const slSideOk =
-    (direction === 'long' && slSide === 'below') ||
-    (direction === 'short' && slSide === 'above');
-  push('slSide', gate(slSideOk, 'SL on wrong side of entry'), { veto: true });
-
-  // TP on correct side of entry
-  const tpSide = sideOf(targetPrice, entryPrice, direction);
-  const tpSideOk =
-    (direction === 'long' && tpSide === 'above') ||
-    (direction === 'short' && tpSide === 'below');
-  push('tpSide', gate(tpSideOk, 'TP on wrong side of entry'), { veto: true });
-
-  // RR >= 2
-  let rr = null;
-  if (isNum(entryPrice) && isNum(stopLoss) && isNum(targetPrice)) {
-    const risk = Math.abs(entryPrice - stopLoss);
-    const reward = Math.abs(targetPrice - entryPrice);
-    rr = risk > 0 ? reward / risk : null;
-  }
-  push('rr', gate(isNum(rr) && rr >= MIN_RR, `RR < ${MIN_RR} or risk is zero`), { veto: true });
-
-  // ---- Setup-specific gates ----
-  const impulseRange = zones.impulseRange;
-
-  // Pullback depth = how much of the impulse was retraced to the entry
+  // Pullback % (retrace of impulse to entry)
   let pullbackPct = null;
-  if (impulseRange != null && isNum(entryPrice)) {
-    if (direction === 'long') pullbackPct = pct(impulseHigh - entryPrice, impulseRange);
-    else if (direction === 'short') pullbackPct = pct(entryPrice - impulseLow, impulseRange);
+  if (impulseRange !== null && entry !== null && iH !== null && iL !== null) {
+    if (direction === "long") pullbackPct = (iH - entry) / impulseRange;
+    else if (direction === "short") pullbackPct = (entry - iL) / impulseRange;
   }
 
-  if (setupType === 'standard') {
-    push(
-      'stdDeepZone',
-      gate(isNum(pullbackPct) && pullbackPct >= DEEP_ZONE_MIN,
-        `Standard: pullback ${fmtPct(pullbackPct)} < ${DEEP_ZONE_MIN * 100}% deep zone`),
-      { veto: true }
-    );
+  // ---- Standard ----
+  if (setupType === "standard") {
+    gates.push({
+      key: "std_deep_zone",
+      label: "Pullback ≥ 62% of impulse (deep zone)",
+      pass: pullbackPct !== null && pullbackPct >= DEEP_ZONE_MIN,
+      detail: pullbackPct !== null
+        ? `Pullback ${(pullbackPct * 100).toFixed(1)}% of impulse.`
+        : "Need entry + impulse leg to compute pullback depth.",
+    });
 
-    // price inside premium (short) / discount (long)
     let zoneOk = false;
-    if (isNum(entryPrice) && zones.ce != null) {
-      if (direction === 'short') zoneOk = entryPrice >= zones.ce;
-      else if (direction === 'long') zoneOk = entryPrice <= zones.ce;
+    if (entry !== null && zones?.ce != null) {
+      if (direction === "short") zoneOk = entry >= zones.ce;
+      else if (direction === "long") zoneOk = entry <= zones.ce;
     }
-    push('stdZone', gate(zoneOk, 'Standard: entry not inside Premium (short) / Discount (long)'));
-
-    // inducement inside deep zone (proxy: inducement beyond 62% retrace)
-    let indDeep = false;
-    if (isNum(inducementLevel) && impulseRange != null) {
-      const indPct =
-        direction === 'long'
-          ? pct(impulseHigh - inducementLevel, impulseRange)
-          : pct(inducementLevel - impulseLow, impulseRange);
-      indDeep = isNum(indPct) && indPct >= DEEP_ZONE_MIN;
-    }
-    push('stdInducementDeep', gate(indDeep, 'Standard: inducement not inside deep zone'));
-
-    // hard veto: standard with pullback < 50%
-    if (isNum(pullbackPct) && pullbackPct < STANDARD_HARD_FLOOR) {
-      vetoes.push(`Standard invalid: pullback ${fmtPct(pullbackPct)} < 50% (should be Shallow)`);
-    }
+    gates.push({
+      key: "std_zone",
+      label: direction === "short" ? "Entry inside Premium" : "Entry inside Discount",
+      pass: zoneOk,
+      detail: zoneOk
+        ? `Entry ${fmt(entry)} is on the ${direction === "short" ? "premium" : "discount"} side of CE ${fmt(zones?.ce)}.`
+        : `⚠️ Entry ${fmt(entry)} is not in the correct half of the range.`,
+    });
   }
 
-  if (setupType === 'shallow') {
-    push(
-      'shPullbackMax',
-      gate(isNum(pullbackPct) && pullbackPct <= SHALLOW_MAX,
-        `Shallow: pullback ${fmtPct(pullbackPct)} > ${SHALLOW_MAX * 100}%`),
-      { veto: true }
-    );
+  // ---- Shallow ----
+  if (setupType === "shallow") {
+    gates.push({
+      key: "sh_max_pull",
+      label: "Pullback ≤ 50% of impulse",
+      pass: pullbackPct !== null && pullbackPct <= SHALLOW_MAX,
+      detail: pullbackPct !== null
+        ? `Pullback ${(pullbackPct * 100).toFixed(1)}%.`
+        : "Need entry + impulse leg to compute pullback depth.",
+    });
 
-    // tapped CE or 50 EMA
-    let tapped = false;
-    if (isNum(entryPrice)) {
-      const nearCE = zones.ce != null && Math.abs(entryPrice - zones.ce) <= 0.005 * zones.dealingRange;
-      const nearEMA = isNum(ema50Value) && Math.abs(entryPrice - ema50Value) <= 0.005 * zones.dealingRange;
-      tapped = nearCE || nearEMA || !!ema50Tapped;
-    }
-    push('shTap', gate(tapped, 'Shallow: pullback did not tap CE or 50 EMA'));
-
-    // tight SL: SL <= 25% of impulse leg
-    let tightSL = false;
-    if (isNum(stopLoss) && isNum(entryPrice) && impulseRange != null) {
-      tightSL = Math.abs(entryPrice - stopLoss) <= 0.25 * impulseRange;
-    }
-    push('shTightSL', gate(tightSL, 'Shallow: SL is not tight (<= 25% of impulse leg)'));
-
-    // hard veto: shallow with pullback > 62%
-    if (isNum(pullbackPct) && pullbackPct > SHALLOW_HARD_CAP) {
-      vetoes.push(`Shallow invalid: pullback ${fmtPct(pullbackPct)} > 62% (should be Standard)`);
-    }
+    const rangeTol = zones?.dealingRange ? 0.005 * zones.dealingRange : 0;
+    const nearCE = zones?.ce != null && entry !== null && Math.abs(entry - zones.ce) <= rangeTol;
+    const nearEMA = ema !== null && entry !== null && Math.abs(entry - ema) <= rangeTol;
+    const tapped = nearCE || nearEMA || !!ema50Tapped;
+    gates.push({
+      key: "sh_tap",
+      label: "Tapped CE or 50 EMA",
+      pass: tapped,
+      detail: tapped
+        ? `Tap: ${[nearCE && "CE", nearEMA && "50 EMA", ema50Tapped && !nearCE && !nearEMA && "(manual)"].filter(Boolean).join(" ")}`
+        : "Pullback did not tap CE or 50 EMA.",
+    });
   }
 
-  if (setupType === 'turtle_soup') {
-    // sweep beyond dealing range extreme
-    let swept = false;
-    if (isNum(sweepLevel) && zones.dealingRange != null) {
-      swept = sweepLevel > rangeHigh || sweepLevel < rangeLow;
-    }
-    push('tsSweep', gate(swept, 'Turtle Soup: no sweep beyond dealing range extreme'), { veto: true });
+  // ---- Turtle Soup ----
+  if (setupType === "turtle_soup") {
+    const swept = sweep !== null && h !== null && l !== null && (sweep > h || sweep < l);
+    gates.push({
+      key: "ts_sweep",
+      label: "Sweep beyond dealing range extreme",
+      pass: swept,
+      detail: swept
+        ? `Sweep ${fmt(sweep)} beyond ${sweep > h ? "range high" : "range low"}.`
+        : "Sweep level not beyond the dealing range.",
+    });
 
-    // close back inside range (hard gate)
-    push(
-      'tsCloseBack',
-      gate(!!sweepClosedBackInside, 'Turtle Soup: sweep candle did not close back inside range'),
-      { veto: true }
-    );
+    gates.push({
+      key: "ts_close_back",
+      label: "Sweep candle closed back inside range",
+      pass: !!sweepClosedBackInside,
+      detail: sweepClosedBackInside ? "Closed back inside — trap confirmed." : "❌ Sweep candle must close back inside.",
+    });
 
-    // displacement >= 1xATR if ATR given, else >= 50% of prior impulse
     let dispOk = false;
-    let dispReason = 'Turtle Soup: displacement not provided';
-    if (isNum(displacementRange)) {
-      if (isNum(atrValue)) {
-        dispOk = displacementRange >= atrValue;
-        dispReason = `Turtle Soup: displacement ${displacementRange} < ATR ${atrValue}`;
-      } else if (impulseRange != null) {
-        dispOk = displacementRange >= TS_DISPLACEMENT_PROXY * impulseRange;
-        dispReason = `Turtle Soup: displacement < 50% of prior impulse (no ATR provided)`;
+    let dispDetail = "Displacement range not entered.";
+    if (disp !== null) {
+      if (atr !== null) {
+        dispOk = disp >= atr;
+        dispDetail = dispOk
+          ? `Displacement ${fmt(disp)} ≥ ATR ${fmt(atr)}.`
+          : `Displacement ${fmt(disp)} < ATR ${fmt(atr)}.`;
+      } else {
+        const proxyMin = TS_DISPLACEMENT_PROXY * (impulseRange || 0);
+        dispOk = proxyMin > 0 && disp >= proxyMin;
+        dispDetail = dispOk
+          ? `Displacement ${fmt(disp)} ≥ 50% of impulse (no ATR).`
+          : "Displacement below 50% of impulse (no ATR provided).";
       }
     }
-    push('tsDisplacement', gate(dispOk, dispReason), { veto: true });
-
-    // reversal MSS confirmed
-    push(
-      'tsMSS',
-      gate(!!mssConfirmed && isNum(mssLevel), 'Turtle Soup: reversal MSS not confirmed'),
-      { veto: true }
-    );
+    gates.push({
+      key: "ts_displacement",
+      label: "Displacement ≥ ATR (or 50% impulse)",
+      pass: dispOk,
+      detail: dispDetail,
+    });
   }
 
-  // unknown setup type
-  if (!SETUP_TYPES.includes(setupType)) {
-    vetoes.push('Setup type not selected (standard / shallow / turtle_soup)');
-  }
+  // ---- OTE position (bonus, never blocks) ----
+  const inOte = entry !== null && zones?.oteLow != null && zones?.oteHigh != null
+    ? entry >= Math.min(zones.oteLow, zones.oteHigh) && entry <= Math.max(zones.oteLow, zones.oteHigh)
+    : false;
+  gates.push({
+    key: "ote_position",
+    label: "Entry inside OTE band",
+    pass: inOte,
+    warning: !inOte,
+    bonus: true,
+    detail: inOte
+      ? `Entry inside OTE ${fmt(zones?.oteLow)} – ${fmt(zones?.oteHigh)}.`
+      : "Entry outside OTE band. Not required, but strengthens the setup.",
+  });
 
+  const blocking = gates.filter((g) => !g.warning && !g.bonus);
+  const passed = blocking.filter((g) => g.pass).length;
   return {
-    pass: vetoes.length === 0 && Object.values(gates).every((g) => g.pass),
-    vetoes,
+    ready: passed === blocking.length,
     gates,
-    zones,
-    rr: round(rr, 4),
-    pullbackPct: isNum(pullbackPct) ? round(pullbackPct, 4) : null,
+    score: Math.round((passed / blocking.length) * 100),
+    pullbackPct: round(pullbackPct, 4),
   };
 }
 
-function fmtPct(p) {
-  return isNum(p) ? `${(p * 100).toFixed(1)}%` : 'n/a';
+// ------------------------------------------------------------
+// STAGE 3 — INDUCEMENT / MSS / FVG
+// ------------------------------------------------------------
+export function evaluateApxStructure({
+  direction, inducementLevel, inducementBroken,
+  mssLevel, mssConfirmed, fvgHigh, fvgLow,
+}) {
+  const gates = [];
+  const ind = num(inducementLevel);
+  const mss = num(mssLevel);
+  const fvgH = num(fvgHigh);
+  const fvgL = num(fvgLow);
+
+  gates.push({
+    key: "inducement",
+    label: "Inducement identified",
+    pass: ind !== null,
+    detail: ind !== null ? `Inducement at ${fmt(ind)}.` : "No inducement level entered.",
+  });
+
+  gates.push({
+    key: "inducement_broken",
+    label: "Inducement broken",
+    pass: !!inducementBroken,
+    detail: inducementBroken ? "Inducement taken." : "⏳ Waiting for inducement sweep.",
+  });
+
+  gates.push({
+    key: "mss",
+    label: "MSS confirmed",
+    pass: !!mssConfirmed,
+    detail: mssConfirmed ? "Market structure shifted." : "⏳ Waiting for MSS confirmation.",
+  });
+
+  gates.push({
+    key: "mss_level",
+    label: "MSS level recorded",
+    pass: mss !== null,
+    detail: mss !== null ? `MSS at ${fmt(mss)}.` : "No MSS price level entered.",
+  });
+
+  const hasFvg = fvgH !== null && fvgL !== null && fvgH > fvgL;
+  gates.push({
+    key: "fvg",
+    label: "FVG bounds marked",
+    pass: hasFvg,
+    detail: hasFvg ? `FVG ${fmt(fvgL)} – ${fmt(fvgH)}.` : "FVG required as the entry zone.",
+  });
+
+  let fvgSideOk = false;
+  if (hasFvg && mss !== null) {
+    if (direction === "long") fvgSideOk = fvgL > mss || fvgH > mss;
+    else if (direction === "short") fvgSideOk = fvgH < mss || fvgL < mss;
+  }
+  gates.push({
+    key: "fvg_side",
+    label: "FVG on correct side of MSS",
+    pass: fvgSideOk,
+    detail: fvgSideOk ? "FVG sits between MSS and entry." : "⚠️ FVG is on the wrong side of MSS.",
+  });
+
+  const passed = gates.filter((g) => g.pass).length;
+  return {
+    ready: passed === gates.length,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+  };
 }
 
 // ------------------------------------------------------------
-// 4. scoreSetup
-//    Weighted score by stage. Mirrors FWT's byStage breakdown.
-//    total is 0–100. Stage weights: context 25, liquidity 25,
-//    inducement 25, entry 25.
+// STAGE 4 — ENTRY
 // ------------------------------------------------------------
+export function evaluateApxEntry({
+  direction, setupType, entryPrice, stopLoss, targetPrice,
+  inducementLevel, mssLevel, impulseHigh, impulseLow,
+}) {
+  const gates = [];
+  const entry = num(entryPrice);
+  const sl = num(stopLoss);
+  const tp = num(targetPrice);
+  const ind = num(inducementLevel);
+  const mss = num(mssLevel);
+  const iH = num(impulseHigh);
+  const iL = num(impulseLow);
 
-const STAGE_WEIGHTS = { context: 25, liquidity: 25, inducement: 25, entry: 25 };
+  gates.push({
+    key: "entry",
+    label: "Entry price set",
+    pass: entry !== null,
+    detail: entry !== null ? `Entry: ${fmt(entry)}.` : "No entry price entered.",
+  });
 
-const STAGE_MAP = {
-  bias: 'context',
-  dealingRange: 'context',
-  direction: 'context',
-  mss: 'inducement',
-  inducement: 'inducement',
-  fvgSide: 'inducement',
-  stdInducementDeep: 'inducement',
-  tsMSS: 'inducement',
-  levels: 'entry',
-  slBeyondExtreme: 'entry',
-  slSide: 'entry',
-  tpSide: 'entry',
-  rr: 'entry',
-  stdDeepZone: 'liquidity',
-  stdZone: 'liquidity',
-  shPullbackMax: 'liquidity',
-  shTap: 'liquidity',
-  shTightSL: 'entry',
-  tsSweep: 'liquidity',
-  tsCloseBack: 'liquidity',
-  tsDisplacement: 'liquidity',
-};
+  gates.push({
+    key: "sl_set",
+    label: "Stop loss set",
+    pass: sl !== null,
+    detail: sl !== null ? `SL: ${fmt(sl)}.` : "No stop loss entered.",
+  });
 
-export function scoreSetup(gates = {}) {
-  const byStage = { context: 0, liquidity: 0, inducement: 0, entry: 0 };
-  const counts = { context: 0, liquidity: 0, inducement: 0, entry: 0 };
+  gates.push({
+    key: "tp_set",
+    label: "Target set",
+    pass: tp !== null,
+    detail: tp !== null ? `TP: ${fmt(tp)}.` : "No target entered.",
+  });
 
-  for (const [name, result] of Object.entries(gates)) {
-    const stage = STAGE_MAP[name];
-    if (!stage) continue;
-    counts[stage] += 1;
-    if (result.pass) byStage[stage] += 1;
+  let slSideOk = false;
+  if (entry !== null && sl !== null) {
+    if (direction === "long") slSideOk = sl < entry;
+    else if (direction === "short") slSideOk = sl > entry;
+  }
+  gates.push({
+    key: "sl_side",
+    label: "SL on correct side of entry",
+    pass: slSideOk,
+    detail: slSideOk ? `SL ${fmt(sl)} is on the correct side.` : "❌ SL is on the wrong side of entry.",
+  });
+
+  let slBeyond = false;
+  if (entry !== null && sl !== null) {
+    if (direction === "long") {
+      const extreme = [ind, mss, iL].filter((v) => v !== null);
+      const floor = extreme.length ? Math.min(...extreme) : entry;
+      slBeyond = sl < floor;
+    } else if (direction === "short") {
+      const extreme = [ind, mss, iH].filter((v) => v !== null);
+      const ceiling = extreme.length ? Math.max(...extreme) : entry;
+      slBeyond = sl > ceiling;
+    }
+  }
+  gates.push({
+    key: "sl_beyond_extreme",
+    label: "SL beyond inducement/MSS extreme",
+    pass: slBeyond,
+    detail: slBeyond ? "SL clears the structural extreme." : "❌ SL must be beyond the inducement/MSS extreme.",
+  });
+
+  let tpSideOk = false;
+  if (entry !== null && tp !== null) {
+    if (direction === "long") tpSideOk = tp > entry;
+    else if (direction === "short") tpSideOk = tp < entry;
+  }
+  gates.push({
+    key: "tp_side",
+    label: "TP in correct direction",
+    pass: tpSideOk,
+    detail: tpSideOk ? `TP ${fmt(tp)} is on the correct side.` : "❌ TP is on the wrong side of entry.",
+  });
+
+  let rr = null;
+  if (entry !== null && sl !== null && tp !== null) {
+    const risk = Math.abs(entry - sl);
+    const reward = Math.abs(tp - entry);
+    rr = risk > 0 ? reward / risk : null;
+  }
+  gates.push({
+    key: "rr",
+    label: "RR ≥ 2",
+    pass: rr !== null && rr >= MIN_RR,
+    detail: rr !== null ? `RR 1:${rr.toFixed(2)}.` : "Need entry + SL + TP to compute RR.",
+  });
+
+  if (setupType === "shallow") {
+    const iRange = iH !== null && iL !== null && iH > iL ? iH - iL : null;
+    const tight = iRange !== null && entry !== null && sl !== null
+      ? Math.abs(entry - sl) <= 0.25 * iRange
+      : false;
+    gates.push({
+      key: "sh_tight_sl",
+      label: "SL tight (≤ 25% of impulse leg)",
+      pass: tight,
+      detail: tight ? "SL is tight for a shallow setup." : "⚠️ SL too wide for a shallow setup.",
+    });
   }
 
-  const normalised = {};
-  let total = 0;
-  for (const stage of Object.keys(STAGE_WEIGHTS)) {
-    const c = counts[stage];
-    const earned = c === 0 ? 1 : byStage[stage] / c; // no gates in stage = full credit
-    normalised[stage] = round(earned * STAGE_WEIGHTS[stage], 1);
-    total += normalised[stage];
+  const passed = gates.filter((g) => g.pass).length;
+  return {
+    ready: passed === gates.length,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+    rr,
+  };
+}
+
+// ------------------------------------------------------------
+// TRADE MATH
+// ------------------------------------------------------------
+export function computeApxTrade({ direction, entryPrice, stopLoss, targetPrice, riskPercent = 1 }) {
+  const entry = num(entryPrice);
+  const sl = num(stopLoss);
+  const tp = num(targetPrice);
+  if (entry === null || sl === null || tp === null) return null;
+
+  const slValid = (direction === "long" && sl < entry) || (direction === "short" && sl > entry);
+  if (!slValid) {
+    return { invalid: true, invalidReason: "Stop loss is on the wrong side of entry." };
   }
+
+  const risk = Math.abs(entry - sl);
+  const reward = Math.abs(tp - entry);
+  const rr = risk > 0 ? reward / risk : 0;
 
   return {
-    total: Math.round(total),
-    byStage: normalised,
-    raw: byStage,
-    counts,
+    direction: direction === "long" ? "BUY" : "SELL",
+    entry, sl, tp, rr, riskPercent,
+    invalid: false,
   };
 }
 
 // ------------------------------------------------------------
-// 5. suggestSetup
-//    Nudges the UI toward the right setup type.
-//    Returns 'standard' | 'shallow' | 'turtle_soup' | null.
+// FULL EVALUATION
 // ------------------------------------------------------------
-
-export function suggestSetup({
-  pullbackPct,
-  sweepClosedBackInside,
-  sweepBeyondRange,
-} = {}) {
-  if (sweepBeyondRange && sweepClosedBackInside) return 'turtle_soup';
-  if (isNum(pullbackPct)) {
-    if (pullbackPct <= SHALLOW_MAX) return 'shallow';
-    if (pullbackPct >= DEEP_ZONE_MIN) return 'standard';
-  }
-  return null;
-}
-
-// ------------------------------------------------------------
-// 6. buildApxRecord
-//    Maps form input → snake_case row for apx_setups.
-//    Computes rr, confluence_score, reasons, status.
-//    Does NOT insert — the page calls supabase.from('apx_setups').insert(row).
-// ------------------------------------------------------------
-
-export function buildApxRecord(input = {}, result = null) {
-  const gatesResult = result ?? runGates(input);
-  const score = scoreSetup(gatesResult.gates);
-  const zones = gatesResult.zones;
-
+export function evaluateApx(input = {}) {
   const {
-    userId,
-    pair,
-    timeframeStack,
-    setupType,
-    bias,
-    direction,
-    rangeHigh,
-    rangeLow,
-    impulseHigh,
-    impulseLow,
-    sweepLevel,
-    sweepClosedBackInside,
-    displacementRange,
-    atrValue,
-    inducementLevel,
-    inducementBroken,
-    mssLevel,
-    mssConfirmed,
-    fvgHigh,
-    fvgLow,
-    ema50Value,
-    ema50Tapped,
-    entryPrice,
-    stopLoss,
-    targetPrice,
-    riskPercent,
-    notes,
+    setupType, bias, direction, pair, timeframeStack,
+    rangeHigh, rangeLow, impulseHigh, impulseLow,
+    sweepLevel, sweepClosedBackInside, displacementRange, atrValue,
+    inducementLevel, inducementBroken, mssLevel, mssConfirmed,
+    fvgHigh, fvgLow, ema50Value, ema50Tapped,
+    entryPrice, stopLoss, targetPrice, riskPercent = 1,
   } = input;
 
-  const status = gatesResult.pass ? 'complete' : 'draft';
+  const context = evaluateApxContext({
+    setupType, bias, direction, rangeHigh, rangeLow, impulseHigh, impulseLow,
+  });
+
+  const liquidity = evaluateApxLiquidity({
+    setupType, direction, rangeHigh, rangeLow,
+    sweepLevel, sweepClosedBackInside, displacementRange, atrValue,
+    ema50Value, ema50Tapped, entryPrice,
+    impulseHigh, impulseLow,
+    zones: context.zones,
+  });
+
+  const structure = evaluateApxStructure({
+    direction, inducementLevel, inducementBroken, mssLevel, mssConfirmed,
+    fvgHigh, fvgLow,
+  });
+
+  const entry = evaluateApxEntry({
+    direction, setupType, entryPrice, stopLoss, targetPrice,
+    inducementLevel, mssLevel, impulseHigh, impulseLow,
+  });
+
+  const allReady = context.ready && liquidity.ready && structure.ready && entry.ready;
+
+  let trade = null;
+  if (allReady) {
+    trade = computeApxTrade({ direction, entryPrice, stopLoss, targetPrice, riskPercent });
+  }
+
+  const reasons = [];
+  const addReasons = (stage, arr) =>
+    arr.filter((g) => !g.pass && !g.warning && !g.bonus)
+       .forEach((g) => reasons.push(`${stage}: ${g.label}`));
+
+  if (!context.ready)   addReasons("Context",   context.gates);
+  if (!liquidity.ready) addReasons("Liquidity", liquidity.gates);
+  if (!structure.ready) addReasons("Structure", structure.gates);
+  if (!entry.ready)     addReasons("Entry",     entry.gates);
 
   return {
-    user_id: userId ?? null,
-    status,
-    trade_result: status === 'complete' ? 'active' : null,
-    r_result: null,
-
-    pair: pair ?? null,
-    timeframe_stack: timeframeStack ?? null,
-    setup_type: setupType ?? null,
-    bias: bias ?? null,
-    direction: direction ?? null,
-
-    range_high: numOrNull(rangeHigh),
-    range_low: numOrNull(rangeLow),
-    ce: numOrNull(zones.ce),
-
-    impulse_high: numOrNull(impulseHigh),
-    impulse_low: numOrNull(impulseLow),
-    ote_low: numOrNull(zones.oteLow),
-    ote_high: numOrNull(zones.oteHigh),
-
-    sweep_level: numOrNull(sweepLevel),
-    sweep_closed_back_inside: !!sweepClosedBackInside,
-    displacement_range: numOrNull(displacementRange),
-    atr_value: numOrNull(atrValue),
-
-    inducement_level: numOrNull(inducementLevel),
-    inducement_broken: !!inducementBroken,
-    mss_level: numOrNull(mssLevel),
-    mss_confirmed: !!mssConfirmed,
-    fvg_high: numOrNull(fvgHigh),
-    fvg_low: numOrNull(fvgLow),
-
-    ema50_value: numOrNull(ema50Value),
-    ema50_tapped: !!ema50Tapped,
-
-    entry_price: numOrNull(entryPrice),
-    stop_loss: numOrNull(stopLoss),
-    target_price: numOrNull(targetPrice),
-    rr: numOrNull(gatesResult.rr),
-    risk_percent: numOrNull(riskPercent),
-
-    auto_detected: false,
-    confluence_score: score.total,
-    reasons: {
-      pass: gatesResult.pass,
-      vetoes: gatesResult.vetoes,
-      gates: gatesResult.gates,
-      score,
-      pullbackPct: gatesResult.pullbackPct,
-      suggestedSetup: suggestSetup({
-        pullbackPct: gatesResult.pullbackPct,
-        sweepClosedBackInside,
-        sweepBeyondRange:
-          isNum(sweepLevel) &&
-          isNum(rangeHigh) &&
-          isNum(rangeLow) &&
-          (sweepLevel > rangeHigh || sweepLevel < rangeLow),
-      }),
+    setupType, bias, direction, pair, timeframeStack,
+    zones: context.zones,
+    context, liquidity, structure, entry, trade,
+    preEntryReady: allReady && trade && !trade.invalid,
+    reasons,
+    candle: {
+      rangeHigh: num(rangeHigh),
+      rangeLow: num(rangeLow),
+      impulseHigh: num(impulseHigh),
+      impulseLow: num(impulseLow),
+      ce: context.zones.ce,
+      oteLow: context.zones.oteLow,
+      oteHigh: context.zones.oteHigh,
+      sweepLevel: num(sweepLevel),
+      mssLevel: num(mssLevel),
+      inducementLevel: num(inducementLevel),
+      fvgHigh: num(fvgHigh),
+      fvgLow: num(fvgLow),
+      entryPrice: num(entryPrice),
+      stopLoss: num(stopLoss),
+      targetPrice: num(targetPrice),
+      direction,
     },
-
-    notes: notes ?? null,
   };
 }
 
-const numOrNull = (v) => (isNum(v) ? v : null);
-
-// ------------------------------------------------------------
-// Default export — convenience bundle for pages
-// ------------------------------------------------------------
-
 export default {
-  SETUP_TYPES,
-  TRADE_RESULTS,
-  DIRECTIONS,
-  BIASES,
-  computeZones,
-  runGates,
-  scoreSetup,
-  suggestSetup,
-  buildApxRecord,
+  APX_SETUP_TYPES,
+  APX_BIASES,
+  APX_DIRECTIONS,
+  computeApxZones,
+  evaluateApxContext,
+  evaluateApxLiquidity,
+  evaluateApxStructure,
+  evaluateApxEntry,
+  computeApxTrade,
+  evaluateApx,
 };

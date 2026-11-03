@@ -1,15 +1,13 @@
 // app/apx/[id]/page.jsx
-'use client';
+"use client";
 
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabaseClient';
-import { runGates } from '@/lib/apxEngine';
-import ApxCard from '@/components/ApxCard';
-import ScreenshotUploader from '@/components/ScreenshotUploader';
-import ScreenshotGallery from '@/components/ScreenshotGallery';
-
-const AMBER = '#f59e0b';
+import { useState, useEffect, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabaseClient";
+import { evaluateApx } from "@/lib/apxEngine";
+import ApxCard from "@/components/ApxCard";
+import ScreenshotUploader from "@/components/ScreenshotUploader";
+import ScreenshotGallery from "@/components/ScreenshotGallery";
 
 export default function ApxDetailPage() {
   const params = useParams();
@@ -21,548 +19,164 @@ export default function ApxDetailPage() {
   const [screenshots, setScreenshots] = useState([]);
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
-  const [notesDraft, setNotesDraft] = useState('');
+  const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
-  const [tradeResult, setTradeResult] = useState('');
-  const [rResult, setRResult] = useState('');
+  const [tradeResult, setTradeResult] = useState("");
+  const [rDraft, setRDraft] = useState("");
   const [savingResult, setSavingResult] = useState(false);
 
-  const isDraft = row?.status === 'draft';
+  const isDraft = row?.status === "draft";
 
-  // ---- load ----
   useEffect(() => {
     if (!id) return;
-    async function load() {
-      setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
       if (user) setUserId(user.id);
 
-      const { data: setupData, error: setupErr } = await supabase
-        .from('apx_setups')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
+      const { data, error: err } = await supabase.from("apx_setups").select("*").eq("id", id).maybeSingle();
+      if (err || !data) { setError(err?.message || "APX setup not found."); setLoading(false); return; }
 
-      if (setupErr || !setupData) {
-        setError(setupErr?.message || 'APX setup not found.');
-        setLoading(false);
-        return;
-      }
+      const { data: shots } = await supabase.from("apx_screenshots").select("*").eq("setup_id", id).order("created_at");
 
-      const { data: shotsData } = await supabase
-        .from('apx_screenshots')
-        .select('*')
-        .eq('setup_id', id)
-        .order('created_at');
-
-      setRow(setupData);
-      setScreenshots(shotsData || []);
-      setNotesDraft(setupData.notes || '');
-      setTradeResult(setupData.trade_result || '');
-      setRResult(
-        typeof setupData.r_result === 'number' ? String(setupData.r_result) : ''
-      );
+      setRow(data);
+      setScreenshots(shots || []);
+      setNotesDraft(data.notes || "");
+      setTradeResult(data.trade_result || "");
+      setRDraft(typeof data.r_result === "number" ? String(data.r_result) : "");
       setLoading(false);
-    }
-    load();
+    })();
   }, [id, supabase]);
 
-  // ---- live evaluation (mirror FWT: recompute on load) ----
-  const evaluation = useMemo(() => {
-    if (!row) return null;
-    const input = {
-      setupType: row.setup_type,
-      bias: row.bias,
-      direction: row.direction,
-      rangeHigh: row.range_high,
-      rangeLow: row.range_low,
-      impulseHigh: row.impulse_high,
-      impulseLow: row.impulse_low,
-      sweepLevel: row.sweep_level,
-      sweepClosedBackInside: row.sweep_closed_back_inside,
-      displacementRange: row.displacement_range,
-      atrValue: row.atr_value,
-      inducementLevel: row.inducement_level,
-      inducementBroken: row.inducement_broken,
-      mssLevel: row.mss_level,
-      mssConfirmed: row.mss_confirmed,
-      fvgHigh: row.fvg_high,
-      fvgLow: row.fvg_low,
-      ema50Value: row.ema50_value,
-      ema50Tapped: row.ema50_tapped,
-      entryPrice: row.entry_price,
-      stopLoss: row.stop_loss,
-      targetPrice: row.target_price,
-    };
-    return runGates(input);
-  }, [row]);
+  const evaluation = useMemo(() => (row ? evaluateApx(row) : null), [row]);
 
-  // ---- actions ----
   async function handleSaveNotes() {
-    setSavingNotes(true);
-    setNotesSaved(false);
-    setError('');
-    const { error: updErr } = await supabase
-      .from('apx_setups')
-      .update({ notes: notesDraft, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (updErr) {
-      setError(updErr.message);
-      setSavingNotes(false);
-      return;
-    }
-    setRow((prev) => (prev ? { ...prev, notes: notesDraft } : prev));
-    setSavingNotes(false);
-    setNotesSaved(true);
+    setSavingNotes(true); setNotesSaved(false); setError("");
+    const { error: err } = await supabase.from("apx_setups").update({ notes: notesDraft, updated_at: new Date().toISOString() }).eq("id", id);
+    if (err) { setError(err.message); setSavingNotes(false); return; }
+    setRow((p) => (p ? { ...p, notes: notesDraft } : p));
+    setSavingNotes(false); setNotesSaved(true);
     setTimeout(() => setNotesSaved(false), 2000);
   }
 
-  async function handleSaveResult(newResult) {
-    setSavingResult(true);
-    setError('');
-    const rNum = Number(rResult);
-    const rValue =
-      newResult === 'won' || newResult === 'lost'
-        ? Number.isFinite(rNum) && rResult !== ''
-          ? rNum
-          : null
-        : null;
-    const { error: updErr } = await supabase
-      .from('apx_setups')
-      .update({
-        trade_result: newResult || null,
-        r_result: rValue,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-    if (updErr) {
-      setError(updErr.message);
-      setSavingResult(false);
-      return;
-    }
-    setRow((prev) =>
-      prev ? { ...prev, trade_result: newResult || null, r_result: rValue } : prev
-    );
+  async function handleResult(newResult) {
+    setSavingResult(true); setError("");
+    const rNum = parseFloat(rDraft);
+    const rVal = (newResult === "won" || newResult === "lost") && !isNaN(rNum) ? rNum : null;
+    const { error: err } = await supabase
+      .from("apx_setups")
+      .update({ trade_result: newResult || null, r_result: rVal, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (err) { setError(err.message); setSavingResult(false); return; }
+    setRow((p) => (p ? { ...p, trade_result: newResult || null, r_result: rVal } : p));
     setTradeResult(newResult);
     setSavingResult(false);
   }
 
-  async function handleSaveR() {
-    const rNum = Number(rResult);
-    const rValue = Number.isFinite(rNum) && rResult !== '' ? rNum : null;
-    setSavingResult(true);
-    setError('');
-    const { error: updErr } = await supabase
-      .from('apx_setups')
-      .update({ r_result: rValue, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (updErr) {
-      setError(updErr.message);
-      setSavingResult(false);
-      return;
-    }
-    setRow((prev) => (prev ? { ...prev, r_result: rValue } : prev));
-    setSavingResult(false);
-  }
-
   async function handleDelete() {
-    if (!confirm(`Delete ${isDraft ? 'this draft' : 'this APX setup'}?`)) return;
+    if (!confirm(`Delete ${isDraft ? "this draft" : "this APX setup"}?`)) return;
     setDeleting(true);
-    const { error: delErr } = await supabase.from('apx_setups').delete().eq('id', id);
-    if (delErr) {
-      setError(delErr.message);
-      setDeleting(false);
-      return;
-    }
-    router.push('/apx/journal');
+    const { error: err } = await supabase.from("apx_setups").delete().eq("id", id);
+    if (err) { setError(err.message); setDeleting(false); return; }
+    router.push("/apx/journal");
   }
 
-  // ---- render: loading / error ----
-  if (loading) {
-    return (
-      <main style={{ minHeight: '100vh', padding: 24, background: '#000', color: '#fff' }}>
-        <div style={{ maxWidth: 760, margin: '0 auto', color: '#9ca3af' }}>
-          Loading APX setup…
-        </div>
-      </main>
-    );
-  }
-
-  if (error && !row) {
-    return (
-      <main style={{ minHeight: '100vh', padding: 24, background: '#000', color: '#fff' }}>
-        <div style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 16 }}>
-          <div style={errorBox}>{error}</div>
-          <button type="button" onClick={() => router.push('/apx')} style={btnDark}>
-            ← Back
-          </button>
-        </div>
-      </main>
-    );
-  }
+  if (loading) return <main className="min-h-screen p-6 bg-black text-white"><p className="text-gray-400 text-sm">Loading APX setup…</p></main>;
+  if (error && !row) return (
+    <main className="min-h-screen p-6 bg-black text-white">
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">{error}</div>
+        <button onClick={() => router.push("/apx")} className="w-full py-3 rounded-lg bg-gray-800 font-bold">← Back</button>
+      </div>
+    </main>
+  );
 
   const resultBadges = {
-    active: { label: '🎯 Active', cls: 'bg-blue-900/40 border-blue-700 text-blue-200' },
-    won: { label: '✅ Won', cls: 'bg-green-900/40 border-green-700 text-green-200' },
-    lost: { label: '🔴 Lost', cls: 'bg-red-900/40 border-red-700 text-red-200' },
+    active: { label: "🎯 Active", cls: "bg-blue-900/40 border-blue-700 text-blue-200" },
+    won:    { label: "✅ Won",    cls: "bg-green-900/40 border-green-700 text-green-200" },
+    lost:   { label: "🔴 Lost",   cls: "bg-red-900/40 border-red-700 text-red-200" },
   };
-  const currentResultBadge = tradeResult ? resultBadges[tradeResult] : null;
+  const badge = tradeResult ? resultBadges[tradeResult] : null;
 
   return (
-    <main style={{ minHeight: '100vh', padding: 16, background: '#000', color: '#fff' }}>
-      <div style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 20 }}>
-        {/* Draft banner */}
+    <main className="min-h-screen p-4 md:p-6 bg-black text-white">
+      <div className="max-w-3xl mx-auto space-y-5">
         {isDraft && (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 10,
-              background: 'rgba(245,158,11,0.08)',
-              border: '2px solid rgba(245,158,11,0.6)',
-              display: 'grid',
-              gap: 8,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div className="p-4 rounded-lg bg-amber-950/40 border-2 border-amber-700 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: AMBER }}>📝 DRAFT</p>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#fbbf24' }}>
-                  Last saved{' '}
-                  {row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}
-                </p>
+                <p className="text-sm font-bold text-amber-200">📝 DRAFT</p>
+                <p className="text-xs text-amber-300/90 mt-0.5">Last saved {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => router.push(`/apx/manual?edit=${row.id}`)}
-                style={{ ...btnAmber, padding: '8px 12px', fontSize: 12 }}
-              >
+              <button onClick={() => router.push(`/apx/manual?edit=${row.id}`)} className="text-xs px-3 py-2 rounded-lg bg-amber-700 font-bold">
                 ▶ Continue editing
               </button>
             </div>
           </div>
         )}
 
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>
-              <span style={{ color: AMBER }}>APX</span> Setup
-            </h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#9ca3af' }}>
-              {row.pair || '—'} · {row.timeframe_stack || '—'} ·{' '}
-              <span style={{ color: AMBER }}>{(row.setup_type || '—').replace('_', ' ')}</span>
-            </p>
-            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#6b7280' }}>
-              Saved {new Date(row.created_at).toLocaleString()}
-            </p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              {row.direction && (
-                <span style={badgeNeutral}>{row.direction.toUpperCase()}</span>
-              )}
-              {row.bias && (
-                <span
-                  style={{
-                    ...badgeNeutral,
-                    color: row.bias === 'bullish' ? '#6ee7b7' : '#fca5a5',
-                    borderColor:
-                      row.bias === 'bullish'
-                        ? 'rgba(16,185,129,0.5)'
-                        : 'rgba(239,68,68,0.5)',
-                  }}
-                >
-                  {row.bias.toUpperCase()}
-                </span>
-              )}
-              {currentResultBadge && (
-                <span style={badgeAmber}>{currentResultBadge.label}</span>
-              )}
-              {typeof row.confluence_score === 'number' && (
-                <span style={badgeAmber}>Score {row.confluence_score}</span>
-              )}
-            </div>
+            <h1 className="text-2xl font-bold text-amber-400">🎯 APX Setup</h1>
+            <p className="text-gray-400 text-sm">{row.pair || "—"} · {row.timeframe_stack || "—"}</p>
+            <p className="text-xs text-gray-500 mt-1">Saved {new Date(row.created_at).toLocaleString()}</p>
+            {badge && <span className={`inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full border font-bold ${badge.cls}`}>{badge.label}</span>}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => router.push(`/apx/manual?edit=${row.id}`)}
-              style={{ ...btnGhost, color: '#93c5fd', borderColor: 'rgba(59,130,246,0.5)' }}
-            >
-              ✏️ Edit
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              style={{ ...btnGhost, color: '#fca5a5', borderColor: 'rgba(239,68,68,0.5)' }}
-            >
-              {deleting ? 'Deleting…' : '🗑 Delete'}
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => router.push(`/apx/manual?edit=${row.id}`)} className="text-xs px-3 py-2 rounded-lg bg-blue-900/40 text-blue-300 font-semibold">✏️ Edit</button>
+            <button onClick={handleDelete} disabled={deleting} className="text-xs px-3 py-2 rounded-lg bg-red-900/40 text-red-300 font-semibold disabled:opacity-50">{deleting ? "Deleting…" : "🗑 Delete"}</button>
           </div>
         </div>
 
-        {error ? <div style={errorBox}>{error}</div> : null}
-
-        {/* Trade management */}
         {!isDraft && (
-          <div style={panel}>
-            <div>
-              <p style={label}>Trade Result</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                {[
-                  { key: '', label: '— None' },
-                  { key: 'active', label: '🎯 Active' },
-                  { key: 'won', label: '✅ Won' },
-                  { key: 'lost', label: '🔴 Lost' },
-                ].map((opt) => {
-                  const selected = tradeResult === opt.key;
-                  return (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => handleSaveResult(opt.key)}
-                      disabled={savingResult || selected}
-                      style={{
-                        padding: '8px 6px',
-                        borderRadius: 8,
-                        border: `1px solid ${
-                          selected ? AMBER : 'rgba(255,255,255,0.14)'
-                        }`,
-                        background: selected ? 'rgba(245,158,11,0.16)' : 'rgba(255,255,255,0.03)',
-                        color: selected ? AMBER : '#e5e7eb',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        opacity: savingResult ? 0.6 : 1,
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {(tradeResult === 'won' || tradeResult === 'lost') && (
-              <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: '#9ca3af' }}>R multiple</span>
-                <input
-                  type="number"
-                  step="any"
-                  value={rResult}
-                  onChange={(e) => setRResult(e.target.value)}
-                  placeholder="e.g. 2.5"
-                  style={{ ...inputStyle, maxWidth: 120 }}
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveR}
-                  disabled={savingResult}
-                  style={{ ...btnGhost, padding: '6px 10px', fontSize: 11 }}
-                >
-                  Save R
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-3">
+            <p className="text-xs font-bold text-gray-300">Trade Result</p>
+            <div className="grid grid-cols-4 gap-2">
+              {[{ key: "", label: "— None" }, { key: "active", label: "🎯 Active" }, { key: "won", label: "✅ Won" }, { key: "lost", label: "🔴 Lost" }].map((opt) => (
+                <button key={opt.key} onClick={() => handleResult(opt.key)} disabled={savingResult || tradeResult === opt.key}
+                  className={`px-2 py-2 rounded-lg border text-xs font-bold disabled:opacity-50 ${tradeResult === opt.key ? "ring-2 ring-amber-400 border-amber-600 bg-amber-900/30" : "border-gray-700 bg-black text-gray-300"}`}>
+                  {opt.label}
                 </button>
+              ))}
+            </div>
+            {(tradeResult === "won" || tradeResult === "lost") && (
+              <div className="flex items-center gap-2 pt-2">
+                <label className="text-xs text-gray-400">R multiple</label>
+                <input type="number" step="any" value={rDraft} onChange={(e) => setRDraft(e.target.value)} placeholder="e.g. 2.5" className="w-28 px-2 py-1.5 rounded-lg bg-black border border-gray-700 text-sm" />
               </div>
             )}
           </div>
         )}
 
-        {/* The Card */}
-        {evaluation ? <ApxCard setup={row} result={evaluation} /> : null}
+        {evaluation && <ApxCard data={evaluation} />}
 
-        {/* Screenshots */}
-        <div
-          style={{
-            ...panel,
-            borderColor: 'rgba(16,185,129,0.5)',
-            borderWidth: 2,
-          }}
-        >
+        <div className="p-4 rounded-lg bg-gray-900 border-2 border-emerald-800 space-y-3">
           <div>
-            <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#6ee7b7' }}>
-              📸 Screenshots
-            </h2>
-            <p style={{ margin: '2px 0 0', fontSize: 11, color: '#6b7280' }}>
-              {screenshots.length} attached
-            </p>
+            <h2 className="text-sm font-bold text-emerald-300">📸 Screenshots</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{screenshots.length} attached</p>
           </div>
-
-          <ScreenshotGallery
-            screenshots={screenshots}
-            onDelete={(deletedId) =>
-              setScreenshots((prev) => prev.filter((s) => s.id !== deletedId))
-            }
-            table="apx_screenshots"
-          />
-
-          <div
-            style={{
-              paddingTop: 12,
-              borderTop: '1px solid rgba(255,255,255,0.08)',
-            }}
-          >
-            <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: '#9ca3af' }}>
-              Add more
-            </p>
-            <ScreenshotUploader
-              setupId={row.id}
-              userId={userId}
-              screenshots={screenshots}
-              onChange={setScreenshots}
-              table="apx_screenshots"
-            />
+          <ScreenshotGallery screenshots={screenshots} onDelete={(delId) => setScreenshots((p) => p.filter((s) => s.id !== delId))} table="apx_screenshots" />
+          <div className="pt-3 border-t border-gray-800">
+            <p className="text-xs font-semibold text-gray-400 mb-2">Add more</p>
+            <ScreenshotUploader setupId={row.id} userId={userId} screenshots={screenshots} onChange={setScreenshots} table="apx_screenshots" />
           </div>
         </div>
 
-        {/* Journal notes */}
-        <div
-          style={{
-            ...panel,
-            borderColor: 'rgba(168,85,247,0.5)',
-            borderWidth: 2,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#d8b4fe' }}>
-              📓 Journal Notes
-            </h2>
-            {notesSaved && (
-              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.16)', color: '#6ee7b7', fontWeight: 700 }}>
-                ✅ Saved
-              </span>
-            )}
+        <div className="p-4 rounded-lg bg-gray-900 border-2 border-purple-800 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="text-sm font-bold text-purple-200">📓 Journal Notes</h2>
+            {notesSaved && <span className="text-xs px-2 py-1 rounded-full bg-green-900/40 text-green-300 font-semibold">✅ Saved</span>}
           </div>
-          <textarea
-            value={notesDraft}
-            onChange={(e) => setNotesDraft(e.target.value)}
-            rows={6}
-            placeholder="Observations, outcome, lessons…"
-            style={{ ...inputStyle, resize: 'vertical', minHeight: 100 }}
-          />
-          <button
-            type="button"
-            onClick={handleSaveNotes}
-            disabled={savingNotes || notesDraft === (row.notes || '')}
-            style={{ ...btnPurple, width: '100%' }}
-          >
-            {savingNotes ? 'Saving…' : '💾 Save Notes'}
+          <textarea value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} rows={6} placeholder="Observations, outcome, lessons…" className="w-full px-3 py-2 rounded-lg bg-black border border-gray-700 resize-none text-sm" />
+          <button onClick={handleSaveNotes} disabled={savingNotes || notesDraft === (row.notes || "")} className="w-full py-2 rounded-lg bg-purple-800 font-bold text-sm disabled:opacity-50">
+            {savingNotes ? "Saving…" : "💾 Save Notes"}
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => router.push('/apx/journal')}
-          style={{ ...btnDark, width: '100%' }}
-        >
-          ← Back to APX Journal
-        </button>
+        <button onClick={() => router.push("/apx/journal")} className="w-full py-3 rounded-lg bg-gray-800 font-bold">← Back to APX Journal</button>
       </div>
     </main>
   );
 }
-
-// ------------------------------------------------------------
-// styles
-// ------------------------------------------------------------
-const inputStyle = {
-  width: '100%',
-  padding: '8px 10px',
-  borderRadius: 8,
-  border: '1px solid rgba(255,255,255,0.14)',
-  background: '#000',
-  color: '#f3f4f6',
-  fontSize: 13,
-  outline: 'none',
-};
-
-const panel = {
-  padding: 16,
-  borderRadius: 10,
-  background: 'rgba(255,255,255,0.02)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  display: 'grid',
-  gap: 10,
-};
-
-const label = {
-  margin: '0 0 8px',
-  fontSize: 11,
-  fontWeight: 700,
-  color: '#d1d5db',
-};
-
-const btnDark = {
-  padding: '12px 14px',
-  borderRadius: 10,
-  background: '#1f2937',
-  color: '#e5e7eb',
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const btnGhost = {
-  padding: '8px 12px',
-  borderRadius: 10,
-  background: 'transparent',
-  color: '#e5e7eb',
-  border: '1px solid rgba(255,255,255,0.16)',
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
-const btnAmber = {
-  padding: '10px 14px',
-  borderRadius: 10,
-  background: AMBER,
-  color: '#111827',
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const btnPurple = {
-  padding: '10px 14px',
-  borderRadius: 10,
-  background: '#6b21a8',
-  color: '#f3e8ff',
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const badgeNeutral = {
-  fontSize: 10,
-  padding: '2px 8px',
-  borderRadius: 999,
-  border: '1px solid rgba(255,255,255,0.2)',
-  color: '#e5e7eb',
-  fontWeight: 700,
-};
-
-const badgeAmber = {
-  fontSize: 10,
-  padding: '2px 8px',
-  borderRadius: 999,
-  border: '1px solid rgba(245,158,11,0.5)',
-  background: 'rgba(245,158,11,0.1)',
-  color: AMBER,
-  fontWeight: 700,
-};
-
-const errorBox = {
-  padding: 12,
-  borderRadius: 8,
-  background: 'rgba(239,68,68,0.15)',
-  border: '1px solid rgba(239,68,68,0.5)',
-  color: '#fecaca',
-  fontSize: 13,
-};
