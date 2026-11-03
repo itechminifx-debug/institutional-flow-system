@@ -95,32 +95,38 @@ export default function ApxCard({ data }) {
       </div>
 
       {/* Auto-Calculated Zones */}
-      {zones && zones.ce && (
+      {zones && (
         <div className="p-3 rounded-lg bg-black border border-amber-800/40 space-y-2">
           <p className="text-[10px] text-amber-300 uppercase tracking-wider font-bold">📐 Auto-Calculated Zones</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
             <div>
               <p className="text-gray-500 text-[10px]">CE (Equilibrium)</p>
-              <p className="font-bold text-white tabular-nums">{formatPrice(zones.ce)}</p>
+              <p className="font-bold text-white tabular-nums">{zones.ce ? formatPrice(zones.ce) : "—"}</p>
             </div>
+            
             {data.direction === "short" ? (
               <div>
                 <p className="text-gray-500 text-[10px]">Premium Zone (Short)</p>
-                <p className="font-bold text-red-400 tabular-nums">{formatPrice(zones.ce)} - {formatPrice(zones.premiumHigh)}</p>
+                <p className="font-bold text-red-400 tabular-nums">
+                  {zones.premiumLow && zones.premiumHigh ? `${formatPrice(zones.premiumLow)} - ${formatPrice(zones.premiumHigh)}` : "—"}
+                </p>
               </div>
             ) : (
               <div>
                 <p className="text-gray-500 text-[10px]">Discount Zone (Long)</p>
-                <p className="font-bold text-green-400 tabular-nums">{formatPrice(zones.discountLow)} - {formatPrice(zones.ce)}</p>
+                <p className="font-bold text-green-400 tabular-nums">
+                  {zones.discountLow && zones.discountHigh ? `${formatPrice(zones.discountLow)} - ${formatPrice(zones.discountHigh)}` : "—"}
+                </p>
               </div>
             )}
+
             <div>
-              <p className="text-gray-500 text-[10px]">OTE Low</p>
-              <p className="font-bold text-amber-200 tabular-nums">{formatPrice(zones.oteLow)}</p>
+              <p className="text-gray-500 text-[10px]">OTE Low (61.8%)</p>
+              <p className="font-bold text-amber-200 tabular-nums">{zones.oteLow ? formatPrice(zones.oteLow) : "—"}</p>
             </div>
             <div>
-              <p className="text-gray-500 text-[10px]">OTE High</p>
-              <p className="font-bold text-amber-200 tabular-nums">{formatPrice(zones.oteHigh)}</p>
+              <p className="text-gray-500 text-[10px]">OTE High (79%)</p>
+              <p className="font-bold text-amber-200 tabular-nums">{zones.oteHigh ? formatPrice(zones.oteHigh) : "—"}</p>
             </div>
           </div>
         </div>
