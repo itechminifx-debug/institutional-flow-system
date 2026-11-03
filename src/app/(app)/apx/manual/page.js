@@ -1,305 +1,211 @@
-// app/apx/manual/page.jsx
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabaseClient";
-import { evaluateApx, APX_SETUP_TYPES, APX_BIASES, APX_DIRECTIONS } from "@/lib/apxEngine";
-import ApxCard from "@/components/ApxCard";
+import { useRouter } from "next/navigation";
 
-const initialForm = {
-  pair: "", timeframe_stack: "Daily → 4H → 15M",
-  setup_type: "standard", bias: "bullish", direction: "long",
-  range_high: "", range_low: "",
-  impulse_high: "", impulse_low: "",
-  sweep_level: "", sweep_closed_back_inside: false,
-  displacement_range: "", atr_value: "",
-  inducement_level: "", inducement_broken: false,
-  mss_level: "", mss_confirmed: false,
-  fvg_high: "", fvg_low: "",
-  ema50_value: "", ema50_tapped: false,
-  entry_price: "", stop_loss: "", target_price: "", risk_percent: "",
-  notes: "",
-};
-
-function rowToForm(row) {
-  if (!row) return initialForm;
-  const s = (v) => (typeof v === "number" ? String(v) : v ?? "");
-  return {
-    pair: row.pair ?? "", timeframe_stack: row.timeframe_stack ?? "",
-    setup_type: row.setup_type ?? "standard", bias: row.bias ?? "bullish", direction: row.direction ?? "long",
-    range_high: s(row.range_high), range_low: s(row.range_low),
-    impulse_high: s(row.impulse_high), impulse_low: s(row.impulse_low),
-    sweep_level: s(row.sweep_level), sweep_closed_back_inside: !!row.sweep_closed_back_inside,
-    displacement_range: s(row.displacement_range), atr_value: s(row.atr_value),
-    inducement_level: s(row.inducement_level), inducement_broken: !!row.inducement_broken,
-    mss_level: s(row.mss_level), mss_confirmed: !!row.mss_confirmed,
-    fvg_high: s(row.fvg_high), fvg_low: s(row.fvg_low),
-    ema50_value: s(row.ema50_value), ema50_tapped: !!row.ema50_tapped,
-    entry_price: s(row.entry_price), stop_loss: s(row.stop_loss), target_price: s(row.target_price),
-    risk_percent: s(row.risk_percent), notes: row.notes ?? "",
+function Section({ id, title, emoji, children, accent = "amber" }) {
+  const accentMap = {
+    indigo: "border-indigo-800 text-indigo-300",
+    blue: "border-blue-800 text-blue-300",
+    purple: "border-purple-800 text-purple-300",
+    emerald: "border-emerald-800 text-emerald-300",
+    amber: "border-amber-800 text-amber-300",
+    gray: "border-gray-800 text-gray-300",
   };
+  const cls = accentMap[accent] || accentMap.amber;
+
+  return (
+    <section id={id} className="scroll-mt-20">
+      <div className={`border-l-4 pl-4 py-1 ${cls.split(" ")[0]}`}>
+        <h2 className={`text-lg font-bold ${cls.split(" ")[1]}`}>{emoji} {title}</h2>
+      </div>
+      <div className="mt-3 space-y-3 text-sm text-gray-300 leading-relaxed">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SubSection({ title, children }) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-bold text-white mb-2">{title}</h3>
+      <div className="space-y-2 text-sm text-gray-300">{children}</div>
+    </div>
+  );
+}
+
+function Rule({ children, tone = "gray" }) {
+  const toneMap = {
+    gray: "border-gray-700 bg-gray-900/40",
+    green: "border-green-700 bg-green-950/20 text-green-200",
+    red: "border-red-700 bg-red-950/20 text-red-200",
+    amber: "border-amber-700 bg-amber-950/20 text-amber-200",
+  };
+  return (
+    <div className={`p-3 rounded-lg border ${toneMap[tone]}`}>
+      <p className="text-xs">{children}</p>
+    </div>
+  );
 }
 
 export default function ApxManualPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const editId = searchParams?.get("edit") || null;
-  const isEdit = !!editId;
-  const supabase = createClient();
-
-  const [form, setForm] = useState(initialForm);
-  const [originalRow, setOriginalRow] = useState(null);
-  const [loading, setLoading] = useState(!!editId);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [savedId, setSavedId] = useState(null);
-
-  useEffect(() => {
-    if (!editId) return;
-    (async () => {
-      const { data, error: err } = await supabase.from("apx_setups").select("*").eq("id", editId).maybeSingle();
-      if (err || !data) { setError(err?.message || "Setup not found."); setLoading(false); return; }
-      setOriginalRow(data);
-      setForm(rowToForm(data));
-      setSavedId(data.id);
-      setLoading(false);
-    })();
-  }, [editId, supabase]);
-
-  const set = (key) => (e) => {
-    const v = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? e;
-    setForm((f) => ({ ...f, [key]: v }));
-  };
-
-  const num = (v) => {
-    const n = parseFloat(v);
-    return isNaN(n) ? null : n;
-  };
-
-  const input = useMemo(() => ({
-    setupType: form.setup_type, bias: form.bias, direction: form.direction,
-    pair: form.pair, timeframeStack: form.timeframe_stack,
-    rangeHigh: num(form.range_high), rangeLow: num(form.range_low),
-    impulseHigh: num(form.impulse_high), impulseLow: num(form.impulse_low),
-    sweepLevel: num(form.sweep_level), sweepClosedBackInside: form.sweep_closed_back_inside,
-    displacementRange: num(form.displacement_range), atrValue: num(form.atr_value),
-    inducementLevel: num(form.inducement_level), inducementBroken: form.inducement_broken,
-    mssLevel: num(form.mss_level), mssConfirmed: form.mss_confirmed,
-    fvgHigh: num(form.fvg_high), fvgLow: num(form.fvg_low),
-    ema50Value: num(form.ema50_value), ema50Tapped: form.ema50_tapped,
-    entryPrice: num(form.entry_price), stopLoss: num(form.stop_loss), targetPrice: num(form.target_price),
-    riskPercent: num(form.risk_percent),
-  }), [form]);
-
-  const evaluation = useMemo(() => evaluateApx(input), [input]);
-
-  const onSave = useCallback(async () => {
-    setSaving(true);
-    setError("");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.replace("/login"); return; }
-
-    const payload = {
-      user_id: user.id,
-      pair: form.pair || null,
-      timeframe_stack: form.timeframe_stack || null,
-      setup_type: form.setup_type,
-      bias: form.bias,
-      direction: form.direction,
-      range_high: num(form.range_high),
-      range_low: num(form.range_low),
-      ce: evaluation.zones.ce,
-      impulse_high: num(form.impulse_high),
-      impulse_low: num(form.impulse_low),
-      ote_low: evaluation.zones.oteLow,
-      ote_high: evaluation.zones.oteHigh,
-      sweep_level: num(form.sweep_level),
-      sweep_closed_back_inside: !!form.sweep_closed_back_inside,
-      displacement_range: num(form.displacement_range),
-      atr_value: num(form.atr_value),
-      inducement_level: num(form.inducement_level),
-      inducement_broken: !!form.inducement_broken,
-      mss_level: num(form.mss_level),
-      mss_confirmed: !!form.mss_confirmed,
-      fvg_high: num(form.fvg_high),
-      fvg_low: num(form.fvg_low),
-      ema50_value: num(form.ema50_value),
-      ema50_tapped: !!form.ema50_tapped,
-      entry_price: num(form.entry_price),
-      stop_loss: num(form.stop_loss),
-      target_price: num(form.target_price),
-      rr: evaluation.trade?.rr ?? null,
-      risk_percent: num(form.risk_percent),
-      status: evaluation.preEntryReady ? "complete" : "draft",
-      trade_result: isEdit ? (originalRow?.trade_result ?? null) : (evaluation.preEntryReady ? "active" : null),
-      r_result: isEdit ? (originalRow?.r_result ?? null) : null,
-      notes: form.notes || null,
-    };
-
-    let res;
-    if (isEdit) {
-      res = await supabase.from("apx_setups").update(payload).eq("id", editId).select("id").single();
-    } else {
-      res = await supabase.from("apx_setups").insert(payload).select("id").single();
-    }
-
-    setSaving(false);
-    if (res.error) { setError(res.error.message); return; }
-    setSavedId(res.data.id);
-    router.push(`/apx/${res.data.id}`);
-  }, [form, evaluation, isEdit, editId, originalRow, supabase, router]);
-
-  if (loading) {
-    return <main className="min-h-screen p-6 bg-black text-white"><p className="text-gray-400 text-sm">Loading…</p></main>;
-  }
 
   return (
     <main className="min-h-screen p-4 md:p-6 bg-black text-white">
-      <div className="max-w-5xl mx-auto space-y-5">
-        <div className="flex items-start justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-amber-400">🎯 APX · {isEdit ? "Edit Setup" : "New Setup"}</h1>
-            <p className="text-gray-400 text-xs">{isEdit ? "Update and save changes." : "Fill the fields — live preview updates as you type."}</p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Link href={isEdit ? `/apx/${editId}` : "/apx"} className="text-xs px-3 py-2 rounded-lg bg-gray-800 font-semibold">
-              ← Back
-            </Link>
+      <div className="max-w-3xl mx-auto space-y-8">
+        {/* Header */}
+        <div>
+          <button
+            type="button"
+            onClick={() => router.push("/apx")}
+            className="text-xs text-amber-300 hover:text-amber-200 mb-2"
+          >
+            ← Back to APX
+          </button>
+          <h1 className="text-3xl font-bold">🎯 The APX Manual</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Institutional Flow — Standard, Shallow, Turtle Soup
+          </p>
+          <p className="text-gray-500 text-xs mt-2">
+            The doctrine of reading institutional order flow.
+          </p>
+        </div>
+
+        {/* Table of Contents */}
+        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
+          <p className="text-xs font-bold text-amber-300 uppercase tracking-wider">Contents</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs">
+            {[
+              { id: "philosophy", label: "1. The Philosophy" },
+              { id: "the-stages", label: "2. The 4 Stages" },
+              { id: "setup-types", label: "3. The 3 Setup Types" },
+              { id: "zones", label: "4. Dealing Ranges & OTE" },
+              { id: "rules", label: "5. The Hard Rules" },
+            ].map((t) => (
+              <a key={t.id} href={`#${t.id}`} className="text-amber-300 hover:text-amber-200 py-0.5">
+                {t.label}
+              </a>
+            ))}
           </div>
         </div>
 
-        {error && <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-200 text-sm">{error}</div>}
+        {/* 1. Philosophy */}
+        <Section id="philosophy" title="The Philosophy" emoji="🧭">
+          <Rule tone="amber">
+            <strong>"Institutions leave footprints. APX reads those footprints."</strong>
+          </Rule>
+          <p>
+            Price does not move randomly. It moves to collect liquidity. Large players need counterparties to fill their orders, so they manipulate price into obvious zones (above old highs, below old lows), grab the liquidity, and then drive price in the true direction.
+          </p>
+          <p>
+            APX tracks this process across 4 stages: <strong>Context, Liquidity, Structure, and Entry.</strong> If all 4 align, the trap has sprung and the institutional flow is on your side.
+          </p>
+        </Section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <Section title="Header">
-              <Row>
-                <Field label="Pair"><input value={form.pair} onChange={set("pair")} placeholder="EURUSD" className={inputCls} /></Field>
-                <Field label="Timeframe stack"><input value={form.timeframe_stack} onChange={set("timeframe_stack")} className={inputCls} /></Field>
-              </Row>
-              <Row>
-                <Field label="Setup type">
-                  <select value={form.setup_type} onChange={set("setup_type")} className={inputCls}>
-                    {APX_SETUP_TYPES.map((s) => <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>)}
-                  </select>
-                </Field>
-                <Field label="Bias">
-                  <select value={form.bias} onChange={set("bias")} className={inputCls}>
-                    {APX_BIASES.map((b) => <option key={b.key} value={b.key}>{b.emoji} {b.label}</option>)}
-                  </select>
-                </Field>
-                <Field label="Direction">
-                  <select value={form.direction} onChange={set("direction")} className={inputCls}>
-                    {APX_DIRECTIONS.map((d) => <option key={d.key} value={d.key}>{d.emoji} {d.label}</option>)}
-                  </select>
-                </Field>
-              </Row>
-            </Section>
+        {/* 2. The 4 Stages */}
+        <Section id="the-stages" title="The 4 Stages" emoji="📊" accent="blue">
+          <p>
+            Every valid APX setup must pass through these 4 stages, in order.
+          </p>
 
-            <Section title="Dealing Range">
-              <Row>
-                <Field label="Range high"><input type="number" step="any" value={form.range_high} onChange={set("range_high")} className={inputCls} /></Field>
-                <Field label="Range low"><input type="number" step="any" value={form.range_low} onChange={set("range_low")} className={inputCls} /></Field>
-                <Field label="CE (auto)"><input readOnly value={evaluation.zones.ce ?? ""} className={inputCls + " opacity-60"} /></Field>
-              </Row>
-            </Section>
-
-            <Section title="Impulse Leg (for OTE)">
-              <Row>
-                <Field label="Impulse high"><input type="number" step="any" value={form.impulse_high} onChange={set("impulse_high")} className={inputCls} /></Field>
-                <Field label="Impulse low"><input type="number" step="any" value={form.impulse_low} onChange={set("impulse_low")} className={inputCls} /></Field>
-              </Row>
-              <Row>
-                <Field label="OTE low (auto)"><input readOnly value={evaluation.zones.oteLow ?? ""} className={inputCls + " opacity-60"} /></Field>
-                <Field label="OTE high (auto)"><input readOnly value={evaluation.zones.oteHigh ?? ""} className={inputCls + " opacity-60"} /></Field>
-              </Row>
-            </Section>
-
-            <Section title="Liquidity / Sweep">
-              <Row>
-                <Field label="Sweep level"><input type="number" step="any" value={form.sweep_level} onChange={set("sweep_level")} className={inputCls} /></Field>
-                <Field label="Displacement"><input type="number" step="any" value={form.displacement_range} onChange={set("displacement_range")} className={inputCls} /></Field>
-                <Field label="ATR (opt)"><input type="number" step="any" value={form.atr_value} onChange={set("atr_value")} className={inputCls} /></Field>
-              </Row>
-              <Checkbox label="Sweep candle closed back inside range" checked={form.sweep_closed_back_inside} onChange={set("sweep_closed_back_inside")} />
-            </Section>
-
-            <Section title="Structure">
-              <Row>
-                <Field label="Inducement level"><input type="number" step="any" value={form.inducement_level} onChange={set("inducement_level")} className={inputCls} /></Field>
-                <Field label="MSS level"><input type="number" step="any" value={form.mss_level} onChange={set("mss_level")} className={inputCls} /></Field>
-              </Row>
-              <Row>
-                <Field label="FVG high"><input type="number" step="any" value={form.fvg_high} onChange={set("fvg_high")} className={inputCls} /></Field>
-                <Field label="FVG low"><input type="number" step="any" value={form.fvg_low} onChange={set("fvg_low")} className={inputCls} /></Field>
-                <Field label="50 EMA (opt)"><input type="number" step="any" value={form.ema50_value} onChange={set("ema50_value")} className={inputCls} /></Field>
-              </Row>
-              <div className="flex flex-wrap gap-3">
-                <Checkbox label="Inducement broken" checked={form.inducement_broken} onChange={set("inducement_broken")} />
-                <Checkbox label="MSS confirmed" checked={form.mss_confirmed} onChange={set("mss_confirmed")} />
-                <Checkbox label="50 EMA tapped" checked={form.ema50_tapped} onChange={set("ema50_tapped")} />
+          <div className="mt-3 space-y-2">
+            {[
+              { n: 1, name: "Context", q: "What is the HTF bias? Where is the Dealing Range? What are the Premium/Discount zones? Where is the OTE?" },
+              { n: 2, name: "Liquidity", q: "Did we sweep a high/low? Did we close back inside? Is there displacement? Did the pullback tap the CE or 50 EMA?" },
+              { n: 3, name: "Structure", q: "Was an inducement swept? Did we get an MSS (Market Structure Shift)? Is there an FVG on the correct side?" },
+              { n: 4, name: "Entry", q: "Where is the entry? Is the stop loss in the right place? Is the target realistic? Is RR ≥ 2?" },
+            ].map((l) => (
+              <div key={l.n} className="p-3 rounded-lg border border-blue-800/60 bg-blue-950/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-blue-300">{l.n}.</span>
+                  <span className="text-sm font-bold text-white">{l.name}</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1 ml-4">{l.q}</p>
               </div>
-            </Section>
-
-            <Section title="Trade">
-              <Row>
-                <Field label="Entry"><input type="number" step="any" value={form.entry_price} onChange={set("entry_price")} className={inputCls} /></Field>
-                <Field label="Stop loss"><input type="number" step="any" value={form.stop_loss} onChange={set("stop_loss")} className={inputCls} /></Field>
-                <Field label="Target"><input type="number" step="any" value={form.target_price} onChange={set("target_price")} className={inputCls} /></Field>
-                <Field label="Risk %"><input type="number" step="any" value={form.risk_percent} onChange={set("risk_percent")} className={inputCls} /></Field>
-              </Row>
-            </Section>
-
-            <Section title="Notes">
-              <textarea value={form.notes} onChange={set("notes")} rows={3} className={inputCls} placeholder="Context, narrative, tags…" />
-            </Section>
-
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving}
-              className="w-full py-3 rounded-lg bg-amber-600 text-black font-bold disabled:opacity-50"
-            >
-              {saving ? "Saving…" : isEdit ? "💾 Save Changes" : "💾 Save Setup"}
-            </button>
+            ))}
           </div>
+        </Section>
 
-          <div className="lg:sticky lg:top-4 self-start">
-            <p className="text-xs text-gray-500 mb-2">Live preview</p>
-            <ApxCard data={evaluation} />
-          </div>
+        {/* 3. Setup Types */}
+        <Section id="setup-types" title="The 3 Setup Types" emoji="🎯" accent="purple">
+          <p>
+            Not every valid setup is the same. APX defines 3 distinct playbooks based on how price returns to the entry zone.
+          </p>
+
+          <SubSection title="🎯 Standard (Deep Pullback)">
+            <p>
+              Price makes a strong move, then pulls back <strong>deep</strong> (≥ 62% of the impulse). The entry is taken when price reaches the Premium (for shorts) or Discount (for longs) zone, leaving a tight risk.
+            </p>
+          </SubSection>
+
+          <SubSection title="⚡ Shallow (Light Pullback)">
+            <p>
+              Price makes a strong move, but only pulls back <strong>shallowly</strong> (≤ 50% of the impulse). The entry is taken when price taps the CE (Consequent Encroachment) or the 50 EMA. These are high-conviction continuation setups.
+            </p>
+          </SubSection>
+
+          <SubSection title="🐢 Turtle Soup (Sweep & Reversal)">
+            <p>
+              Price sweeps just beyond the dealing range high or low, traps breakout traders, and then immediately reverses. Requires the candle to <strong>close back inside the range</strong> and a strong displacement in the opposite direction.
+            </p>
+          </SubSection>
+        </Section>
+
+        {/* 4. Zones */}
+        <Section id="zones" title="Dealing Ranges & OTE" emoji="📐" accent="emerald">
+          <SubSection title="The Dealing Range">
+            <p>
+              The high and low of the recent swing. The midpoint is the <strong>CE (Consequent Encroachment)</strong>. Anything above the CE is <strong>Premium</strong> (expensive). Anything below the CE is <strong>Discount</strong> (cheap).
+            </p>
+            <Rule tone="gray">
+              Rule: Shorts are taken in Premium. Longs are taken in Discount.
+            </Rule>
+          </SubSection>
+
+          <SubSection title="OTE (Optimal Trade Entry)">
+            <p>
+              The OTE is the <strong>0.618 to 0.79 retracement</strong> of the impulse leg that caused the structure shift. We calculate it separately from the dealing range because the impulse leg is what created the imbalance.
+            </p>
+          </SubSection>
+        </Section>
+
+        {/* 5. Rules */}
+        <Section id="rules" title="The Hard Rules" emoji="⚖️" accent="gray">
+          <p>
+            These rules are non-negotiable. If any of them are broken, the setup is invalid — no matter how good it looks.
+          </p>
+
+          <ul className="list-disc list-inside space-y-1.5 ml-2 text-xs text-gray-300">
+            <li><strong>HTF bias must be set.</strong> Never trade against the higher timeframe narrative.</li>
+            <li><strong>MSS must be confirmed.</strong> No shift in market structure = no trade.</li>
+            <li><strong>Inducement must be broken.</strong> The trap must be sprung before the entry.</li>
+            <li><strong>SL must be beyond the extreme.</strong> If your stop loss is inside the swing, you will be wicked out.</li>
+            <li><strong>RR must be ≥ 2.</strong> If the target doesn't offer at least 2x the risk, the math is not on your side.</li>
+          </ul>
+
+          <Rule tone="red">
+            <strong>Hard Veto:</strong> Turtle Soup setups are immediately invalid if the sweep candle does not close back inside the dealing range. A sweep without a close-back is just a breakout.
+          </Rule>
+        </Section>
+
+        {/* Footer */}
+        <div className="p-4 rounded-lg border border-amber-800 bg-amber-950/20 space-y-2">
+          <p className="text-sm font-bold text-amber-200">
+            🎯 Trade the footprint.
+          </p>
+          <p className="text-xs text-gray-300">
+            APX is designed to keep you out of bad trades. When all 4 stages are green, you have a mechanical, institutional-grade setup. When they aren't, you wait.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/apx")}
+            className="mt-2 w-full py-3 rounded-lg bg-amber-700 hover:bg-amber-600 font-bold text-sm text-white"
+          >
+            ← Go to APX
+          </button>
         </div>
       </div>
     </main>
-  );
-}
-
-const inputCls = "w-full px-3 py-2 rounded-lg bg-black border border-gray-700 text-sm text-white focus:border-amber-600 outline-none";
-
-function Section({ title, children }) {
-  return (
-    <div className="p-3 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
-      <p className="text-xs font-bold text-amber-400">{title}</p>
-      {children}
-    </div>
-  );
-}
-function Row({ children }) { return <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{children}</div>; }
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="text-[10px] text-gray-500">{label}</span>
-      <div className="mt-0.5">{children}</div>
-    </label>
-  );
-}
-function Checkbox({ label, checked, onChange }) {
-  return (
-    <label className="flex items-center gap-2 text-xs text-gray-300">
-      <input type="checkbox" checked={checked} onChange={onChange} />
-      <span>{label}</span>
-    </label>
   );
 }

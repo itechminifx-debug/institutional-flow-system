@@ -260,11 +260,11 @@ export default function Sidebar() {
             const isTs = group.title === "TS System";
             const isSldGroup = group.title === "SLD System";
             const isAidmGroup = group.title === "AIDM System";
-            const isCrimGroup = group.title === "CRIM System"; // CRIM
+            const isCrimGroup = group.title === "CRIM System";
             const isSmcGroup = group.title === "SMC System";
             const isLqeGroup = group.title === "LQE System";
             const isFwtGroup = group.title === "FWT System";
-            const isApxGroup = group.title === "APX System"; // APX
+            const isApxGroup = group.title === "APX System"; 
             const isAdsGroup = group.title === "ADS System";
             const isAmsGroup = group.title === "AMS System";
             const isLayersGroup = group.title === "Layers System";
