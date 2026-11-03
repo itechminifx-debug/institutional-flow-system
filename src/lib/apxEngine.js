@@ -130,16 +130,18 @@ export function evaluateContext({
     detail: hasImpulse ? `Impulse: ${iL} – ${iH}` : "❌ Need impulse high > low.",
   });
 
-  // Calculate the zones right here
   const zones = computeApxZones({ rangeHigh, rangeLow, impulseHigh, impulseLow, direction });
 
   const passed = gates.filter(g => g.pass).length;
+  const isReady = passed === gates.length;
+  const narrative = isReady ? `Context valid. Dealing range ${l} – ${h}.` : "Context missing.";
+
   return {
-    ready: passed === gates.length,
+    ready: isReady,
     gates,
     score: Math.round((passed / gates.length) * 100),
-    narrative: hasRange ? `Dealing range ${l} – ${h}.` : "Context missing.",
-    zones, // 👈 Return the math to the engine
+    narrative,
+    zones,
   };
 }
 
@@ -169,8 +171,6 @@ export function evaluateLiquidity({
   const iL = num(impulseLow);
   const entry = num(entryPrice);
   const sweep = num(sweepLevel);
-  const disp = num(displacementRange);
-  const atr = num(atrValue);
   const ema = num(ema50Value);
 
   const iRange = iH !== null && iL !== null && iH > iL ? iH - iL : null;
@@ -224,7 +224,6 @@ export function evaluateLiquidity({
   const passed = gates.filter(g => g.pass).length;
   const isReady = passed === gates.length;
   
-  // Create a dynamic narrative based on the setup type
   let narrative = "";
   if (isReady) {
     narrative = `Liquidity valid for ${setupType}.`;
@@ -237,7 +236,138 @@ export function evaluateLiquidity({
     ready: isReady,
     gates,
     score: Math.round((passed / gates.length) * 100),
-    narrative, // 👈 Dynamic narrative
+    narrative,
+  };
+}
+
+// ============================================================
+// LAYER 3: STRUCTURE
+// ============================================================
+export function evaluateStructure({
+  direction,
+  inducementLevel,
+  inducementBroken,
+  mssLevel,
+  mssConfirmed,
+  fvgHigh,
+  fvgLow,
+}) {
+  const gates = [];
+  
+  gates.push({
+    key: "inducement",
+    label: "Inducement broken",
+    pass: !!inducementBroken,
+    detail: inducementBroken ? "Broken." : "Not broken.",
+  });
+
+  gates.push({
+    key: "mss",
+    label: "MSS confirmed",
+    pass: !!mssConfirmed,
+    detail: mssConfirmed ? "Confirmed." : "Not confirmed.",
+  });
+
+  const fvgH = num(fvgHigh);
+  const fvgL = num(fvgLow);
+  gates.push({
+    key: "fvg",
+    label: "FVG marked",
+    pass: fvgH !== null && fvgL !== null,
+    detail: fvgH !== null && fvgL !== null ? `FVG ${fvgL} – ${fvgH}` : "Missing FVG.",
+  });
+
+  const passed = gates.filter(g => g.pass).length;
+  const isReady = passed === gates.length;
+  
+  let narrative = "";
+  if (isReady) {
+    narrative = "Structure confirmed.";
+  } else {
+    const failedGates = gates.filter(g => !g.pass).map(g => g.label);
+    narrative = failedGates.join(", ");
+  }
+
+  return {
+    ready: isReady,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+    narrative,
+  };
+}
+
+// ============================================================
+// LAYER 4: ENTRY
+// ============================================================
+export function evaluateEntry({
+  direction,
+  entryPrice,
+  stopLoss,
+  targetPrice,
+}) {
+  const gates = [];
+  const entry = num(entryPrice);
+  const sl = num(stopLoss);
+  const tp = num(targetPrice);
+
+  gates.push({
+    key: "entry",
+    label: "Entry set",
+    pass: entry !== null,
+    detail: entry ? `Entry ${entry}` : "Missing.",
+  });
+
+  let slValid = false;
+  if (entry !== null && sl !== null) {
+    slValid = direction === "long" ? sl < entry : sl > entry;
+  }
+  gates.push({
+    key: "sl",
+    label: "SL correct side",
+    pass: slValid,
+    detail: slValid ? `SL ${sl}` : "Wrong side.",
+  });
+
+  let tpValid = false;
+  if (entry !== null && tp !== null) {
+    tpValid = direction === "long" ? tp > entry : tp < entry;
+  }
+  gates.push({
+    key: "tp",
+    label: "TP correct side",
+    pass: tpValid,
+    detail: tpValid ? `TP ${tp}` : "Wrong side.",
+  });
+
+  let rr = 0;
+  if (entry !== null && sl !== null && tp !== null && slValid && tpValid) {
+    const risk = Math.abs(entry - sl);
+    const reward = Math.abs(tp - entry);
+    rr = risk > 0 ? reward / risk : 0;
+  }
+  gates.push({
+    key: "rr",
+    label: "RR ≥ 2",
+    pass: rr >= 2,
+    detail: rr > 0 ? `1:${rr.toFixed(2)}` : "Cannot compute.",
+  });
+
+  const passed = gates.filter(g => g.pass).length;
+  const isReady = passed === gates.length;
+  
+  let narrative = "";
+  if (isReady) {
+    narrative = `Execution valid. R:R 1:${rr.toFixed(2)}.`;
+  } else {
+    const failedGates = gates.filter(g => !g.pass).map(g => g.label);
+    narrative = failedGates.join(", ");
+  }
+
+  return {
+    ready: isReady,
+    gates,
+    score: Math.round((passed / gates.length) * 100),
+    narrative,
   };
 }
 
@@ -285,12 +415,12 @@ export function evaluateApx({
     entry.narrative,
   ].filter(Boolean);
 
- return {
+  return {
     context,
     liquidity,
     structure,
     entry,
-    zones: context.zones, // Now it will correctly pass the calculated objects
+    zones: context.zones,
     layersPassed,
     totalLayers: 4,
     doctrineScore,
