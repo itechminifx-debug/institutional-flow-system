@@ -26,6 +26,54 @@ function num(v) {
   return isNaN(n) ? null : n;
 }
 
+function round(v, dp = 4) {
+  if (v === null || !Number.isFinite(v)) return null;
+  return Math.round(v * 10 ** dp) / 10 ** dp;
+}
+
+// ============================================================
+// ZONE MATH
+// ============================================================
+export function computeApxZones({ rangeHigh, rangeLow, impulseHigh, impulseLow, direction }) {
+  const h  = num(rangeHigh);
+  const l  = num(rangeLow);
+  const iH = num(impulseHigh);
+  const iL = num(impulseLow);
+
+  const dealingRange = h !== null && l !== null && h > l ? h - l : null;
+  const impulseRange = iH !== null && iL !== null && iH > iL ? iH - iL : null;
+
+  const ce = dealingRange !== null ? (h + l) / 2 : null;
+  const premiumLow  = dealingRange !== null ? l + 0.5 * dealingRange : null;
+  const premiumHigh = dealingRange !== null ? h : null;
+  const discountLow  = dealingRange !== null ? l : null;
+  const discountHigh = dealingRange !== null ? l + 0.5 * dealingRange : null;
+
+  let oteLow = null;
+  let oteHigh = null;
+  if (impulseRange !== null) {
+    if (direction === "long") {
+      oteHigh = iH - 0.618 * impulseRange;
+      oteLow  = iH - 0.79  * impulseRange;
+    } else if (direction === "short") {
+      oteLow  = iL + 0.618 * impulseRange;
+      oteHigh = iL + 0.79  * impulseRange;
+    }
+  }
+
+  return {
+    dealingRange,
+    impulseRange,
+    ce: round(ce),
+    premiumLow: round(premiumLow),
+    premiumHigh: round(premiumHigh),
+    discountLow: round(discountLow),
+    discountHigh: round(discountHigh),
+    oteLow: round(oteLow),
+    oteHigh: round(oteHigh),
+  };
+}
+
 // ============================================================
 // LAYER 1: CONTEXT & ZONES
 // ============================================================
@@ -82,12 +130,16 @@ export function evaluateContext({
     detail: hasImpulse ? `Impulse: ${iL} – ${iH}` : "❌ Need impulse high > low.",
   });
 
+  // Calculate the zones right here
+  const zones = computeApxZones({ rangeHigh, rangeLow, impulseHigh, impulseLow, direction });
+
   const passed = gates.filter(g => g.pass).length;
   return {
     ready: passed === gates.length,
     gates,
     score: Math.round((passed / gates.length) * 100),
     narrative: hasRange ? `Dealing range ${l} – ${h}.` : "Context missing.",
+    zones, // 👈 Return the math to the engine
   };
 }
 
@@ -338,7 +390,7 @@ export function evaluateApx({
     liquidity,
     structure,
     entry,
-    zones: context.zones, // 👈 ADD THIS LINE
+    zones: context.zones, // Now it will correctly pass the calculated objects
     layersPassed,
     totalLayers: 4,
     doctrineScore,
