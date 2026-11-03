@@ -40,14 +40,27 @@ function LayerRow({ stageName, layer, index }) {
   const emoji = layer.ready ? "✅" : "⚠️";
   return (
     <div className={`p-2 rounded border text-xs ${layer.ready ? "bg-green-950/10 border-green-900/40" : "bg-yellow-950/10 border-yellow-900/40"}`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-[10px] text-gray-500 font-mono w-4">{index + 1}</span>
           <span className={`text-sm ${layer.ready ? "text-green-300" : "text-yellow-300"}`}>{emoji}</span>
           <span className="font-bold text-white text-xs shrink-0">{stageName}</span>
-          <span className="text-gray-400 text-[11px] truncate">{layer.narrative}</span>
         </div>
         <span className={`text-[10px] font-bold shrink-0 ${layer.ready ? "text-green-300" : "text-yellow-300"}`}>{layer.score}%</span>
+      </div>
+      
+      {/* Show the individual gate checks inside the stage */}
+      <div className="ml-8 mt-2 space-y-1">
+        {layer.gates.map((g, i) => (
+          <div key={i} className="flex items-start gap-1.5 text-[11px]">
+            <span className={g.pass ? "text-green-400" : "text-red-400"}>
+              {g.pass ? "✓" : "✗"}
+            </span>
+            <span className={g.pass ? "text-gray-400" : "text-red-200"}>
+              {g.label} {g.detail && !g.pass ? `- ${g.detail}` : ""}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
