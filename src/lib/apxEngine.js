@@ -333,16 +333,16 @@ export function evaluateApx({
     entry.narrative,
   ].filter(Boolean);
 
-  return {
+ return {
     context,
     liquidity,
     structure,
     entry,
+    zones: context.zones, // 👈 ADD THIS LINE
     layersPassed,
     totalLayers: 4,
     doctrineScore,
     narrative: narrativeParts.join(" "),
-    // Pass entry prices to the card for display
     entryPrice,
     stopLoss,
     targetPrice,
