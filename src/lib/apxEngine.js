@@ -185,7 +185,7 @@ export function evaluateLiquidity({
       key: "std_deep_zone",
       label: "Pullback ≥ 62% of impulse",
       pass: pullbackPct !== null && pullbackPct >= 0.62,
-      detail: pullbackPct !== null ? `Pullback ${(pullbackPct * 100).toFixed(1)}%` : "❌ Missing entry/impulse",
+      detail: pullbackPct !== null ? `Pullback ${(pullbackPct * 100).toFixed(1)}%` : "Missing entry/impulse",
     });
   }
 
@@ -194,14 +194,14 @@ export function evaluateLiquidity({
       key: "sh_max_pull",
       label: "Pullback ≤ 50% of impulse",
       pass: pullbackPct !== null && pullbackPct <= 0.50,
-      detail: pullbackPct !== null ? `Pullback ${(pullbackPct * 100).toFixed(1)}%` : "❌ Missing entry/impulse",
+      detail: pullbackPct !== null ? `Pullback ${(pullbackPct * 100).toFixed(1)}%` : "Missing entry/impulse",
     });
     const tapped = (ema !== null && entry !== null && Math.abs(entry - ema) < 0.001) || ema50Tapped;
     gates.push({
       key: "sh_tap",
       label: "Tapped CE or 50 EMA",
       pass: tapped,
-      detail: tapped ? "✅ Tapped." : "❌ No tap.",
+      detail: tapped ? "Tapped." : "No tap.",
     });
   }
 
@@ -211,133 +211,33 @@ export function evaluateLiquidity({
       key: "ts_sweep",
       label: "Sweep beyond range",
       pass: swept,
-      detail: swept ? "✅ Swept." : "❌ No sweep.",
+      detail: swept ? "Swept." : "No sweep.",
     });
     gates.push({
       key: "ts_close_back",
       label: "Closed back inside",
       pass: !!sweepClosedBackInside,
-      detail: sweepClosedBackInside ? "✅ Closed inside." : "❌ No close back.",
+      detail: sweepClosedBackInside ? "Closed inside." : "No close back.",
     });
   }
 
   const passed = gates.filter(g => g.pass).length;
-  return {
-    ready: passed === gates.length,
-    gates,
-    score: Math.round((passed / gates.length) * 100),
-    narrative: `Liquidity check for ${setupType}.`,
-  };
-}
-
-// ============================================================
-// LAYER 3: STRUCTURE
-// ============================================================
-export function evaluateStructure({
-  direction,
-  inducementLevel,
-  inducementBroken,
-  mssLevel,
-  mssConfirmed,
-  fvgHigh,
-  fvgLow,
-}) {
-  const gates = [];
+  const isReady = passed === gates.length;
   
-  gates.push({
-    key: "inducement",
-    label: "Inducement broken",
-    pass: !!inducementBroken,
-    detail: inducementBroken ? "✅ Broken." : "❌ Not broken.",
-  });
+  // Create a dynamic narrative based on the setup type
+  let narrative = "";
+  if (isReady) {
+    narrative = `Liquidity valid for ${setupType}.`;
+  } else {
+    const failedGates = gates.filter(g => !g.pass).map(g => g.detail);
+    narrative = failedGates.join(" ");
+  }
 
-  gates.push({
-    key: "mss",
-    label: "MSS confirmed",
-    pass: !!mssConfirmed,
-    detail: mssConfirmed ? "✅ Confirmed." : "❌ Not confirmed.",
-  });
-
-  const fvgH = num(fvgHigh);
-  const fvgL = num(fvgLow);
-  gates.push({
-    key: "fvg",
-    label: "FVG marked",
-    pass: fvgH !== null && fvgL !== null,
-    detail: fvgH !== null && fvgL !== null ? `FVG ${fvgL} – ${fvgH}` : "❌ Missing FVG.",
-  });
-
-  const passed = gates.filter(g => g.pass).length;
   return {
-    ready: passed === gates.length,
+    ready: isReady,
     gates,
     score: Math.round((passed / gates.length) * 100),
-    narrative: "Structure checks.",
-  };
-}
-
-// ============================================================
-// LAYER 4: ENTRY
-// ============================================================
-export function evaluateEntry({
-  direction,
-  entryPrice,
-  stopLoss,
-  targetPrice,
-}) {
-  const gates = [];
-  const entry = num(entryPrice);
-  const sl = num(stopLoss);
-  const tp = num(targetPrice);
-
-  gates.push({
-    key: "entry",
-    label: "Entry set",
-    pass: entry !== null,
-    detail: entry ? `Entry ${entry}` : "❌ Missing.",
-  });
-
-  let slValid = false;
-  if (entry !== null && sl !== null) {
-    slValid = direction === "long" ? sl < entry : sl > entry;
-  }
-  gates.push({
-    key: "sl",
-    label: "SL correct side",
-    pass: slValid,
-    detail: slValid ? `✅ SL ${sl}` : "❌ Wrong side.",
-  });
-
-  let tpValid = false;
-  if (entry !== null && tp !== null) {
-    tpValid = direction === "long" ? tp > entry : tp < entry;
-  }
-  gates.push({
-    key: "tp",
-    label: "TP correct side",
-    pass: tpValid,
-    detail: tpValid ? `✅ TP ${tp}` : "❌ Wrong side.",
-  });
-
-  let rr = 0;
-  if (entry !== null && sl !== null && tp !== null && slValid && tpValid) {
-    const risk = Math.abs(entry - sl);
-    const reward = Math.abs(tp - entry);
-    rr = risk > 0 ? reward / risk : 0;
-  }
-  gates.push({
-    key: "rr",
-    label: "RR ≥ 2",
-    pass: rr >= 2,
-    detail: rr > 0 ? `1:${rr.toFixed(2)}` : "❌ Cannot compute.",
-  });
-
-  const passed = gates.filter(g => g.pass).length;
-  return {
-    ready: passed === gates.length,
-    gates,
-    score: Math.round((passed / gates.length) * 100),
-    narrative: rr > 0 ? `Execution R:R 1:${rr.toFixed(2)}.` : "Entry missing.",
+    narrative, // 👈 Dynamic narrative
   };
 }
 
