@@ -69,7 +69,6 @@ const GROUPS = [
       { href: "/aidm/manual", label: "AIDM Manual" },
     ],
   },
-  // CRIM — New Group
   {
     title: "CRIM System",
     links: [
@@ -106,7 +105,6 @@ const GROUPS = [
       { href: "/fwt/manual", label: "FWT Manual" },
     ],
   },
-  // APX — New Group
   {
     title: "APX System",
     links: [
@@ -114,6 +112,16 @@ const GROUPS = [
       { href: "/apx/journal", label: "APX Journal" },
       { href: "/apx/history", label: "APX History" },
       { href: "/apx/manual", label: "APX Manual" },
+    ],
+  },
+  // CRT — New Group
+  {
+    title: "CRT System",
+    links: [
+      { href: "/crt", label: "CRT Setup" },
+      { href: "/crt/journal", label: "CRT Journal" },
+      { href: "/crt/history", label: "CRT History" },
+      { href: "/crt/manual", label: "CRT Manual" },
     ],
   },
   {
@@ -265,6 +273,7 @@ export default function Sidebar() {
             const isLqeGroup = group.title === "LQE System";
             const isFwtGroup = group.title === "FWT System";
             const isApxGroup = group.title === "APX System"; 
+            const isCrtGroup = group.title === "CRT System"; // 👈 Added CRT
             const isAdsGroup = group.title === "ADS System";
             const isAmsGroup = group.title === "AMS System";
             const isLayersGroup = group.title === "Layers System";
@@ -272,7 +281,7 @@ export default function Sidebar() {
 
             const isSystemGroup =
               isOracle || isResearch || isIct || isTs || isSldGroup || isAidmGroup || isCrimGroup || isSmcGroup || isLqeGroup ||
-              isFwtGroup || isApxGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
+              isFwtGroup || isApxGroup || isCrtGroup || isAdsGroup || isAmsGroup || isLayersGroup || isAmdGroup;
 
             return (
               <div key={group.title}>
@@ -300,6 +309,8 @@ export default function Sidebar() {
                       ? "text-teal-400"
                       : isApxGroup
                       ? "text-yellow-400"
+                      : isCrtGroup
+                      ? "text-teal-400" // 👈 CRT Accent
                       : isAdsGroup
                       ? "text-amber-400"
                       : isAmsGroup
@@ -338,6 +349,8 @@ export default function Sidebar() {
                         ? "pl-2 border-l-2 border-teal-800/60 ml-2"
                         : isApxGroup
                         ? "pl-2 border-l-2 border-yellow-800/60 ml-2"
+                        : isCrtGroup
+                        ? "pl-2 border-l-2 border-teal-800/60 ml-2" // 👈 CRT Border
                         : isAdsGroup
                         ? "pl-2 border-l-2 border-amber-800/60 ml-2"
                         : isAmsGroup
@@ -364,6 +377,8 @@ export default function Sidebar() {
                               ? "bg-amber-600 text-white font-medium"
                               : isApxGroup
                               ? "bg-yellow-600 text-white font-medium"
+                              : isCrtGroup
+                              ? "bg-teal-600 text-white font-medium" // 👈 CRT Active
                               : "bg-blue-600 text-white font-medium"
                             : "text-gray-400 hover:text-white hover:bg-gray-900"
                         }`}
